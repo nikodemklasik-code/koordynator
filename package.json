@@ -12,7 +12,8 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
     "cli": "node dist/cli/main.js",
-    "verify": "npm run typecheck && npm test && npm run build"
+    "e2e": "node scripts/e2e-smoke.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run e2e"
   },
   "devDependencies": {
     "@types/node": "22.10.0",
