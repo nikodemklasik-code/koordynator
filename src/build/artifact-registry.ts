@@ -16,4 +16,6 @@ export interface ArtifactRegistry {
   get(buildKey: Digest): Promise<StoredArtifact | null>;
   put(artifact: StoredArtifact): Promise<void>;
   revoke(buildKey: Digest): Promise<void>;
+  freeze(buildKey: Digest, artifactFp: Digest): Promise<void>;
+  isFrozen(buildKey: Digest): Promise<boolean>;
 }

@@ -1,7 +1,7 @@
-import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { artifactFingerprint, buildKey, type BuildInputVector } from "./build-input.js";
 import type { ArtifactRegistry, StoredArtifact } from "./artifact-registry.js";
 import type { HermeticBuilder } from "./hermetic-builder.js";
+import { expectedAttestationFp, verifyStoredArtifactAttestation } from "./attestation.js";
 
 export type BuildDecision = { mode: "REUSE" | "BUILD"; artifact: StoredArtifact };
 
@@ -9,7 +9,7 @@ export async function buildOrReuse(
   vector: BuildInputVector,
   registry: ArtifactRegistry,
   builder: HermeticBuilder,
-  verifyAttestation: (artifact: StoredArtifact) => boolean
+  verifyAttestation: (artifact: StoredArtifact) => boolean = verifyStoredArtifactAttestation
 ): Promise<BuildDecision> {
   const key = buildKey(vector);
   const cached = await registry.get(key);
@@ -19,19 +19,16 @@ export async function buildOrReuse(
 
   const built = await builder.build(vector);
   const artifactFp = artifactFingerprint(built.bytes);
-  const stored: StoredArtifact = {
+  const attestationBase = {
     buildKey: key,
     artifactFp,
     builderIdentityFp: built.builderIdentityFp,
     sbomFp: built.sbomFp,
-    provenanceFp: built.provenanceFp,
-    signedAttestationFp: canonicalDigest({
-      buildKey: key,
-      artifactFp,
-      builderIdentityFp: built.builderIdentityFp,
-      sbomFp: built.sbomFp,
-      provenanceFp: built.provenanceFp
-    }),
+    provenanceFp: built.provenanceFp
+  };
+  const stored: StoredArtifact = {
+    ...attestationBase,
+    signedAttestationFp: expectedAttestationFp(attestationBase),
     revoked: false,
     bytes: built.bytes.slice()
   };

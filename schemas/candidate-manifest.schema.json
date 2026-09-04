@@ -1,0 +1,23 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://koordynator.local/schemas/candidate-manifest.schema.json",
+  "title":"CandidateManifest",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["taskId","workspaceId","buildId","revision","sourceFp","dependencyFp","configFp","toolchainFp","buildEnvironmentFp","moduleManifestFp","artifactFp","frozenAt"],
+  "properties":{
+    "taskId":{"type":"string","pattern":"^TASK-"},
+    "workspaceId":{"type":"string","pattern":"^WS-"},
+    "buildId":{"type":"string","pattern":"^BUILD-"},
+    "revision":{"type":"integer","minimum":0},
+    "sourceFp":{"$ref":"#/$defs/digest"},
+    "dependencyFp":{"$ref":"#/$defs/digest"},
+    "configFp":{"$ref":"#/$defs/digest"},
+    "toolchainFp":{"$ref":"#/$defs/digest"},
+    "buildEnvironmentFp":{"$ref":"#/$defs/digest"},
+    "moduleManifestFp":{"$ref":"#/$defs/digest"},
+    "artifactFp":{"$ref":"#/$defs/digest"},
+    "frozenAt":{"type":"string","format":"date-time"}
+  },
+  "$defs":{"digest":{"type":"string","pattern":"^sha256:[a-fA-F0-9]{64}$"}}
+}
