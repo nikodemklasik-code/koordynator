@@ -146,6 +146,7 @@ async function main() {
     const result2 = JSON.parse(await run(["run", run2Path, "--public-key", ownerPublic, "--release-key", releasePrivate, "--key-id", "e2e-owner", "--state-dir", stateDir]));
     if (result2.status !== "RELEASED" || result2.release?.state !== "PRODUCTION") throw new Error("E2E_SECOND_RELEASE_NOT_PRODUCTION");
     if (result2.candidate.candidateSha === result1.candidate.candidateSha) throw new Error("E2E_REVISION_DID_NOT_CHANGE_CANDIDATE");
+    const secondReleaseSha = result2.release.release.releaseSha;
 
     const status = JSON.parse(await run(["status", "TASK-E2E-SMOKE", "--state-dir", stateDir]));
     if (status.current?.state !== "RELEASED" || status.current?.revision !== 1) throw new Error("E2E_STATUS_NOT_RELEASED_R1");
@@ -153,7 +154,7 @@ async function main() {
     const replay = JSON.parse(await run(["replay", "TASK-E2E-SMOKE", "0", "--public-key", ownerPublic, "--state-dir", stateDir]));
     if (replay.taskId !== "TASK-E2E-SMOKE" || replay.revision !== 0) throw new Error("E2E_REPLAY_FAILED");
 
-    const rolledBack = JSON.parse(await run(["rollback", firstReleaseSha, "--state-dir", stateDir]));
+    const rolledBack = JSON.parse(await run(["rollback", secondReleaseSha, "--state-dir", stateDir]));
     if (rolledBack.state !== "PRODUCTION" || rolledBack.release.releaseSha !== firstReleaseSha) throw new Error("E2E_ROLLBACK_FAILED");
 
     const releases = JSON.parse(await run(["releases", "--state-dir", stateDir]));
@@ -163,6 +164,7 @@ async function main() {
       ok: true,
       firstCandidateSha: result1.candidate.candidateSha,
       secondCandidateSha: result2.candidate.candidateSha,
+      rolledBackFrom: secondReleaseSha,
       rolledBackTo: firstReleaseSha
     }) + "\n");
   } finally {
