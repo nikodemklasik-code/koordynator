@@ -31,6 +31,7 @@ export type OrchestratorRunResult = {
   receipts: EvidenceReceipt[];
   release?: ReleaseRecord;
   nextRevision?: number;
+  reasons?: string[];
 };
 
 export class OrchestratorRuntime {
@@ -87,6 +88,16 @@ export class OrchestratorRuntime {
 
     await this.artifactRegistry.freeze(buildKey(request.buildVector), build.artifact.artifactFp);
     state = await this.saveTransition(state, "CANDIDATE_FROZEN");
+
+    if (this.workOrderStore && order.revision > 0) {
+      const prior = await this.workOrderStore.get(order.taskId, order.revision - 1);
+      if (prior && prior.order.policyRef.bundleHash !== order.policyRef.bundleHash) {
+        const reasons = ["STALE_POLICY"];
+        await this.saveTransition(state, "RETURNED", reasons[0]);
+        return { status: "RETURNED", candidate, receipts: [], nextRevision: order.revision + 1, reasons };
+      }
+    }
+
     state = await this.saveTransition(state, "VALIDATING");
 
     const validation = await executeValidationDag(this.validators, order.requiredGates, {
@@ -103,8 +114,9 @@ export class OrchestratorRuntime {
 
     const policy = evaluateReleasePolicy(order, candidate.candidateSha, validation.receipts, new Date(this.clock()));
     if (!validation.passed || !policy.allowed) {
-      await this.saveTransition(state, "RETURNED", policy.reasons.join("|") || "VALIDATION_FAILED");
-      return { status: "RETURNED", candidate, receipts: validation.receipts, nextRevision: order.revision + 1 };
+      const reasons = policy.reasons.length > 0 ? policy.reasons : ["VALIDATION_FAILED"];
+      await this.saveTransition(state, "RETURNED", reasons.join("|"));
+      return { status: "RETURNED", candidate, receipts: validation.receipts, nextRevision: order.revision + 1, reasons };
     }
 
     state = await this.saveTransition(state, "APPROVED");
