@@ -53,6 +53,10 @@ export class RawApiProviderAdapter implements ProviderAdapter {
     }
     const contentType = response.headers.get("content-type") ?? "";
     const body: unknown = contentType.includes("application/json") ? await response.json() : await response.text();
-    return { output: this.spec.parseBody(body) as T, providerRequestId: response.headers.get("x-request-id") ?? undefined };
+    const providerRequestId = response.headers.get("x-request-id");
+    return {
+      output: this.spec.parseBody(body) as T,
+      ...(providerRequestId === null ? {} : { providerRequestId })
+    };
   }
 }
