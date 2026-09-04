@@ -1,0 +1,28 @@
+import type { Digest } from "../domain/ids.js";
+import type { ProviderAccessMode, ProviderAuthMode, ProviderBillingMode, ProviderTransport } from "./provider-contract.js";
+
+export type ProviderExecutionReceipt = {
+  executionId?: string;
+  requestFp: Digest;
+  workOrderFp?: Digest;
+  capability: string;
+  providerId: string;
+  providerAdapterVersionFp?: Digest;
+  accessMode: ProviderAccessMode;
+  transport?: ProviderTransport;
+  authMode?: ProviderAuthMode;
+  billingPath?: ProviderBillingMode;
+  seatId?: string;
+  routingPolicyFp?: Digest;
+  inputFp: Digest;
+  outputFp?: Digest;
+  workspaceBeforeFp?: Digest;
+  workspaceAfterFp?: Digest;
+  startedAt: string;
+  completedAt: string;
+  result: "SUCCESS" | "FAIL" | "TIMEOUT" | "BLOCKED";
+  failureCode?: string;
+  failoverFrom?: string[];
+  costReceiptFp?: Digest;
+  receiptFp: Digest;
+};

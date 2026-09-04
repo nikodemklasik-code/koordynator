@@ -1,0 +1,31 @@
+name: orchestrator-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - orchestrator/v3-mvp
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --global npm@11.6.0
+      - run: npm --version
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: node dist/cli/main.js version
+      - run: npm run e2e
