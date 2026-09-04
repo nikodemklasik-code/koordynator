@@ -67,6 +67,7 @@ export class OfficialCliProviderAdapter implements ProviderAdapter {
       const result = await spawnBounded(this.spec.executable, this.spec.versionArgs, 5000, 64 * 1024, this.spec.envAllowList);
       if (result.code !== 0) return "UNAVAILABLE";
       const version = `${result.stdout}\n${result.stderr}`.trim();
+      if (!version) return "DEGRADED";
       if (this.spec.expectedVersionPattern && !this.spec.expectedVersionPattern.test(version)) return "BLOCKED";
       return "HEALTHY";
     } catch (error) {
@@ -151,13 +152,16 @@ function subscriptionDescriptor(providerId: string): ProviderDescriptor {
   };
 }
 
+const SEMVER_LIKE = /(?:^|\s)v?\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?(?:\s|$)/i;
+
 export function officialSubscriptionLaunchSpecs(): OfficialCliLaunchSpec[] {
   return [
     {
       descriptor: subscriptionDescriptor("openai-codex-sub"),
       executable: "codex",
       versionArgs: ["--version"],
-      connectArgs: ["login"],
+      connectArgs: ["--login"],
+      expectedVersionPattern: SEMVER_LIKE,
       buildArgs: (request) => ["exec", promptFor(request)],
       parseOutput: parseJsonOrText
     },
@@ -165,7 +169,8 @@ export function officialSubscriptionLaunchSpecs(): OfficialCliLaunchSpec[] {
       descriptor: subscriptionDescriptor("claude-code-sub"),
       executable: "claude",
       versionArgs: ["--version"],
-      connectArgs: [],
+      connectArgs: ["auth", "login"],
+      expectedVersionPattern: SEMVER_LIKE,
       buildArgs: (request) => ["-p", promptFor(request), "--output-format", "json"],
       parseOutput: parseJsonOrText
     },
@@ -174,6 +179,7 @@ export function officialSubscriptionLaunchSpecs(): OfficialCliLaunchSpec[] {
       executable: "gemini",
       versionArgs: ["--version"],
       connectArgs: [],
+      expectedVersionPattern: SEMVER_LIKE,
       buildArgs: (request) => ["-p", promptFor(request), "--output-format", "json", "--sandbox"],
       parseOutput: parseJsonOrText
     },
@@ -181,7 +187,8 @@ export function officialSubscriptionLaunchSpecs(): OfficialCliLaunchSpec[] {
       descriptor: subscriptionDescriptor("github-copilot-sub"),
       executable: "copilot",
       versionArgs: ["--version"],
-      connectArgs: [],
+      connectArgs: ["login"],
+      expectedVersionPattern: SEMVER_LIKE,
       buildArgs: (request) => ["-p", promptFor(request), "--output-format=json"],
       parseOutput: parseJsonOrText
     }

@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - orchestrator/v3-mvp
 
 permissions:
   contents: read
@@ -29,3 +28,43 @@ jobs:
       - run: npm run build
       - run: node dist/cli/main.js version
       - run: npm run e2e
+      - run: npm run golden
+
+  release-hygiene:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag P0 contract release
+        env:
+          P0_SHA: 9964995f74b35b41ca6cd4934b38e8f18a81d61a
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git merge-base --is-ancestor "$P0_SHA" HEAD; then
+            echo "P0 SHA is not an ancestor of main" >&2
+            exit 1
+          fi
+          if ! git ls-remote --exit-code --tags origin refs/tags/v0.1.1 >/dev/null 2>&1; then
+            git tag -a v0.1.1 "$P0_SHA" -m "Orchestrator v0.1.1 start-contract P0"
+            git push origin refs/tags/v0.1.1
+          fi
+      - name: Remove merged and obsolete work branches
+        run: |
+          set -euo pipefail
+          for branch in \
+            orchestrator/v3-mvp \
+            hotfix/v0.1.1-start-contract \
+            feature/o9-golden-path \
+            noop
+          do
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
+              git push origin --delete "$branch"
+            fi
+          done

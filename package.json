@@ -13,7 +13,8 @@
     "build": "tsc -p tsconfig.build.json",
     "cli": "node dist/cli/main.js",
     "e2e": "node scripts/e2e-smoke.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run e2e"
+    "golden": "node scripts/golden-path.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden"
   },
   "devDependencies": {
     "@types/node": "22.10.0",

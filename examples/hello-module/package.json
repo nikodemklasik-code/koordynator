@@ -1,0 +1,11 @@
+{
+  "name": "@koordynator-module/hello-module",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node tests/unit.mjs",
+    "security": "node tests/security.mjs"
+  }
+}

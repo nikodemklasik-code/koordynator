@@ -16,8 +16,9 @@ import { FileReleaseStore } from "../release/file-release-store.js";
 import { ReleaseController } from "../release/release-controller.js";
 import { OrchestratorRuntime } from "../orchestrator/orchestrator.js";
 import { OfficialCliProviderAdapter, officialSubscriptionLaunchSpecs } from "../api/official-cli-adapter.js";
+import { generateModule } from "../module/module-factory.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 type RunConfig = {
   signedWorkOrder: SignedWorkOrder;
@@ -110,7 +111,7 @@ async function commandRun(positional: string[], flags: Map<string, string | true
       return publicKey;
     },
     clock,
-    () => true,
+    undefined,
     new FileSignedWorkOrderStore(join(root, "work-orders"))
   );
 
@@ -165,9 +166,9 @@ async function commandProvider(positional: string[]): Promise<void> {
   }
   if (action === "doctor") {
     const results = [];
-    for (const spec of specs) results.push({ providerId: spec.descriptor.providerId, health: await new OfficialCliProviderAdapter(spec).health() });
+    for (const spec of specs) results.push({ providerId: spec.descriptor.providerId, executable: spec.executable, health: await new OfficialCliProviderAdapter(spec).health() });
     process.stdout.write(`${JSON.stringify(results, null, 2)}\n`);
-    if (results.some((result) => result.health !== "HEALTHY")) process.exitCode = 4;
+    if (results.some((result) => result.health === "BLOCKED" || result.health === "DEGRADED" || result.health === "AUTH_REQUIRED")) process.exitCode = 4;
     return;
   }
   if (action === "connect") {
@@ -175,14 +176,24 @@ async function commandProvider(positional: string[]): Promise<void> {
     const spec = specs.find((candidate) => candidate.descriptor.providerId === providerId);
     if (!spec) throw new Error("UNKNOWN_PROVIDER_ID");
     await new OfficialCliProviderAdapter(spec).connect();
-    process.stdout.write(`${providerId}:CONNECTED_VIA_OFFICIAL_CLI\n`);
+    process.stdout.write(`${providerId}:OFFICIAL_AUTH_FLOW_STARTED\n`);
     return;
   }
   throw new Error("USAGE:orchestrator provider <list|doctor|connect PROVIDER_ID>");
 }
 
+async function commandModule(positional: string[], flags: Map<string, string | true>): Promise<void> {
+  const action = positional[0];
+  const target = positional[1];
+  if (action !== "create" || !target) throw new Error("USAGE:orchestrator module create <target-dir> --id <module-id> [--capabilities a,b]");
+  const capabilitiesFlag = flags.get("capabilities");
+  const capabilities = typeof capabilitiesFlag === "string" ? capabilitiesFlag.split(",") : ["core.echo"];
+  const generated = await generateModule({ moduleId: requiredFlag(flags, "id"), targetDir: resolve(target), capabilities });
+  process.stdout.write(`${JSON.stringify(generated, null, 2)}\n`);
+}
+
 function help(): void {
-  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
+  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  module create <target-dir> --id <module-id> [--capabilities a,b]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
 }
 
 async function main(): Promise<void> {
@@ -198,6 +209,7 @@ async function main(): Promise<void> {
   if (command === "releases") return commandReleases(flags);
   if (command === "rollback") return commandRollback(positional, flags);
   if (command === "provider") return commandProvider(positional);
+  if (command === "module") return commandModule(positional, flags);
   throw new Error(`UNKNOWN_COMMAND:${command}`);
 }
 
