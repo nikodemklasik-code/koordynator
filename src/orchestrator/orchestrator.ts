@@ -1,11 +1,10 @@
-import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { freezeCandidate, type FrozenCandidate } from "../domain/candidate.js";
 import type { EvidenceReceipt } from "../domain/evidence.js";
 import type { BuildId, Digest, TaskRef } from "../domain/ids.js";
 import type { OrchestratorState } from "../domain/state.js";
 import type { SignedWorkOrder } from "../security/work-order-signature.js";
 import { acceptSignedWorkOrderExecution, type PublicKeyResolver } from "../security/work-order-execution-gate.js";
-import type { ArtifactRegistry } from "../build/artifact-registry.js";
+import type { ArtifactRegistry, StoredArtifact } from "../build/artifact-registry.js";
 import type { BuildInputVector } from "../build/build-input.js";
 import { buildOrReuse } from "../build/build-or-reuse.js";
 import type { HermeticBuilder } from "../build/hermetic-builder.js";
@@ -40,7 +39,7 @@ export class OrchestratorRuntime {
     private readonly releaseController: ReleaseController,
     private readonly resolvePublicKey: PublicKeyResolver,
     private readonly clock: () => string,
-    private readonly verifyAttestation: (artifact: Awaited<ReturnType<ArtifactRegistry["get"]>> extends infer T ? NonNullable<T> : never) => boolean = () => true
+    private readonly verifyAttestation: (artifact: StoredArtifact) => boolean = () => true
   ) {}
 
   private async saveTransition(current: OrchestratorState, next: OrchestratorState["state"], reasonCode?: string): Promise<OrchestratorState> {
@@ -68,7 +67,7 @@ export class OrchestratorRuntime {
     state = await this.saveTransition(state, "READY");
     state = await this.saveTransition(state, "BUILDING");
 
-    const build = await buildOrReuse(request.buildVector, this.artifactRegistry, this.builder, this.verifyAttestation as never);
+    const build = await buildOrReuse(request.buildVector, this.artifactRegistry, this.builder, this.verifyAttestation);
     state = await this.saveTransition(state, "BUILD_READY", build.mode);
 
     const candidate = freezeCandidate(ref, {
@@ -99,12 +98,7 @@ export class OrchestratorRuntime {
     const policy = evaluateReleasePolicy(order, candidate.candidateSha, validation.receipts, new Date(this.clock()));
     if (!validation.passed || !policy.allowed) {
       await this.saveTransition(state, "RETURNED", policy.reasons.join("|") || "VALIDATION_FAILED");
-      return {
-        status: "RETURNED",
-        candidate,
-        receipts: validation.receipts,
-        nextRevision: order.revision + 1
-      };
+      return { status: "RETURNED", candidate, receipts: validation.receipts, nextRevision: order.revision + 1 };
     }
 
     state = await this.saveTransition(state, "APPROVED");
