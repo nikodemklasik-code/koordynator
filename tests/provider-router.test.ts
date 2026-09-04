@@ -13,7 +13,9 @@ class FakeProvider implements ProviderAdapter {
 
 const request: CapabilityRequest = {
   requestId: "REQ-1",
+  taskId: "TASK-PROVIDER-ROUTER",
   tenantId: "tenant-a",
+  role: "BUILDER",
   capability: "ai.code",
   input: { task: "build" },
   securityClass: "S2",
