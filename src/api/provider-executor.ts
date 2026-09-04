@@ -2,6 +2,7 @@ import { canonicalDigest } from "../crypto/canonical-digest.js";
 import type { CapabilityRequest } from "./capability-api.js";
 import type { ProviderAdapter, ProviderAuthMode, ProviderBillingMode, ProviderResult, ProviderTransport } from "./provider-contract.js";
 import type { ProviderExecutionReceipt } from "./provider-receipt.js";
+import type { ProviderReceiptStore } from "./provider-receipt-store.js";
 import { ProviderRouter } from "./provider-router.js";
 
 export type Clock = { now(): string };
@@ -25,7 +26,16 @@ function providerMetadata(provider: ProviderAdapter): {
 }
 
 export class ProviderExecutor {
-  constructor(private readonly router: ProviderRouter, private readonly clock: Clock) {}
+  constructor(
+    private readonly router: ProviderRouter,
+    private readonly clock: Clock,
+    private readonly receiptStore?: ProviderReceiptStore
+  ) {}
+
+  private async record(receipt: ProviderExecutionReceipt, receipts: ProviderExecutionReceipt[]): Promise<void> {
+    receipts.push(receipt);
+    await this.receiptStore?.put(receipt);
+  }
 
   async execute<T>(request: CapabilityRequest): Promise<ProviderExecutionOutcome<T>> {
     const providers = await this.router.candidates(request);
@@ -44,6 +54,8 @@ export class ProviderExecutor {
         const completedAt = this.clock.now();
         const base = {
           executionId: `${request.requestId}:${index}`,
+          taskId: request.taskId,
+          tenantId: request.tenantId,
           requestFp,
           capability: request.capability,
           providerId: provider.descriptor.providerId,
@@ -63,7 +75,8 @@ export class ProviderExecutor {
           result: "SUCCESS" as const,
           ...(failedProviders.length === 0 ? {} : { failoverFrom: [...failedProviders] })
         };
-        receipts.push({ ...base, receiptFp: canonicalDigest(base) });
+        const receipt: ProviderExecutionReceipt = { ...base, receiptFp: canonicalDigest(base) };
+        await this.record(receipt, receipts);
         return { result, receipts };
       } catch (error) {
         const completedAt = this.clock.now();
@@ -71,6 +84,8 @@ export class ProviderExecutor {
         const result = failureCode.includes("TIMEOUT") ? "TIMEOUT" as const : failureCode.includes("BLOCK") ? "BLOCKED" as const : "FAIL" as const;
         const base = {
           executionId: `${request.requestId}:${index}`,
+          taskId: request.taskId,
+          tenantId: request.tenantId,
           requestFp,
           capability: request.capability,
           providerId: provider.descriptor.providerId,
@@ -87,7 +102,8 @@ export class ProviderExecutor {
           failureCode,
           ...(failedProviders.length === 0 ? {} : { failoverFrom: [...failedProviders] })
         };
-        receipts.push({ ...base, receiptFp: canonicalDigest(base) });
+        const receipt: ProviderExecutionReceipt = { ...base, receiptFp: canonicalDigest(base) };
+        await this.record(receipt, receipts);
         failedProviders.push(provider.descriptor.providerId);
 
         const mayFailover = this.router.profile.mode === "MULTI"
