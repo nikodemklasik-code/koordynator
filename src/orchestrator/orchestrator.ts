@@ -13,6 +13,7 @@ import { executeValidationDag, type Validator } from "../validators/validation-d
 import { evaluateReleasePolicy } from "../policy/release-policy.js";
 import { ReleaseController, type ReleaseRecord } from "../release/release-controller.js";
 import type { StateStore } from "../store/state-store.js";
+import type { SignedWorkOrderStore } from "../store/work-order-store.js";
 
 export type OrchestratorRunRequest = {
   signedWorkOrder: SignedWorkOrder;
@@ -39,7 +40,8 @@ export class OrchestratorRuntime {
     private readonly releaseController: ReleaseController,
     private readonly resolvePublicKey: PublicKeyResolver,
     private readonly clock: () => string,
-    private readonly verifyAttestation: (artifact: StoredArtifact) => boolean = () => true
+    private readonly verifyAttestation: (artifact: StoredArtifact) => boolean = () => true,
+    private readonly workOrderStore?: SignedWorkOrderStore
   ) {}
 
   private async saveTransition(current: OrchestratorState, next: OrchestratorState["state"], reasonCode?: string): Promise<OrchestratorState> {
@@ -51,6 +53,7 @@ export class OrchestratorRuntime {
   async run(request: OrchestratorRunRequest): Promise<OrchestratorRunResult> {
     const accepted = acceptSignedWorkOrderExecution(request.signedWorkOrder, this.resolvePublicKey);
     const order = accepted.envelope.order;
+    await this.workOrderStore?.put(accepted.envelope);
     const previous = await this.stateStore.load(order.taskId);
     if (previous && previous.revision >= order.revision && previous.state !== "RETURNED") {
       throw new Error(`STALE_WORK_ORDER_REVISION:${previous.revision}`);
