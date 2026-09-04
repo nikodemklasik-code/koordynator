@@ -7,6 +7,7 @@ import { validateWorkOrder, type WorkOrder } from "../domain/work-order.js";
 import type { Digest } from "../domain/ids.js";
 import { signWorkOrder, type SignedWorkOrder } from "../security/work-order-signature.js";
 import { FileStateStore } from "../store/file-state-store.js";
+import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
 import { FileArtifactRegistry } from "../build/file-artifact-registry.js";
 import { ProcessHermeticBuilder, type HermeticBuildPlan } from "../build/process-hermetic-builder.js";
 import type { BuildInputVector } from "../build/build-input.js";
@@ -108,7 +109,9 @@ async function commandRun(positional: string[], flags: Map<string, string | true
       if (typeof expected === "string" && expected !== keyId) throw new Error("WORK_ORDER_KEY_ID_MISMATCH");
       return publicKey;
     },
-    clock
+    clock,
+    () => true,
+    new FileSignedWorkOrderStore(join(root, "work-orders"))
   );
 
   const result = await runtime.run({
@@ -130,6 +133,15 @@ async function commandStatus(positional: string[], flags: Map<string, string | t
   const current = await store.load(taskId as `TASK-${string}`);
   const history = await store.history(taskId as `TASK-${string}`);
   process.stdout.write(`${JSON.stringify({ current, history }, null, 2)}\n`);
+}
+
+async function commandReplay(positional: string[], flags: Map<string, string | true>): Promise<void> {
+  const taskId = positional[0];
+  const revision = Number(positional[1]);
+  if (!taskId?.startsWith("TASK-") || !Number.isInteger(revision) || revision < 0) throw new Error("USAGE:orchestrator replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]");
+  const publicKey = createPublicKey(await readFile(resolve(requiredFlag(flags, "public-key")), "utf8"));
+  const receipt = await new FileSignedWorkOrderStore(join(stateDir(flags), "work-orders")).replay(taskId as `TASK-${string}`, revision, () => publicKey);
+  process.stdout.write(`${JSON.stringify(receipt.receipt, null, 2)}\n`);
 }
 
 async function commandReleases(flags: Map<string, string | true>): Promise<void> {
@@ -158,22 +170,31 @@ async function commandProvider(positional: string[]): Promise<void> {
     if (results.some((result) => result.health !== "HEALTHY")) process.exitCode = 4;
     return;
   }
-  throw new Error("USAGE:orchestrator provider <list|doctor>");
+  if (action === "connect") {
+    const providerId = positional[1];
+    const spec = specs.find((candidate) => candidate.descriptor.providerId === providerId);
+    if (!spec) throw new Error("UNKNOWN_PROVIDER_ID");
+    await new OfficialCliProviderAdapter(spec).connect();
+    process.stdout.write(`${providerId}:CONNECTED_VIA_OFFICIAL_CLI\n`);
+    return;
+  }
+  throw new Error("USAGE:orchestrator provider <list|doctor|connect PROVIDER_ID>");
 }
 
 function help(): void {
-  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  provider list\n  provider doctor\n  version\n`);
+  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
 }
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   const { positional, flags } = parseFlags(rest);
   if (!command || command === "help" || command === "--help") return help();
-  if (command === "version" || command === "--version") return process.stdout.write(`${VERSION}\n`) as unknown as void;
+  if (command === "version" || command === "--version") { process.stdout.write(`${VERSION}\n`); return; }
   if (command === "plan") return commandPlan(positional);
   if (command === "sign") return commandSign(positional, flags);
   if (command === "run") return commandRun(positional, flags);
   if (command === "status") return commandStatus(positional, flags);
+  if (command === "replay") return commandReplay(positional, flags);
   if (command === "releases") return commandReleases(flags);
   if (command === "rollback") return commandRollback(positional, flags);
   if (command === "provider") return commandProvider(positional);
