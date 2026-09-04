@@ -6,7 +6,9 @@ import type { SignedWorkOrder } from "../security/work-order-signature.js";
 import { acceptSignedWorkOrderExecution, type PublicKeyResolver } from "../security/work-order-execution-gate.js";
 import type { ArtifactRegistry, StoredArtifact } from "../build/artifact-registry.js";
 import type { BuildInputVector } from "../build/build-input.js";
+import { buildKey } from "../build/build-input.js";
 import { buildOrReuse } from "../build/build-or-reuse.js";
+import { verifyStoredArtifactAttestation } from "../build/attestation.js";
 import type { HermeticBuilder } from "../build/hermetic-builder.js";
 import { transitionState } from "../engine/state-machine.js";
 import { executeValidationDag, type Validator } from "../validators/validation-dag.js";
@@ -40,7 +42,7 @@ export class OrchestratorRuntime {
     private readonly releaseController: ReleaseController,
     private readonly resolvePublicKey: PublicKeyResolver,
     private readonly clock: () => string,
-    private readonly verifyAttestation: (artifact: StoredArtifact) => boolean = () => true,
+    private readonly verifyAttestation: (artifact: StoredArtifact) => boolean = verifyStoredArtifactAttestation,
     private readonly workOrderStore?: SignedWorkOrderStore
   ) {}
 
@@ -83,6 +85,7 @@ export class OrchestratorRuntime {
       artifactFp: build.artifact.artifactFp
     }, this.clock());
 
+    await this.artifactRegistry.freeze(buildKey(request.buildVector), build.artifact.artifactFp);
     state = await this.saveTransition(state, "CANDIDATE_FROZEN");
     state = await this.saveTransition(state, "VALIDATING");
 
