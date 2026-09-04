@@ -19,7 +19,8 @@ export class FileArtifactRegistry implements ArtifactRegistry {
   async get(buildKey: Digest): Promise<StoredArtifact | null> {
     try {
       const parsed = JSON.parse(await readFile(this.path(buildKey), "utf8")) as StoredArtifactFile;
-      return { ...parsed, bytes: Buffer.from(parsed.bytesBase64, "base64") };
+      const { bytesBase64, ...metadata } = parsed;
+      return { ...metadata, bytes: Buffer.from(bytesBase64, "base64") };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -28,8 +29,11 @@ export class FileArtifactRegistry implements ArtifactRegistry {
 
   async put(artifact: StoredArtifact): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
-    const payload: StoredArtifactFile = { ...artifact, bytesBase64: Buffer.from(artifact.bytes).toString("base64") };
-    delete (payload as Partial<StoredArtifact>).bytes;
+    const { bytes, ...metadata } = artifact;
+    const payload: StoredArtifactFile = {
+      ...metadata,
+      bytesBase64: Buffer.from(bytes).toString("base64")
+    };
     await writeFile(this.path(artifact.buildKey), JSON.stringify(payload), { encoding: "utf8", mode: 0o600 });
   }
 
