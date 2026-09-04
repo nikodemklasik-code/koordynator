@@ -23,6 +23,7 @@ export type CapabilityRequest<T = unknown> = {
     allowProviderFailover?: boolean;
     allowPaidApiFallback?: boolean;
     providerDiversityRequired?: boolean;
+    diversityAgainstProviderId?: string;
     billingPolicy?: BillingPolicy;
   };
 };
