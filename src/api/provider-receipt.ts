@@ -1,8 +1,10 @@
-import type { Digest } from "../domain/ids.js";
+import type { Digest, TaskId } from "../domain/ids.js";
 import type { ProviderAccessMode, ProviderAuthMode, ProviderBillingMode, ProviderTransport } from "./provider-contract.js";
 
 export type ProviderExecutionReceipt = {
   executionId?: string;
+  taskId: TaskId;
+  tenantId: string;
   requestFp: Digest;
   workOrderFp?: Digest;
   capability: string;
