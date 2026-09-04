@@ -1,0 +1,28 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://koordynator.local/schemas/evidence-receipt.schema.json",
+  "title":"EvidenceReceipt",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["gate","kind","status","candidateSha","componentFp","dependencyFp","configFp","toolchainFp","policyFp","testDefinitionFp","fixtureFp","validatorVersionFp","environmentFp","validUntil","revoked","receiptFp"],
+  "properties":{
+    "gate":{"type":"string"},
+    "kind":{"enum":["contract","security","performance","dependency","integration","resilience","migration"]},
+    "status":{"enum":["PASS","FAIL","UNEXECUTED","EXPIRED"]},
+    "candidateSha":{"$ref":"#/$defs/digest"},
+    "componentFp":{"$ref":"#/$defs/digest"},
+    "dependencyFp":{"$ref":"#/$defs/digest"},
+    "configFp":{"$ref":"#/$defs/digest"},
+    "toolchainFp":{"$ref":"#/$defs/digest"},
+    "policyFp":{"$ref":"#/$defs/digest"},
+    "testDefinitionFp":{"$ref":"#/$defs/digest"},
+    "fixtureFp":{"$ref":"#/$defs/digest"},
+    "validatorVersionFp":{"$ref":"#/$defs/digest"},
+    "scannerDbFp":{"$ref":"#/$defs/digest"},
+    "environmentFp":{"$ref":"#/$defs/digest"},
+    "validUntil":{"type":"string","format":"date-time"},
+    "revoked":{"type":"boolean"},
+    "receiptFp":{"$ref":"#/$defs/digest"}
+  },
+  "$defs":{"digest":{"type":"string","pattern":"^sha256:[a-fA-F0-9]{64}$"}}
+}
