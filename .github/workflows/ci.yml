@@ -7,7 +7,7 @@ on:
       - orchestrator/v3-mvp
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -15,22 +15,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --package-lock-only --ignore-scripts
-      - name: Commit generated lockfile on branch
-        if: github.event_name == 'push'
-        run: |
-          if ! git diff --quiet -- package-lock.json || [ -n "$(git ls-files --others --exclude-standard package-lock.json)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "build: commit reproducible npm lockfile"
-            git push origin HEAD:${GITHUB_REF_NAME}
-          fi
+          cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
