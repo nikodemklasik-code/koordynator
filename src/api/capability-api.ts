@@ -6,10 +6,12 @@ export type CapabilityRequest<T = unknown> = {
   capability: string;
   input: T;
   securityClass: SecurityClass;
+  idempotencyKey?: string;
   requirements: {
     maxLatencyMs?: number;
     maxCost?: number;
     dataResidency?: string[];
     externalProviderAllowed: boolean;
+    allowProviderFailover?: boolean;
   };
 };

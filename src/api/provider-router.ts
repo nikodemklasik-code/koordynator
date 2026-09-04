@@ -7,13 +7,13 @@ export type ProviderProfile =
   | { mode: "MULTI"; strategy: "PRIMARY" | "POLICY"; providerOrder?: string[] };
 
 export class ProviderRouter {
-  constructor(private readonly registry: ProviderRegistry, private readonly profile: ProviderProfile) {}
+  constructor(private readonly registry: ProviderRegistry, readonly profile: ProviderProfile) {}
 
-  async select(request: CapabilityRequest): Promise<ProviderAdapter> {
+  async candidates(request: CapabilityRequest): Promise<ProviderAdapter[]> {
     if (this.profile.mode === "MONO") {
       const provider = this.registry.get(this.profile.providerId);
       await this.assertAllowed(provider, request);
-      return provider;
+      return [provider];
     }
 
     const order = this.profile.providerOrder ?? [];
@@ -26,15 +26,21 @@ export class ProviderRouter {
       return a.descriptor.providerId.localeCompare(b.descriptor.providerId);
     });
 
+    const allowed: ProviderAdapter[] = [];
     for (const provider of providers) {
       try {
         await this.assertAllowed(provider, request);
-        return provider;
+        allowed.push(provider);
       } catch {
-        // Multi-provider routing deliberately tries the next independently allowed provider.
+        // Provider isolation: one denied/unhealthy provider does not poison other candidates.
       }
     }
-    throw new Error("NO_ALLOWED_PROVIDER");
+    if (allowed.length === 0) throw new Error("NO_ALLOWED_PROVIDER");
+    return allowed;
+  }
+
+  async select(request: CapabilityRequest): Promise<ProviderAdapter> {
+    return (await this.candidates(request))[0]!;
   }
 
   private async assertAllowed(provider: ProviderAdapter, request: CapabilityRequest): Promise<void> {
