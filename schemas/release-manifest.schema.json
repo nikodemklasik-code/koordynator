@@ -1,0 +1,17 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://koordynator.local/schemas/release-manifest.schema.json",
+  "title":"ReleaseManifest",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["candidateSha","artifactFp","approvalFp","releasePolicyFp","channel","createdAt"],
+  "properties":{
+    "candidateSha":{"$ref":"#/$defs/digest"},
+    "artifactFp":{"$ref":"#/$defs/digest"},
+    "approvalFp":{"$ref":"#/$defs/digest"},
+    "releasePolicyFp":{"$ref":"#/$defs/digest"},
+    "channel":{"enum":["canary","production"]},
+    "createdAt":{"type":"string","format":"date-time"}
+  },
+  "$defs":{"digest":{"type":"string","pattern":"^sha256:[a-fA-F0-9]{64}$"}}
+}
