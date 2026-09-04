@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { CapabilityRequest } from "./capability-api.js";
+import type { CapabilityRequest, SecurityClass } from "./capability-api.js";
 import type { ProviderAdapter, ProviderDescriptor, ProviderHealth, ProviderResult } from "./provider-contract.js";
 import { SubscriptionSeatBroker } from "./subscription-seat-broker.js";
 
@@ -7,6 +7,7 @@ export type OfficialCliLaunchSpec = {
   descriptor: ProviderDescriptor;
   executable: string;
   versionArgs: string[];
+  connectArgs?: string[];
   expectedVersionPattern?: RegExp;
   buildArgs(request: CapabilityRequest): string[];
   parseOutput(stdout: string): unknown;
@@ -15,6 +16,14 @@ export type OfficialCliLaunchSpec = {
   envAllowList?: string[];
 };
 
+function minimalEnv(allowList: string[] = []): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of ["PATH", "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "BROWSER", "TERM", ...allowList]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+}
+
 async function spawnBounded(
   executable: string,
   args: string[],
@@ -22,11 +31,8 @@ async function spawnBounded(
   maxOutputBytes: number,
   envAllowList: string[] = []
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME };
-  for (const key of envAllowList) if (process.env[key] !== undefined) env[key] = process.env[key];
-
   return await new Promise((resolve, reject) => {
-    const child = spawn(executable, args, { shell: false, stdio: ["ignore", "pipe", "pipe"], env });
+    const child = spawn(executable, args, { shell: false, stdio: ["ignore", "pipe", "pipe"], env: minimalEnv(envAllowList) });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let size = 0;
@@ -69,6 +75,18 @@ export class OfficialCliProviderAdapter implements ProviderAdapter {
     }
   }
 
+  async connect(): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(this.spec.executable, this.spec.connectArgs ?? [], {
+        shell: false,
+        stdio: "inherit",
+        env: minimalEnv(this.spec.envAllowList)
+      });
+      child.on("error", reject);
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`PROVIDER_CONNECT_EXIT_${code ?? 1}`)));
+    });
+  }
+
   async canExecute(request: CapabilityRequest): Promise<boolean> {
     return this.descriptor.enabled
       && this.descriptor.capabilities.includes(request.capability)
@@ -106,7 +124,9 @@ export class OfficialCliProviderAdapter implements ProviderAdapter {
 }
 
 function promptFor(request: CapabilityRequest): string {
-  return JSON.stringify({ capability: request.capability, purposeId: request.purposeId, input: request.input });
+  const payload: Record<string, unknown> = { capability: request.capability, input: request.input };
+  if (request.purposeId !== undefined) payload.purposeId = request.purposeId;
+  return JSON.stringify(payload);
 }
 
 function parseJsonOrText(stdout: string): unknown {
@@ -114,45 +134,54 @@ function parseJsonOrText(stdout: string): unknown {
   try { return JSON.parse(trimmed) as unknown; } catch { return trimmed; }
 }
 
-export function officialSubscriptionLaunchSpecs(): OfficialCliLaunchSpec[] {
-  const common = {
+function subscriptionDescriptor(providerId: string): ProviderDescriptor {
+  const allowedSecurityClasses: SecurityClass[] = ["S0", "S1", "S2"];
+  return {
+    providerId,
     capabilities: ["ai.code", "ai.reasoning", "ai.review"],
-    allowedSecurityClasses: ["S0", "S1", "S2"] as const,
+    allowedSecurityClasses,
     external: true,
     priority: 10,
     enabled: true,
-    accessMode: "SUBSCRIPTION" as const,
-    authMode: "SUBSCRIPTION_OAUTH" as const,
-    billingMode: "SUBSCRIPTION_INCLUDED" as const,
+    accessMode: "SUBSCRIPTION",
+    authMode: "SUBSCRIPTION_OAUTH",
+    billingMode: "SUBSCRIPTION_INCLUDED",
     supportsHeadless: true,
     supportsStructuredOutput: true
   };
+}
+
+export function officialSubscriptionLaunchSpecs(): OfficialCliLaunchSpec[] {
   return [
     {
-      descriptor: { ...common, providerId: "openai-codex-sub" },
+      descriptor: subscriptionDescriptor("openai-codex-sub"),
       executable: "codex",
       versionArgs: ["--version"],
+      connectArgs: ["login"],
       buildArgs: (request) => ["exec", promptFor(request)],
       parseOutput: parseJsonOrText
     },
     {
-      descriptor: { ...common, providerId: "claude-code-sub" },
+      descriptor: subscriptionDescriptor("claude-code-sub"),
       executable: "claude",
       versionArgs: ["--version"],
+      connectArgs: [],
       buildArgs: (request) => ["-p", promptFor(request), "--output-format", "json"],
       parseOutput: parseJsonOrText
     },
     {
-      descriptor: { ...common, providerId: "gemini-cli-sub" },
+      descriptor: subscriptionDescriptor("gemini-cli-sub"),
       executable: "gemini",
       versionArgs: ["--version"],
+      connectArgs: [],
       buildArgs: (request) => ["-p", promptFor(request), "--output-format", "json", "--sandbox"],
       parseOutput: parseJsonOrText
     },
     {
-      descriptor: { ...common, providerId: "github-copilot-sub" },
+      descriptor: subscriptionDescriptor("github-copilot-sub"),
       executable: "copilot",
       versionArgs: ["--version"],
+      connectArgs: [],
       buildArgs: (request) => ["-p", promptFor(request), "--output-format=json"],
       parseOutput: parseJsonOrText
     }
