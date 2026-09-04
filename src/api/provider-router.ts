@@ -71,6 +71,11 @@ export class ProviderRouter {
     if (!d.capabilities.includes(request.capability)) throw new Error("CAPABILITY_UNSUPPORTED");
     if (!d.allowedSecurityClasses.includes(request.securityClass)) throw new Error("SECURITY_CLASS_DENIED");
     if (d.external && !request.requirements.externalProviderAllowed) throw new Error("EXTERNAL_PROVIDER_DENIED");
+    if (request.requirements.providerDiversityRequired === true
+      && request.requirements.diversityAgainstProviderId !== undefined
+      && d.providerId === request.requirements.diversityAgainstProviderId) {
+      throw new Error("PROVIDER_DIVERSITY_REQUIRED");
+    }
     this.assertBillingAllowed(provider, request);
     const health = await provider.health();
     if (["UNAVAILABLE", "AUTH_REQUIRED", "RATE_LIMITED", "BLOCKED", "QUARANTINED"].includes(health)) {
