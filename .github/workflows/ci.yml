@@ -7,7 +7,7 @@ on:
       - orchestrator/v3-mvp
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   verify:
@@ -15,17 +15,23 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || github.event.pull_request.head.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install --global npm@11.6.0
-      - run: npm --version
       - run: rm -f package-lock.json && npm install --package-lock-only --ignore-scripts
-      - uses: actions/upload-artifact@v4
-        with:
-          name: package-lock-vitest-4.1.11
-          path: package-lock.json
-          if-no-files-found: error
+      - name: Commit generated lockfile on branch
+        if: github.event_name == 'push'
+        run: |
+          if ! git diff --quiet -- package-lock.json || [ -n "$(git ls-files --others --exclude-standard package-lock.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "build: lock Vitest 4.1.11 dependency graph"
+            git push origin HEAD:${GITHUB_REF_NAME}
+          fi
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
       - run: npm run typecheck
