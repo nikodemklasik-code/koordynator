@@ -1,0 +1,9 @@
+{
+  "id": "hello-module",
+  "version": "0.1.0",
+  "core": { "min": "0.1.1" },
+  "requires": { "capabilities": ["ai.reasoning"] },
+  "permissions": ["ai.reasoning"],
+  "entry": "dist/module.json",
+  "health": { "kind": "file", "path": "dist/module.json" }
+}
