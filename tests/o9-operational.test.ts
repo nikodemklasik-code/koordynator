@@ -108,6 +108,7 @@ describe("O9 and operational start contracts", () => {
     const clock = { now: () => "2026-09-05T00:00:00.000Z" };
     const builder = await new ProviderExecutor(router, clock, store).execute(request("BUILDER", "ai.code"));
     const builderProvider = builder.receipts.at(-1)?.providerId;
+    if (!builderProvider) throw new Error("BUILDER_PROVIDER_MISSING");
     const reviewerRequest = request("REVIEWER", "ai.review", { providerDiversityRequired: true, diversityAgainstProviderId: builderProvider });
     const reviewer = await new ProviderExecutor(router, clock, store).execute(reviewerRequest);
     expect(reviewer.receipts.at(-1)?.providerId).not.toBe(builderProvider);
