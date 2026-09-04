@@ -29,6 +29,7 @@ jobs:
       - run: node dist/cli/main.js version
       - run: npm run e2e
       - run: npm run golden
+      - run: npm run provider-golden
 
   release-hygiene:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -62,6 +63,7 @@ jobs:
             orchestrator/v3-mvp \
             hotfix/v0.1.1-start-contract \
             feature/o9-golden-path \
+            release/operational-hardening \
             noop
           do
             if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then

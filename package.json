@@ -14,7 +14,8 @@
     "cli": "node dist/cli/main.js",
     "e2e": "node scripts/e2e-smoke.mjs",
     "golden": "node scripts/golden-path.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden"
+    "provider-golden": "node scripts/provider-golden.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden && npm run provider-golden"
   },
   "devDependencies": {
     "@types/node": "22.10.0",
