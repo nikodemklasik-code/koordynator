@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://koordynator.local/schemas/work-order.schema.json",
+  "title": "WorkOrder",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["taskId","workspaceId","revision","objective","scope","requiredInputs","capabilities","budget","requiredGates","expectedEvidence","acceptanceCriteria","failureCriteria","securityContractRef","performanceContractRef","rollbackRequirement","humanApprovalPolicy","policyRef"],
+  "properties": {
+    "taskId": {"type":"string","pattern":"^TASK-"},
+    "workspaceId": {"type":"string","pattern":"^WS-"},
+    "revision": {"type":"integer","minimum":0},
+    "objective": {"type":"string","minLength":1},
+    "scope": {"type":"object","additionalProperties":false,"required":["modules","allowedPaths"],"properties":{"modules":{"type":"array","items":{"type":"string"}},"allowedPaths":{"type":"array","minItems":1,"items":{"type":"string"}}}},
+    "requiredInputs": {"type":"array","items":{"type":"object","additionalProperties":false,"required":["uri","digest"],"properties":{"uri":{"type":"string"},"digest":{"$ref":"#/$defs/digest"}}}},
+    "capabilities": {"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "budget": {"type":"object","additionalProperties":false,"required":["timeSec","costLimit","retries","maxDagDepth"],"properties":{"timeSec":{"type":"number","exclusiveMinimum":0},"costLimit":{"type":"number","minimum":0},"retries":{"type":"integer","minimum":0},"maxDagDepth":{"type":"integer","minimum":1}}},
+    "requiredGates": {"type":"array","items":{"type":"string"},"uniqueItems":true},
+    "expectedEvidence": {"type":"array","items":{"type":"string"}},
+    "acceptanceCriteria": {"type":"array","items":{"type":"string"}},
+    "failureCriteria": {"type":"array","items":{"type":"string"}},
+    "securityContractRef": {"$ref":"#/$defs/digest"},
+    "performanceContractRef": {"$ref":"#/$defs/digest"},
+    "rollbackRequirement": {"enum":["NONE","REVERSIBLE","BACKUP_RESTORE_REQUIRED"]},
+    "humanApprovalPolicy": {"enum":["AUTO_IF_POLICY_PASS","HUMAN_REQUIRED"]},
+    "policyRef": {"type":"object","additionalProperties":false,"required":["policyId","bundleHash"],"properties":{"policyId":{"type":"string","minLength":1},"bundleHash":{"$ref":"#/$defs/digest"}}}
+  },
+  "$defs": {"digest":{"type":"string","pattern":"^sha256:[a-fA-F0-9]{64}$"}}
+}
