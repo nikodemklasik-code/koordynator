@@ -6,12 +6,15 @@
   "bin": {
     "orchestrator": "dist/cli/main.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json",
     "cli": "node dist/cli/main.js",
+    "control": "node dist/control/main.js",
     "e2e": "node scripts/e2e-smoke.mjs",
     "golden": "node scripts/golden-path.mjs",
     "provider-golden": "node scripts/provider-golden.mjs",
