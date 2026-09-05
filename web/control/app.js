@@ -39,7 +39,7 @@ function row(task) {
   const reason = task.reasonCode ? `<span class="reason-badge" title="${escapeHtml(task.reasonCode)}">${escapeHtml(task.reasonCode)}</span>` : "";
   const taskHref = `/tasks/${encodeURIComponent(task.taskId)}`;
   return `<tr data-task-id="${escapeHtml(task.taskId)}" tabindex="0" aria-label="Open ${escapeHtml(task.taskId)} detail">
-    <td><a class="task-id task-link" href="${taskHref}">${escapeHtml(task.taskId)}</a></td>
+    <td><a class="task-id task-link" style="color:inherit;text-decoration:none" href="${taskHref}">${escapeHtml(task.taskId)}</a></td>
     <td><span class="status-cell"><span class="status-dot ${tone(task)}"></span><span class="status-label">${escapeHtml(task.displayStatus)}</span>${reason}</span></td>
     <td class="objective" title="${escapeHtml(task.objective)}">${escapeHtml(task.objective)}</td>
     <td class="target" title="${escapeHtml(task.target)}">${escapeHtml(task.target)}</td>
