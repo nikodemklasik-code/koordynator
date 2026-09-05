@@ -65,6 +65,7 @@ jobs:
             feature/o9-golden-path \
             release/operational-hardening \
             ui/tasks-screen-e2e \
+            ui/task-detail-e2e \
             chore/control-branch-hygiene \
             noop
           do

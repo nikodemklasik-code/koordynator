@@ -1,9 +1,14 @@
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
-import type { TaskState } from "../domain/state.js";
+import { dirname, join } from "node:path";
+import type { TaskState, OrchestratorState } from "../domain/state.js";
 import type { TaskId } from "../domain/ids.js";
+import type { WorkOrder } from "../domain/work-order.js";
+import type { FrozenCandidate } from "../domain/candidate.js";
+import type { EvidenceReceipt } from "../domain/evidence.js";
+import type { ReleaseRecord } from "../release/release-controller.js";
 import { FileStateStore } from "../store/file-state-store.js";
 import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
+import { FileTaskExecutionStore, type StoredTaskExecution } from "../store/task-execution-store.js";
 
 export type TaskFilter = "all" | "building" | "frozen" | "validating" | "awaiting-approval" | "released" | "returned";
 
@@ -37,6 +42,24 @@ export type TaskListResponse = {
   tasks: TaskListItem[];
   counts: TaskCounts;
   total: number;
+};
+
+export type TaskDetailResponse = {
+  task: TaskListItem;
+  history: OrchestratorState[];
+  workOrder?: {
+    order: WorkOrder;
+    orderFp: string;
+    keyId: string;
+    signatureStored: true;
+  };
+  executionStatus?: StoredTaskExecution["status"];
+  candidate?: FrozenCandidate;
+  receipts: EvidenceReceipt[];
+  release?: ReleaseRecord;
+  nextRevision?: number;
+  reasons: string[];
+  buildMode?: "BUILD" | "REUSE";
 };
 
 function displayStatus(state: TaskState): string {
@@ -102,16 +125,27 @@ async function currentTaskIds(stateRoot: string): Promise<TaskId[]> {
     .sort();
 }
 
+function buildModeFrom(history: OrchestratorState[]): "BUILD" | "REUSE" | undefined {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const item = history[index]!;
+    if (item.state === "BUILD_READY" && (item.reasonCode === "BUILD" || item.reasonCode === "REUSE")) return item.reasonCode;
+  }
+  return undefined;
+}
+
 export class TaskReadModel {
   private readonly stateStore: FileStateStore;
   private readonly workOrderStore: FileSignedWorkOrderStore;
+  private readonly executionStore: FileTaskExecutionStore;
 
   constructor(
     private readonly stateRoot: string,
-    workOrderRoot: string
+    workOrderRoot: string,
+    executionRoot = join(dirname(stateRoot), "executions")
   ) {
     this.stateStore = new FileStateStore(stateRoot);
     this.workOrderStore = new FileSignedWorkOrderStore(workOrderRoot);
+    this.executionStore = new FileTaskExecutionStore(executionRoot);
   }
 
   async list(options: { filter?: TaskFilter; query?: string } = {}): Promise<TaskListResponse> {
@@ -160,11 +194,40 @@ export class TaskReadModel {
     const response = await this.list({ query: taskId });
     return response.tasks.find((task) => task.taskId === taskId) ?? null;
   }
+
+  async detail(taskId: TaskId): Promise<TaskDetailResponse | null> {
+    const task = await this.get(taskId);
+    if (!task) return null;
+    const history = await this.stateStore.history(taskId);
+    const signed = await this.workOrderStore.get(taskId, task.revision);
+    const execution = await this.executionStore.get(taskId, task.revision);
+    const mode = buildModeFrom(history);
+    return {
+      task,
+      history,
+      ...(signed === null ? {} : {
+        workOrder: {
+          order: signed.order,
+          orderFp: signed.orderFp,
+          keyId: signed.keyId,
+          signatureStored: true as const
+        }
+      }),
+      ...(execution === null ? {} : { executionStatus: execution.status }),
+      ...(execution?.candidate === undefined ? {} : { candidate: execution.candidate }),
+      receipts: execution?.receipts ?? [],
+      ...(execution?.release === undefined ? {} : { release: execution.release }),
+      ...(execution?.nextRevision === undefined ? {} : { nextRevision: execution.nextRevision }),
+      reasons: execution?.reasons ?? (task.reasonCode ? [task.reasonCode] : []),
+      ...(mode === undefined ? {} : { buildMode: mode })
+    };
+  }
 }
 
-export function controlRoots(stateDir: string): { stateRoot: string; workOrderRoot: string } {
+export function controlRoots(stateDir: string): { stateRoot: string; workOrderRoot: string; executionRoot: string } {
   return {
     stateRoot: join(stateDir, "state"),
-    workOrderRoot: join(stateDir, "work-orders")
+    workOrderRoot: join(stateDir, "work-orders"),
+    executionRoot: join(stateDir, "executions")
   };
 }

@@ -37,15 +37,16 @@ function displayDate(value) {
 
 function row(task) {
   const reason = task.reasonCode ? `<span class="reason-badge" title="${escapeHtml(task.reasonCode)}">${escapeHtml(task.reasonCode)}</span>` : "";
-  return `<tr data-task-id="${escapeHtml(task.taskId)}">
-    <td><span class="task-id">${escapeHtml(task.taskId)}</span></td>
+  const taskHref = `/tasks/${encodeURIComponent(task.taskId)}`;
+  return `<tr data-task-id="${escapeHtml(task.taskId)}" tabindex="0" aria-label="Open ${escapeHtml(task.taskId)} detail">
+    <td><a class="task-id task-link" style="color:inherit;text-decoration:none" href="${taskHref}">${escapeHtml(task.taskId)}</a></td>
     <td><span class="status-cell"><span class="status-dot ${tone(task)}"></span><span class="status-label">${escapeHtml(task.displayStatus)}</span>${reason}</span></td>
     <td class="objective" title="${escapeHtml(task.objective)}">${escapeHtml(task.objective)}</td>
     <td class="target" title="${escapeHtml(task.target)}">${escapeHtml(task.target)}</td>
     <td class="initiated" title="${escapeHtml(task.initiatedBy)}">${escapeHtml(task.initiatedBy)}</td>
     <td class="date">${escapeHtml(displayDate(task.createdAt))}</td>
     <td class="date">${escapeHtml(displayDate(task.updatedAt))}</td>
-    <td><button class="row-action" type="button" data-action="inspect" aria-label="Inspect ${escapeHtml(task.taskId)}">⋮</button></td>
+    <td><button class="row-action" type="button" data-action="inspect" aria-label="Quick inspect ${escapeHtml(task.taskId)}">⋮</button></td>
   </tr>`;
 }
 
@@ -120,6 +121,17 @@ function inspectTask(task) {
     <dt>Created</dt><dd>${escapeHtml(displayDate(task.createdAt))}</dd>
     <dt>Updated</dt><dd>${escapeHtml(displayDate(task.updatedAt))}</dd>
   </dl>`;
+  const actions = taskDialog.querySelector(".dialog-actions");
+  let openButton = $("openTaskButton");
+  if (!openButton) {
+    openButton = document.createElement("button");
+    openButton.id = "openTaskButton";
+    openButton.type = "button";
+    openButton.className = "primary-button";
+    openButton.textContent = "Open Task Detail";
+    actions.insertBefore(openButton, actions.lastElementChild);
+  }
+  openButton.onclick = () => { location.href = `/tasks/${encodeURIComponent(task.taskId)}`; };
   taskDialog.showModal();
 }
 
@@ -151,9 +163,25 @@ $("fullscreenButton").addEventListener("click", async () => {
 taskRows.addEventListener("click", (event) => {
   const action = event.target.closest("[data-action='inspect']");
   const tr = event.target.closest("tr[data-task-id]");
-  if (!tr || (!action && event.target.closest("button"))) return;
+  if (!tr) return;
   const task = state.tasks.find((item) => item.taskId === tr.dataset.taskId);
-  if (task) inspectTask(task);
+  if (!task) return;
+  if (action) {
+    event.preventDefault();
+    event.stopPropagation();
+    inspectTask(task);
+    return;
+  }
+  if (!event.target.closest("a,button")) location.href = `/tasks/${encodeURIComponent(task.taskId)}`;
+});
+
+taskRows.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  if (event.target.closest("a,button")) return;
+  const tr = event.target.closest("tr[data-task-id]");
+  if (!tr) return;
+  event.preventDefault();
+  location.href = `/tasks/${encodeURIComponent(tr.dataset.taskId)}`;
 });
 
 $("copyTaskButton").addEventListener("click", async () => {
