@@ -64,6 +64,8 @@ jobs:
             hotfix/v0.1.1-start-contract \
             feature/o9-golden-path \
             release/operational-hardening \
+            ui/tasks-screen-e2e \
+            chore/control-branch-hygiene \
             noop
           do
             if git ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1; then
