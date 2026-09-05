@@ -7,6 +7,9 @@ export type ArtifactAttestation = {
   sbomFp: Digest;
   provenanceFp: Digest;
   signedAttestationFp: Digest;
+  attestationKeyId?: string;
+  attestationStatementFp?: Digest;
+  attestationSignature?: string;
   revoked: boolean;
 };
 

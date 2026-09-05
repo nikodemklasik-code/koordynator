@@ -4,6 +4,11 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import {
+  environmentFingerprint,
+  measureBuildVector,
+  toolchainFingerprint
+} from "../dist/build/tree-fingerprint.js";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const cli = join(repoRoot, "dist", "cli", "main.js");
@@ -58,31 +63,39 @@ function workOrder(revision, sourceFp) {
   };
 }
 
-async function makeRunConfig(root, revision, version, signedWorkOrder) {
+async function prepareBuild(root, revision, version) {
   const sourceDir = join(root, `source-r${revision}`);
   await mkdir(sourceDir, { recursive: true });
   await writeFile(join(sourceDir, "build.mjs"), `import { mkdir, writeFile } from "node:fs/promises";\nawait mkdir("dist", { recursive: true });\nawait writeFile("dist/app.json", JSON.stringify({name:"smoke-app",version:${version}}));\n`, "utf8");
-  const sourceFp = digest(`source-${version}`);
-  const policyFp = digest("release-policy-v1");
+  const buildPlan = {
+    sourceDir,
+    command: process.execPath,
+    args: ["build.mjs"],
+    artifactPaths: ["dist"],
+    timeoutMs: 30000,
+    maxOutputBytes: 262144
+  };
+  const dependencyFp = digest("deps-none");
+  const configFp = digest("config-v1");
+  const generatedSourcesFp = digest("generated-none");
+  const toolchainFp = toolchainFingerprint({ nodeVersion: process.version, builder: "process", command: buildPlan.command, args: buildPlan.args });
+  const buildEnvironmentFp = environmentFingerprint({
+    platform: process.platform,
+    arch: process.arch,
+    hermetic: true,
+    network: "host-process",
+    envAllowList: []
+  });
+  const measured = await measureBuildVector(sourceDir, { dependencyFp, configFp, generatedSourcesFp, toolchainFp, buildEnvironmentFp });
+  return { buildPlan, buildVector: measured.vector };
+}
+
+function makeRunConfig(prepared, version, signedWorkOrder) {
   return {
     signedWorkOrder,
-    buildVector: {
-      sourceFp,
-      dependencyFp: digest("deps-none"),
-      configFp: digest("config-v1"),
-      toolchainFp: digest(`node-${process.versions.node}`),
-      buildEnvironmentFp: digest(`${process.platform}-${process.arch}`),
-      generatedSourcesFp: digest("generated-none")
-    },
+    buildVector: prepared.buildVector,
     moduleManifestFp: digest("smoke-module-manifest-v1"),
-    buildPlan: {
-      sourceDir,
-      command: process.execPath,
-      args: ["build.mjs"],
-      artifactPaths: ["dist"],
-      timeoutMs: 30000,
-      maxOutputBytes: 262144
-    },
+    buildPlan: prepared.buildPlan,
     validators: [
       {
         gate: "unit",
@@ -102,8 +115,7 @@ async function makeRunConfig(root, revision, version, signedWorkOrder) {
         validForSeconds: 300
       }
     ],
-    promoteToProduction: true,
-    policyFp
+    promoteToProduction: true
   };
 }
 
@@ -113,6 +125,14 @@ async function signOrder(root, order, privateKeyPath, revision) {
   await writeFile(orderPath, `${JSON.stringify(order, null, 2)}\n`, "utf8");
   await run(["sign", orderPath, "--private-key", privateKeyPath, "--key-id", "e2e-owner", "--out", signedPath]);
   return JSON.parse(await readFile(signedPath, "utf8"));
+}
+
+async function executeRevision(root, stateDir, ownerPrivate, ownerPublic, releasePrivate, revision, version) {
+  const prepared = await prepareBuild(root, revision, version);
+  const signed = await signOrder(root, workOrder(revision, prepared.buildVector.sourceFp), ownerPrivate, revision);
+  const configPath = join(root, `run-r${revision}.json`);
+  await writeFile(configPath, `${JSON.stringify(makeRunConfig(prepared, version, signed), null, 2)}\n`, "utf8");
+  return JSON.parse(await run(["run", configPath, "--public-key", ownerPublic, "--release-key", releasePrivate, "--key-id", "e2e-owner", "--state-dir", stateDir]));
 }
 
 async function main() {
@@ -128,22 +148,12 @@ async function main() {
     await writeFile(ownerPublic, exportPem(ownerKeys.publicKey, "public"), { mode: 0o600 });
     await writeFile(releasePrivate, exportPem(releaseKeys.privateKey, "private"), { mode: 0o600 });
 
-    const sourceFp1 = digest("source-1");
-    const signed1 = await signOrder(root, workOrder(0, sourceFp1), ownerPrivate, 0);
-    const run1 = await makeRunConfig(root, 0, 1, signed1);
-    const run1Path = join(root, "run-r0.json");
-    await writeFile(run1Path, `${JSON.stringify(run1, null, 2)}\n`, "utf8");
-    const result1 = JSON.parse(await run(["run", run1Path, "--public-key", ownerPublic, "--release-key", releasePrivate, "--key-id", "e2e-owner", "--state-dir", stateDir]));
+    const result1 = await executeRevision(root, stateDir, ownerPrivate, ownerPublic, releasePrivate, 0, 1);
     if (result1.status !== "RELEASED" || result1.release?.state !== "PRODUCTION") throw new Error("E2E_FIRST_RELEASE_NOT_PRODUCTION");
     if (result1.release.release.manifest.artifactFp !== result1.candidate.artifactFp) throw new Error("E2E_FIRST_ARTIFACT_MISMATCH");
     const firstReleaseSha = result1.release.release.releaseSha;
 
-    const sourceFp2 = digest("source-2");
-    const signed2 = await signOrder(root, workOrder(1, sourceFp2), ownerPrivate, 1);
-    const run2 = await makeRunConfig(root, 1, 2, signed2);
-    const run2Path = join(root, "run-r1.json");
-    await writeFile(run2Path, `${JSON.stringify(run2, null, 2)}\n`, "utf8");
-    const result2 = JSON.parse(await run(["run", run2Path, "--public-key", ownerPublic, "--release-key", releasePrivate, "--key-id", "e2e-owner", "--state-dir", stateDir]));
+    const result2 = await executeRevision(root, stateDir, ownerPrivate, ownerPublic, releasePrivate, 1, 2);
     if (result2.status !== "RELEASED" || result2.release?.state !== "PRODUCTION") throw new Error("E2E_SECOND_RELEASE_NOT_PRODUCTION");
     if (result2.candidate.candidateSha === result1.candidate.candidateSha) throw new Error("E2E_REVISION_DID_NOT_CHANGE_CANDIDATE");
     const secondReleaseSha = result2.release.release.releaseSha;

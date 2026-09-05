@@ -1,11 +1,13 @@
 import type { Digest } from "../domain/ids.js";
 import type { BuildInputVector } from "./build-input.js";
+import type { BuilderAttestation } from "./attestation.js";
 
 export type BuildArtifact = {
   bytes: Uint8Array;
   sbomFp: Digest;
   provenanceFp: Digest;
   builderIdentityFp: Digest;
+  builderAttestation?: BuilderAttestation;
 };
 
 export interface HermeticBuilder {

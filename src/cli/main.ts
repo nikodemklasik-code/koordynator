@@ -10,8 +10,10 @@ import { FileStateStore } from "../store/file-state-store.js";
 import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
 import { FileTaskExecutionStore } from "../store/task-execution-store.js";
 import { FileArtifactRegistry } from "../build/file-artifact-registry.js";
-import { ProcessHermeticBuilder, type HermeticBuildPlan } from "../build/process-hermetic-builder.js";
+import { SealedHermeticBuilder, type SealedBuildPlan } from "../build/sealed-hermetic-builder.js";
 import type { BuildInputVector } from "../build/build-input.js";
+import { environmentFingerprint, measureBuildVector, toolchainFingerprint } from "../build/tree-fingerprint.js";
+import { verifyStoredArtifactAttestation } from "../build/attestation.js";
 import { ArtifactCommandValidator, type CommandValidatorSpec } from "../validators/command-validator.js";
 import { FileReleaseStore } from "../release/file-release-store.js";
 import { ReleaseController } from "../release/release-controller.js";
@@ -19,13 +21,13 @@ import { OrchestratorRuntime } from "../orchestrator/orchestrator.js";
 import { OfficialCliProviderAdapter, officialSubscriptionLaunchSpecs } from "../api/official-cli-adapter.js";
 import { generateModule } from "../module/module-factory.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 type RunConfig = {
   signedWorkOrder: SignedWorkOrder;
   buildVector: BuildInputVector;
   moduleManifestFp: Digest;
-  buildPlan: HermeticBuildPlan;
+  buildPlan: SealedBuildPlan;
   validators: CommandValidatorSpec[];
   humanApprovalFp?: Digest;
   promoteToProduction?: boolean;
@@ -85,13 +87,56 @@ async function commandPlan(positional: string[]): Promise<void> {
 
 async function commandRun(positional: string[], flags: Map<string, string | true>): Promise<void> {
   const source = positional[0];
-  if (!source) throw new Error("USAGE:orchestrator run <run.json> --public-key <pem> --release-key <pem> [--state-dir <dir>]");
+  if (!source) throw new Error("USAGE:orchestrator run <run.json> --public-key <pem> --release-key <pem> [--builder-key <pem>] [--builder-public-key <pem>] [--builder-key-id <id>] [--state-dir <dir>]");
   const configPath = resolve(source);
   const config = await readJson<RunConfig>(configPath);
-  config.buildPlan = { ...config.buildPlan, sourceDir: resolveFrom(configPath, config.buildPlan.sourceDir) };
+  const plan = { ...config.buildPlan, sourceDir: resolveFrom(configPath, config.buildPlan.sourceDir) } as SealedBuildPlan;
 
   const publicKey = createPublicKey(await readFile(resolve(requiredFlag(flags, "public-key")), "utf8"));
   const releasePrivateKey = createPrivateKey(await readFile(resolve(requiredFlag(flags, "release-key")), "utf8"));
+  const builderKeyPath = flags.get("builder-key");
+  const builderPrivateKey = typeof builderKeyPath === "string"
+    ? createPrivateKey(await readFile(resolve(builderKeyPath), "utf8"))
+    : releasePrivateKey;
+  const builderPublicPath = flags.get("builder-public-key");
+  const builderPublicKey = typeof builderPublicPath === "string"
+    ? createPublicKey(await readFile(resolve(builderPublicPath), "utf8"))
+    : createPublicKey(builderPrivateKey);
+  const builderKeyIdFlag = flags.get("builder-key-id");
+  const builderKeyId = typeof builderKeyIdFlag === "string" ? builderKeyIdFlag : "builder-default";
+
+  const mode = plan.kind === "container" ? "container" : "process";
+  const computedToolchainFp = toolchainFingerprint({
+    nodeVersion: process.version,
+    builder: mode,
+    ...(plan.kind === "container" ? { image: plan.image } : {}),
+    command: plan.command,
+    args: plan.args
+  });
+  const computedEnvironmentFp = environmentFingerprint({
+    platform: process.platform,
+    arch: process.arch,
+    hermetic: true,
+    network: mode === "container" ? "none" : "host-process",
+    envAllowList: plan.kind === "container" ? [] : plan.envAllowList ?? []
+  });
+  const measured = await measureBuildVector(plan.sourceDir, {
+    dependencyFp: config.buildVector.dependencyFp,
+    configFp: config.buildVector.configFp,
+    generatedSourcesFp: config.buildVector.generatedSourcesFp,
+    toolchainFp: computedToolchainFp,
+    buildEnvironmentFp: computedEnvironmentFp
+  });
+  if (config.buildVector.sourceFp !== measured.vector.sourceFp) {
+    throw new Error(`RUN_SOURCE_FP_STALE:declared=${config.buildVector.sourceFp}:actual=${measured.vector.sourceFp}`);
+  }
+  if (config.buildVector.toolchainFp !== computedToolchainFp) {
+    throw new Error(`RUN_TOOLCHAIN_FP_STALE:declared=${config.buildVector.toolchainFp}:actual=${computedToolchainFp}`);
+  }
+  if (config.buildVector.buildEnvironmentFp !== computedEnvironmentFp) {
+    throw new Error(`RUN_ENVIRONMENT_FP_STALE:declared=${config.buildVector.buildEnvironmentFp}:actual=${computedEnvironmentFp}`);
+  }
+
   const root = stateDir(flags);
   const clock = () => new Date().toISOString();
   const releaseController = new ReleaseController(
@@ -99,11 +144,16 @@ async function commandRun(positional: string[], flags: Map<string, string | true
     (digest) => ({ signatureFp: canonicalDigest(cryptoSign(null, Buffer.from(digest, "utf8"), releasePrivateKey).toString("base64")) }),
     clock
   );
+  const verifyAttestation = (artifact: Parameters<typeof verifyStoredArtifactAttestation>[0]) =>
+    verifyStoredArtifactAttestation(artifact, (keyId) => {
+      if (keyId !== builderKeyId) throw new Error(`UNKNOWN_BUILDER_ATTESTATION_KEY:${keyId}`);
+      return builderPublicKey;
+    });
 
   const runtime = new OrchestratorRuntime(
     new FileStateStore(join(root, "state")),
     new FileArtifactRegistry(join(root, "artifacts")),
-    new ProcessHermeticBuilder(config.buildPlan),
+    new SealedHermeticBuilder(plan, builderPrivateKey, builderKeyId),
     config.validators.map((spec) => new ArtifactCommandValidator(spec)),
     releaseController,
     (keyId) => {
@@ -112,14 +162,14 @@ async function commandRun(positional: string[], flags: Map<string, string | true
       return publicKey;
     },
     clock,
-    undefined,
+    verifyAttestation,
     new FileSignedWorkOrderStore(join(root, "work-orders")),
     new FileTaskExecutionStore(join(root, "executions"))
   );
 
   const result = await runtime.run({
     signedWorkOrder: config.signedWorkOrder,
-    buildVector: config.buildVector,
+    buildVector: measured.vector,
     moduleManifestFp: config.moduleManifestFp,
     ...(config.humanApprovalFp === undefined ? {} : { humanApprovalFp: config.humanApprovalFp }),
     ...(config.promoteToProduction === undefined ? {} : { promoteToProduction: config.promoteToProduction })
@@ -195,7 +245,7 @@ async function commandModule(positional: string[], flags: Map<string, string | t
 }
 
 function help(): void {
-  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  module create <target-dir> --id <module-id> [--capabilities a,b]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
+  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--builder-key <pem>] [--builder-public-key <pem>] [--builder-key-id <id>] [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  module create <target-dir> --id <module-id> [--capabilities a,b]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
 }
 
 async function main(): Promise<void> {
