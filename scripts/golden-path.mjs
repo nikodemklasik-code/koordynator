@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import {
+  environmentFingerprint,
+  listSourceFiles,
+  measureBuildVector,
+  sourceFingerprint,
+  toolchainFingerprint
+} from "../dist/build/tree-fingerprint.js";
 
 const repoRoot = resolve(new URL("..", import.meta.url).pathname);
 const cli = join(repoRoot, "dist", "cli", "main.js");
@@ -15,18 +22,7 @@ function digest(value) {
 }
 
 async function treeDigest(root) {
-  const entries = [];
-  async function walk(dir) {
-    for (const name of (await readdir(dir)).sort()) {
-      if (name === "dist") continue;
-      const full = join(dir, name);
-      const info = await stat(full);
-      if (info.isDirectory()) await walk(full);
-      else if (info.isFile()) entries.push([relative(root, full).replaceAll("\\", "/"), digest(await readFile(full))]);
-    }
-  }
-  await walk(root);
-  return digest(JSON.stringify(entries));
+  return sourceFingerprint(await listSourceFiles(root));
 }
 
 function run(args, { accept = [0] } = {}) {
@@ -83,26 +79,32 @@ async function sign(root, order, ownerPrivate, revision) {
   return JSON.parse(await readFile(signedPath, "utf8"));
 }
 
-function runConfig(signedWorkOrder, sourceFp, revision) {
+async function runConfig(signedWorkOrder) {
+  const buildPlan = {
+    sourceDir: moduleRoot,
+    command: process.execPath,
+    args: ["build.mjs"],
+    artifactPaths: ["dist", "src", "module-manifest.json", "package.json", "tests"],
+    timeoutMs: 30000,
+    maxOutputBytes: 262144
+  };
+  const dependencyFp = digest("hello-deps-none");
+  const configFp = digest("hello-config-v1");
+  const generatedSourcesFp = digest("hello-generated-none");
+  const toolchainFp = toolchainFingerprint({ nodeVersion: process.version, builder: "process", command: buildPlan.command, args: buildPlan.args });
+  const buildEnvironmentFp = environmentFingerprint({
+    platform: process.platform,
+    arch: process.arch,
+    hermetic: true,
+    network: "host-process",
+    envAllowList: []
+  });
+  const measured = await measureBuildVector(moduleRoot, { dependencyFp, configFp, generatedSourcesFp, toolchainFp, buildEnvironmentFp });
   return {
     signedWorkOrder,
-    buildVector: {
-      sourceFp: digest(`${sourceFp}:revision:${revision}`),
-      dependencyFp: digest("hello-deps-none"),
-      configFp: digest("hello-config-v1"),
-      toolchainFp: digest(`node-${process.versions.node}`),
-      buildEnvironmentFp: digest(`${process.platform}-${process.arch}`),
-      generatedSourcesFp: digest("hello-generated-none")
-    },
+    buildVector: measured.vector,
     moduleManifestFp: digest("hello-module-manifest-v1"),
-    buildPlan: {
-      sourceDir: moduleRoot,
-      command: process.execPath,
-      args: ["build.mjs"],
-      artifactPaths: ["dist", "src", "module-manifest.json", "package.json", "tests"],
-      timeoutMs: 30000,
-      maxOutputBytes: 262144
-    },
+    buildPlan,
     validators: [
       { gate: "unit", kind: "dependency", command: process.execPath, args: ["tests/unit.mjs"], timeoutMs: 10000, validForSeconds: 300 },
       { gate: "security", kind: "security", command: process.execPath, args: ["tests/security.mjs"], dependsOn: ["unit"], timeoutMs: 10000, validForSeconds: 300 }
@@ -114,7 +116,7 @@ function runConfig(signedWorkOrder, sourceFp, revision) {
 async function executeRevision(root, stateDir, ownerPrivate, ownerPublic, releasePrivate, revision, sourceFp) {
   const signed = await sign(root, makeOrder(revision, sourceFp), ownerPrivate, revision);
   const configPath = join(root, `run-r${revision}.json`);
-  await writeFile(configPath, `${JSON.stringify(runConfig(signed, sourceFp, revision), null, 2)}\n`);
+  await writeFile(configPath, `${JSON.stringify(await runConfig(signed), null, 2)}\n`);
   const response = await run(["run", configPath, "--public-key", ownerPublic, "--release-key", releasePrivate, "--key-id", "golden-owner", "--state-dir", stateDir]);
   const result = JSON.parse(response.stdout);
   if (result.status !== "RELEASED" || result.release?.state !== "PRODUCTION") throw new Error(`GOLDEN_R${revision}_NOT_PRODUCTION`);
