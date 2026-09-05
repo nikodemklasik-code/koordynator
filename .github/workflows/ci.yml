@@ -68,6 +68,7 @@ jobs:
             ui/task-detail-e2e \
             ui/targeted-return-e2e \
             ui/provider-fabric-e2e \
+            ui/releases-e2e \
             supply-chain/sealed-builder \
             chore/control-branch-hygiene \
             noop
