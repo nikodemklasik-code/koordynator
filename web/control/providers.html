@@ -14,54 +14,25 @@
       <div class="provider-brand"><span>⬡</span><div><strong>KOORDYNATOR</strong><small>CONTROL</small></div></div>
       <nav>
         <a href="/">☷ <span>Tasks</span></a>
+        <a href="/releases">◷ <span>Releases</span></a>
         <a class="active" href="/providers">⬡ <span>Providers</span></a>
-        <a href="#fabric">◷ <span>Fabric</span></a>
+        <a href="#fabric">◇ <span>Fabric</span></a>
         <a href="#receipts">▤ <span>Receipts</span></a>
         <a href="#policy">⚙ <span>Policies</span></a>
       </nav>
       <div class="provider-health"><span class="health-dot"></span><div><strong>System Health</strong><small id="healthSummary">Checking official CLIs…</small></div></div>
     </aside>
-
     <main class="provider-main">
-      <header class="provider-topbar">
-        <div><span class="cube">⬡</span><strong>Providers Fabric</strong></div>
-        <div class="mode">CLI Mode <strong>Official CLI</strong></div>
-      </header>
-
+      <header class="provider-topbar"><div><span class="cube">⬡</span><strong>Providers Fabric</strong></div><div class="mode">CLI Mode <strong>Official CLI</strong></div></header>
       <section class="provider-content">
-        <div class="provider-list-card">
-          <div class="card-head"><div><h1>OFFICIAL CLI PROVIDERS</h1><p>Live health probes against installed provider CLIs.</p></div><button id="refreshProviders" type="button">↻ Refresh</button></div>
-          <div class="provider-table-head"><span>PROVIDER</span><span>EXECUTABLE</span><span>HEALTH</span><span>ACCESS</span><span>ACTIONS</span></div>
-          <div id="providerRows" class="provider-rows"><div class="loading-line">Checking providers…</div></div>
-        </div>
-
-        <aside id="fabric" class="fabric-card">
-          <h2>FABRIC ARCHITECTURE</h2>
-          <div class="fabric-rule"><strong>Canonical Capability API</strong><p>Modules request capabilities. They do not import provider SDKs.</p></div>
-          <div class="fabric-rule"><strong>Builder ≠ Reviewer when diversity is required</strong><p>Provider diversity is enforced by routing policy, not by the UI.</p></div>
-          <div class="fabric-rule"><strong>Failover requires idempotencyKey</strong><p>Uncertain workspace mutations are never blindly retried on another provider.</p></div>
-          <div class="fabric-rule safe"><strong>No password or cookie capture</strong><p>Connect uses the provider's official CLI authentication flow.</p></div>
-        </aside>
-
-        <section id="receipts" class="receipts-card">
-          <div class="card-head"><div><h2>PROVIDER EXECUTION RECEIPTS</h2><p>Persisted receipts from <code>.orchestrator/provider-receipts</code>.</p></div></div>
-          <div id="receiptRows" class="receipt-rows"><div class="empty-receipts">No persisted provider receipts.</div></div>
-        </section>
+        <div class="provider-list-card"><div class="card-head"><div><h1>OFFICIAL CLI PROVIDERS</h1><p>Live health probes against installed provider CLIs.</p></div><button id="refreshProviders" type="button">↻ Refresh</button></div><div class="provider-table-head"><span>PROVIDER</span><span>EXECUTABLE</span><span>HEALTH</span><span>ACCESS</span><span>ACTIONS</span></div><div id="providerRows" class="provider-rows"><div class="loading-line">Checking providers…</div></div></div>
+        <aside id="fabric" class="fabric-card"><h2>FABRIC ARCHITECTURE</h2><div class="fabric-rule"><strong>Canonical Capability API</strong><p>Modules request capabilities. They do not import provider SDKs.</p></div><div class="fabric-rule"><strong>Builder ≠ Reviewer when diversity is required</strong><p>Provider diversity is enforced by routing policy, not by the UI.</p></div><div class="fabric-rule"><strong>Failover requires idempotencyKey</strong><p>Uncertain workspace mutations are never blindly retried on another provider.</p></div><div class="fabric-rule safe"><strong>No password or cookie capture</strong><p>Connect uses the provider's official CLI authentication flow.</p></div></aside>
+        <section id="receipts" class="receipts-card"><div class="card-head"><div><h2>PROVIDER EXECUTION RECEIPTS</h2><p>Persisted receipts from <code>.orchestrator/provider-receipts</code>.</p></div></div><div id="receiptRows" class="receipt-rows"><div class="empty-receipts">No persisted provider receipts.</div></div></section>
       </section>
-
       <footer class="provider-footer"><div>KOORDYNATOR CONTROL <span id="versionLabel">v0.1.0</span></div><div><span class="health-dot"></span> Connected to Fabric</div></footer>
     </main>
   </div>
-
-  <dialog id="commandDialog" class="command-dialog">
-    <form method="dialog">
-      <header><strong id="commandTitle">Provider command</strong><button value="close">×</button></header>
-      <p id="commandDescription"></p>
-      <pre><code id="commandText"></code></pre>
-      <footer><button type="button" id="copyCommand">Copy command</button><button value="close">Close</button></footer>
-    </form>
-  </dialog>
-
+  <dialog id="commandDialog" class="command-dialog"><form method="dialog"><header><strong id="commandTitle">Provider command</strong><button value="close">×</button></header><p id="commandDescription"></p><pre><code id="commandText"></code></pre><footer><button type="button" id="copyCommand">Copy command</button><button value="close">Close</button></footer></form></dialog>
   <script src="/providers.js" defer></script>
 </body>
 </html>

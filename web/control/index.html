@@ -12,134 +12,35 @@
     <header class="topbar">
       <div class="brand-block">
         <div class="brand-mark" aria-hidden="true">◎</div>
-        <div>
-          <div class="brand-title">KOORDYNATOR CONTROL</div>
-          <div class="brand-subtitle">OPERATOR CONSOLE</div>
-        </div>
+        <div><div class="brand-title">KOORDYNATOR CONTROL</div><div class="brand-subtitle">OPERATOR CONSOLE</div></div>
       </div>
-      <div class="building-block" aria-label="Current environment">
-        <span class="building-icon" aria-hidden="true">▥</span>
-        <span>BUILDING:</span>
-        <strong id="environmentLabel">LOCAL</strong>
-        <span class="caret">▾</span>
-      </div>
-      <div class="operator-block">
-        <span class="operator-icon" aria-hidden="true">●</span>
-        <span id="operatorLabel">operator@koordynator.local</span>
-        <span class="caret">▾</span>
-        <button class="icon-button" id="fullscreenButton" type="button" aria-label="Toggle fullscreen">⛶</button>
-      </div>
+      <div class="building-block" aria-label="Current environment"><span class="building-icon" aria-hidden="true">▥</span><span>BUILDING:</span><strong id="environmentLabel">LOCAL</strong><span class="caret">▾</span></div>
+      <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span><span class="caret">▾</span><button class="icon-button" id="fullscreenButton" type="button" aria-label="Toggle fullscreen">⛶</button></div>
     </header>
-
     <aside class="sidebar" aria-label="Primary navigation">
       <nav class="nav-list">
         <a class="nav-item active" href="/" aria-current="page"><span>☷</span><span>Tasks</span></a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span>▣</span><span>Work Orders</span></a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span>♧</span><span>Candidates</span></a>
-        <a class="nav-item disabled" href="#" aria-disabled="true"><span>◷</span><span>Releases</span></a>
+        <a class="nav-item" href="/releases"><span>◷</span><span>Releases</span></a>
         <a class="nav-item" href="/providers"><span>⌘</span><span>Providers</span></a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span>◔</span><span>Modules</span></a>
         <a class="nav-item disabled" href="#" aria-disabled="true"><span>⚙</span><span>Audit</span></a>
       </nav>
-      <div class="sidebar-foot">
-        <div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div>
-        <div class="muted">© 2026 Koordynator Systems</div>
-      </div>
+      <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">© 2026 Koordynator Systems</div></div>
     </aside>
-
     <main class="content">
-      <section class="page-head">
-        <div>
-          <h1>Tasks</h1>
-          <p>List and manage orchestration tasks.</p>
-        </div>
-        <div class="toolbar">
-          <button class="ghost-button" id="filtersButton" type="button">⌁ <span>Filters</span></button>
-          <label class="search-box">
-            <span aria-hidden="true">⌕</span>
-            <input id="searchInput" type="search" placeholder="Search tasks..." autocomplete="off" spellcheck="false" aria-label="Search tasks" />
-          </label>
-          <button class="icon-button large" id="refreshButton" type="button" aria-label="Refresh tasks">↻</button>
-        </div>
-      </section>
-
+      <section class="page-head"><div><h1>Tasks</h1><p>List and manage orchestration tasks.</p></div><div class="toolbar"><button class="ghost-button" id="filtersButton" type="button">⌁ <span>Filters</span></button><label class="search-box"><span aria-hidden="true">⌕</span><input id="searchInput" type="search" placeholder="Search tasks..." autocomplete="off" spellcheck="false" aria-label="Search tasks" /></label><button class="icon-button large" id="refreshButton" type="button" aria-label="Refresh tasks">↻</button></div></section>
       <section class="filter-row" id="filterRow" aria-label="Task status filters">
-        <button class="filter-chip active" data-filter="all" type="button">ALL <span id="countAll">0</span></button>
-        <button class="filter-chip" data-filter="building" type="button">BUILDING <span id="countBuilding">0</span></button>
-        <button class="filter-chip" data-filter="frozen" type="button">FROZEN <span id="countFrozen">0</span></button>
-        <button class="filter-chip" data-filter="validating" type="button">VALIDATING <span id="countValidating">0</span></button>
-        <button class="filter-chip" data-filter="awaiting-approval" type="button">AWAITING APPROVAL <span id="countApproval">0</span></button>
-        <button class="filter-chip" data-filter="released" type="button">RELEASED <span id="countReleased">0</span></button>
-        <button class="filter-chip" data-filter="returned" type="button">RETURNED <span id="countReturned">0</span></button>
-        <button class="add-button" id="newTaskButton" type="button" aria-label="How to create a new task">+</button>
+        <button class="filter-chip active" data-filter="all" type="button">ALL <span id="countAll">0</span></button><button class="filter-chip" data-filter="building" type="button">BUILDING <span id="countBuilding">0</span></button><button class="filter-chip" data-filter="frozen" type="button">FROZEN <span id="countFrozen">0</span></button><button class="filter-chip" data-filter="validating" type="button">VALIDATING <span id="countValidating">0</span></button><button class="filter-chip" data-filter="awaiting-approval" type="button">AWAITING APPROVAL <span id="countApproval">0</span></button><button class="filter-chip" data-filter="released" type="button">RELEASED <span id="countReleased">0</span></button><button class="filter-chip" data-filter="returned" type="button">RETURNED <span id="countReturned">0</span></button><button class="add-button" id="newTaskButton" type="button" aria-label="How to create a new task">+</button>
       </section>
-
-      <section class="table-wrap" aria-live="polite">
-        <table class="task-table">
-          <thead>
-            <tr>
-              <th>TASK ID</th>
-              <th>STATUS</th>
-              <th>OBJECTIVE</th>
-              <th>TARGET</th>
-              <th>INITIATED BY</th>
-              <th>CREATED</th>
-              <th>UPDATED</th>
-              <th><span class="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody id="taskRows"></tbody>
-        </table>
-        <div class="empty-state hidden" id="emptyState">
-          <div class="empty-icon">◎</div>
-          <strong>No matching tasks</strong>
-          <span>Change the filter or search query.</span>
-        </div>
-        <div class="loading-state" id="loadingState"><span class="spinner"></span> Loading orchestration state…</div>
-      </section>
-
-      <footer class="statusbar">
-        <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
-        <div class="runtime-meta">ENV: <strong id="footerEnv">LOCAL</strong> <span>•</span> REGION: <strong id="regionLabel">local</strong> <span>•</span> ZONE: <strong id="zoneLabel">local</strong> <span>•</span> <span class="connection-dot"></span> CONNECTED</div>
-      </footer>
+      <section class="table-wrap" aria-live="polite"><table class="task-table"><thead><tr><th>TASK ID</th><th>STATUS</th><th>OBJECTIVE</th><th>TARGET</th><th>INITIATED BY</th><th>CREATED</th><th>UPDATED</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="taskRows"></tbody></table><div class="empty-state hidden" id="emptyState"><div class="empty-icon">◎</div><strong>No matching tasks</strong><span>Change the filter or search query.</span></div><div class="loading-state" id="loadingState"><span class="spinner"></span> Loading orchestration state…</div></section>
+      <footer class="statusbar"><div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div><div class="runtime-meta">ENV: <strong id="footerEnv">LOCAL</strong> <span>•</span> REGION: <strong id="regionLabel">local</strong> <span>•</span> ZONE: <strong id="zoneLabel">local</strong> <span>•</span> <span class="connection-dot"></span> CONNECTED</div></footer>
     </main>
   </div>
-
-  <dialog id="taskDialog" class="task-dialog">
-    <form method="dialog" class="dialog-card">
-      <div class="dialog-head">
-        <div>
-          <div class="dialog-kicker">TASK INSPECTOR</div>
-          <h2 id="dialogTitle">Task</h2>
-        </div>
-        <button class="icon-button" value="close" aria-label="Close dialog">×</button>
-      </div>
-      <div class="dialog-body" id="dialogBody"></div>
-      <div class="dialog-actions">
-        <button type="button" class="secondary-button" id="copyTaskButton">Copy Task ID</button>
-        <button value="close" class="primary-button">Close</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="newTaskDialog" class="task-dialog compact">
-    <form method="dialog" class="dialog-card">
-      <div class="dialog-head">
-        <div>
-          <div class="dialog-kicker">SAFE EXECUTION</div>
-          <h2>New task</h2>
-        </div>
-        <button class="icon-button" value="close" aria-label="Close dialog">×</button>
-      </div>
-      <div class="dialog-body prose">
-        <p>Tasks enter the control plane only through a signed WorkOrder. The console does not collect private signing keys or create unsigned runtime state.</p>
-        <pre><code>orchestrator sign work-order.json --private-key owner.pem --key-id owner --out signed.json
-orchestrator run run.json --public-key owner.pub --release-key release.pem</code></pre>
-      </div>
-      <div class="dialog-actions"><button value="close" class="primary-button">Close</button></div>
-    </form>
-  </dialog>
-
+  <dialog id="taskDialog" class="task-dialog"><form method="dialog" class="dialog-card"><div class="dialog-head"><div><div class="dialog-kicker">TASK INSPECTOR</div><h2 id="dialogTitle">Task</h2></div><button class="icon-button" value="close" aria-label="Close dialog">×</button></div><div class="dialog-body" id="dialogBody"></div><div class="dialog-actions"><button type="button" class="secondary-button" id="copyTaskButton">Copy Task ID</button><button value="close" class="primary-button">Close</button></div></form></dialog>
+  <dialog id="newTaskDialog" class="task-dialog compact"><form method="dialog" class="dialog-card"><div class="dialog-head"><div><div class="dialog-kicker">SAFE EXECUTION</div><h2>New task</h2></div><button class="icon-button" value="close" aria-label="Close dialog">×</button></div><div class="dialog-body prose"><p>Tasks enter the control plane only through a signed WorkOrder. The console does not collect private signing keys or create unsigned runtime state.</p><pre><code>orchestrator sign work-order.json --private-key owner.pem --key-id owner --out signed.json
+orchestrator run run.json --public-key owner.pub --release-key release.pem</code></pre></div><div class="dialog-actions"><button value="close" class="primary-button">Close</button></div></form></dialog>
   <script src="/app.js" defer></script>
 </body>
 </html>
