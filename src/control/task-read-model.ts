@@ -1,8 +1,8 @@
 import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { TaskState, OrchestratorState } from "../domain/state.js";
-import type { TaskId } from "../domain/ids.js";
-import type { WorkOrder } from "../domain/work-order.js";
+import type { Digest, TaskId } from "../domain/ids.js";
+import { validateWorkOrder, type WorkOrder } from "../domain/work-order.js";
 import type { FrozenCandidate } from "../domain/candidate.js";
 import type { EvidenceReceipt } from "../domain/evidence.js";
 import type { ReleaseRecord } from "../release/release-controller.js";
@@ -60,6 +60,24 @@ export type TaskDetailResponse = {
   nextRevision?: number;
   reasons: string[];
   buildMode?: "BUILD" | "REUSE";
+};
+
+export type TargetedReturnResponse = {
+  task: TaskListItem;
+  revision: number;
+  nextRevision: number;
+  reasons: string[];
+  primaryReason: string;
+  returnedAt: string;
+  previousPolicyFp?: Digest;
+  currentPolicyFp?: Digest;
+  evidenceReusable: boolean;
+  requiredAction: "REVALIDATE_WITH_CURRENT_POLICY" | "FIX_AND_REVALIDATE" | "REVIEW_AND_REVISE";
+  candidateSha?: Digest;
+  artifactFp?: Digest;
+  receipts: EvidenceReceipt[];
+  nextRevisionSigned: boolean;
+  nextWorkOrderFp?: Digest;
 };
 
 function displayStatus(state: TaskState): string {
@@ -131,6 +149,24 @@ function buildModeFrom(history: OrchestratorState[]): "BUILD" | "REUSE" | undefi
     if (item.state === "BUILD_READY" && (item.reasonCode === "BUILD" || item.reasonCode === "REUSE")) return item.reasonCode;
   }
   return undefined;
+}
+
+function validDigest(value: string | undefined): value is Digest {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/i.test(value);
+}
+
+function evidenceReusable(receipts: EvidenceReceipt[], reasons: string[]): boolean {
+  if (reasons.some((reason) => reason.includes("STALE_POLICY"))) return false;
+  const now = Date.now();
+  return receipts.length > 0 && receipts.every((receipt) =>
+    receipt.status === "PASS" && !receipt.revoked && Date.parse(receipt.validUntil) > now
+  );
+}
+
+function requiredAction(reasons: string[]): TargetedReturnResponse["requiredAction"] {
+  if (reasons.some((reason) => reason.includes("STALE_POLICY"))) return "REVALIDATE_WITH_CURRENT_POLICY";
+  if (reasons.some((reason) => /FAIL|MISSING|UNEXECUTED|EXPIRED|REVOKED|VALIDATION/i.test(reason))) return "FIX_AND_REVALIDATE";
+  return "REVIEW_AND_REVISE";
 }
 
 export class TaskReadModel {
@@ -221,6 +257,54 @@ export class TaskReadModel {
       reasons: execution?.reasons ?? (task.reasonCode ? [task.reasonCode] : []),
       ...(mode === undefined ? {} : { buildMode: mode })
     };
+  }
+
+  async targetedReturn(taskId: TaskId): Promise<TargetedReturnResponse | null> {
+    const detail = await this.detail(taskId);
+    if (!detail) return null;
+    if (detail.task.state !== "RETURNED") throw new Error("TASK_NOT_RETURNED");
+    const nextRevision = detail.nextRevision ?? detail.task.revision + 1;
+    const nextSigned = await this.workOrderStore.get(taskId, nextRevision);
+    const reasons = detail.reasons.length > 0 ? detail.reasons : [detail.task.reasonCode ?? "RETURNED"];
+    const priorPolicy = detail.workOrder?.order.policyRef.bundleHash;
+    const currentPolicy = nextSigned?.order.policyRef.bundleHash;
+    return {
+      task: detail.task,
+      revision: detail.task.revision,
+      nextRevision,
+      reasons,
+      primaryReason: reasons[0]!,
+      returnedAt: detail.task.updatedAt,
+      ...(priorPolicy === undefined ? {} : { previousPolicyFp: priorPolicy }),
+      ...(currentPolicy === undefined ? {} : { currentPolicyFp: currentPolicy }),
+      evidenceReusable: evidenceReusable(detail.receipts, reasons),
+      requiredAction: requiredAction(reasons),
+      ...(detail.candidate?.candidateSha === undefined ? {} : { candidateSha: detail.candidate.candidateSha }),
+      ...(detail.candidate?.artifactFp === undefined ? {} : { artifactFp: detail.candidate.artifactFp }),
+      receipts: detail.receipts,
+      nextRevisionSigned: nextSigned !== null,
+      ...(nextSigned?.orderFp === undefined ? {} : { nextWorkOrderFp: nextSigned.orderFp })
+    };
+  }
+
+  async nextWorkOrderDraft(taskId: TaskId, currentPolicyFp?: string): Promise<WorkOrder> {
+    const returned = await this.targetedReturn(taskId);
+    if (!returned) throw new Error("TASK_NOT_FOUND");
+    const signed = await this.workOrderStore.get(taskId, returned.revision);
+    if (!signed) throw new Error("SIGNED_WORK_ORDER_NOT_FOUND");
+    const stalePolicy = returned.reasons.some((reason) => reason.includes("STALE_POLICY"));
+    if (stalePolicy && !currentPolicyFp) throw new Error("CURRENT_POLICY_FP_REQUIRED");
+    if (currentPolicyFp !== undefined && !validDigest(currentPolicyFp)) throw new Error("CURRENT_POLICY_FP_INVALID");
+    const order: WorkOrder = {
+      ...structuredClone(signed.order),
+      revision: returned.nextRevision,
+      policyRef: {
+        ...signed.order.policyRef,
+        bundleHash: (currentPolicyFp ?? signed.order.policyRef.bundleHash) as Digest
+      }
+    };
+    validateWorkOrder(order);
+    return order;
   }
 }
 

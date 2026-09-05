@@ -27,6 +27,11 @@ function tone(task) {
   return "";
 }
 
+function taskRoute(task) {
+  const base = `/tasks/${encodeURIComponent(task.taskId)}`;
+  return task.state === "RETURNED" ? `${base}/return` : base;
+}
+
 function displayDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -37,8 +42,8 @@ function displayDate(value) {
 
 function row(task) {
   const reason = task.reasonCode ? `<span class="reason-badge" title="${escapeHtml(task.reasonCode)}">${escapeHtml(task.reasonCode)}</span>` : "";
-  const taskHref = `/tasks/${encodeURIComponent(task.taskId)}`;
-  return `<tr data-task-id="${escapeHtml(task.taskId)}" tabindex="0" aria-label="Open ${escapeHtml(task.taskId)} detail">
+  const taskHref = taskRoute(task);
+  return `<tr data-task-id="${escapeHtml(task.taskId)}" tabindex="0" aria-label="Open ${escapeHtml(task.taskId)}">
     <td><a class="task-id task-link" style="color:inherit;text-decoration:none" href="${taskHref}">${escapeHtml(task.taskId)}</a></td>
     <td><span class="status-cell"><span class="status-dot ${tone(task)}"></span><span class="status-label">${escapeHtml(task.displayStatus)}</span>${reason}</span></td>
     <td class="objective" title="${escapeHtml(task.objective)}">${escapeHtml(task.objective)}</td>
@@ -128,10 +133,10 @@ function inspectTask(task) {
     openButton.id = "openTaskButton";
     openButton.type = "button";
     openButton.className = "primary-button";
-    openButton.textContent = "Open Task Detail";
     actions.insertBefore(openButton, actions.lastElementChild);
   }
-  openButton.onclick = () => { location.href = `/tasks/${encodeURIComponent(task.taskId)}`; };
+  openButton.textContent = task.state === "RETURNED" ? "Open Targeted Return" : "Open Task Detail";
+  openButton.onclick = () => { location.href = taskRoute(task); };
   taskDialog.showModal();
 }
 
@@ -172,7 +177,7 @@ taskRows.addEventListener("click", (event) => {
     inspectTask(task);
     return;
   }
-  if (!event.target.closest("a,button")) location.href = `/tasks/${encodeURIComponent(task.taskId)}`;
+  if (!event.target.closest("a,button")) location.href = taskRoute(task);
 });
 
 taskRows.addEventListener("keydown", (event) => {
@@ -180,8 +185,10 @@ taskRows.addEventListener("keydown", (event) => {
   if (event.target.closest("a,button")) return;
   const tr = event.target.closest("tr[data-task-id]");
   if (!tr) return;
+  const task = state.tasks.find((item) => item.taskId === tr.dataset.taskId);
+  if (!task) return;
   event.preventDefault();
-  location.href = `/tasks/${encodeURIComponent(tr.dataset.taskId)}`;
+  location.href = taskRoute(task);
 });
 
 $("copyTaskButton").addEventListener("click", async () => {
