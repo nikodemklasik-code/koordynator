@@ -45,7 +45,7 @@ describe("Control Releases screen", () => {
       expect(payload.counts.rolledBack).toBe(1);
       expect(payload.releases.every((release: { manifestIntegrity: string }) => release.manifestIntegrity === "PASS")).toBe(true);
 
-      const exact = await fetch(`${base}/api/releases/${encodeURIComponent(r1.release.releaseSha)}`);
+      const exact = await fetch(`${base}/api/releases/${r1.release.releaseSha}`);
       expect(exact.status).toBe(200);
       expect((await exact.json()).previousProductionSha).toBe(r0.release.releaseSha);
 
