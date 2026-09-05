@@ -16,6 +16,7 @@ import { evaluateReleasePolicy } from "../policy/release-policy.js";
 import { ReleaseController, type ReleaseRecord } from "../release/release-controller.js";
 import type { StateStore } from "../store/state-store.js";
 import type { SignedWorkOrderStore } from "../store/work-order-store.js";
+import type { TaskExecutionStore } from "../store/task-execution-store.js";
 
 export type OrchestratorRunRequest = {
   signedWorkOrder: SignedWorkOrder;
@@ -44,13 +45,29 @@ export class OrchestratorRuntime {
     private readonly resolvePublicKey: PublicKeyResolver,
     private readonly clock: () => string,
     private readonly verifyAttestation: (artifact: StoredArtifact) => boolean = verifyStoredArtifactAttestation,
-    private readonly workOrderStore?: SignedWorkOrderStore
+    private readonly workOrderStore?: SignedWorkOrderStore,
+    private readonly executionStore?: TaskExecutionStore
   ) {}
 
   private async saveTransition(current: OrchestratorState, next: OrchestratorState["state"], reasonCode?: string): Promise<OrchestratorState> {
     const state = transitionState(current, next, this.clock(), reasonCode);
     await this.stateStore.save(state);
     return state;
+  }
+
+  private async persistResult(workOrderFp: Digest, result: OrchestratorRunResult): Promise<OrchestratorRunResult> {
+    await this.executionStore?.put({
+      taskId: result.candidate.taskId,
+      revision: result.candidate.revision,
+      workOrderFp,
+      status: result.status,
+      candidate: result.candidate,
+      receipts: result.receipts,
+      ...(result.release === undefined ? {} : { release: result.release }),
+      ...(result.nextRevision === undefined ? {} : { nextRevision: result.nextRevision }),
+      ...(result.reasons === undefined ? {} : { reasons: result.reasons })
+    });
+    return result;
   }
 
   async run(request: OrchestratorRunRequest): Promise<OrchestratorRunResult> {
@@ -94,7 +111,9 @@ export class OrchestratorRuntime {
       if (prior && prior.order.policyRef.bundleHash !== order.policyRef.bundleHash) {
         const reasons = ["STALE_POLICY"];
         await this.saveTransition(state, "RETURNED", reasons[0]);
-        return { status: "RETURNED", candidate, receipts: [], nextRevision: order.revision + 1, reasons };
+        return this.persistResult(accepted.envelope.orderFp, {
+          status: "RETURNED", candidate, receipts: [], nextRevision: order.revision + 1, reasons
+        });
       }
     }
 
@@ -116,12 +135,16 @@ export class OrchestratorRuntime {
     if (!validation.passed || !policy.allowed) {
       const reasons = policy.reasons.length > 0 ? policy.reasons : ["VALIDATION_FAILED"];
       await this.saveTransition(state, "RETURNED", reasons.join("|"));
-      return { status: "RETURNED", candidate, receipts: validation.receipts, nextRevision: order.revision + 1, reasons };
+      return this.persistResult(accepted.envelope.orderFp, {
+        status: "RETURNED", candidate, receipts: validation.receipts, nextRevision: order.revision + 1, reasons
+      });
     }
 
     state = await this.saveTransition(state, "APPROVED");
     if (policy.approval === "HUMAN_REQUIRED" && request.humanApprovalFp === undefined) {
-      return { status: "AWAITING_HUMAN_APPROVAL", candidate, receipts: validation.receipts };
+      return this.persistResult(accepted.envelope.orderFp, {
+        status: "AWAITING_HUMAN_APPROVAL", candidate, receipts: validation.receipts
+      });
     }
 
     const approvalFp = request.humanApprovalFp ?? policy.approvalFp;
@@ -131,6 +154,8 @@ export class OrchestratorRuntime {
     if (!this.releaseController.verifyExactArtifact(candidate, release)) throw new Error("RELEASE_EXACT_ARTIFACT_VERIFICATION_FAILED");
     await this.saveTransition(state, "RELEASED");
 
-    return { status: "RELEASED", candidate, receipts: validation.receipts, release };
+    return this.persistResult(accepted.envelope.orderFp, {
+      status: "RELEASED", candidate, receipts: validation.receipts, release
+    });
   }
 }

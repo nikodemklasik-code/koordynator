@@ -8,6 +8,7 @@ import type { Digest } from "../domain/ids.js";
 import { signWorkOrder, type SignedWorkOrder } from "../security/work-order-signature.js";
 import { FileStateStore } from "../store/file-state-store.js";
 import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
+import { FileTaskExecutionStore } from "../store/task-execution-store.js";
 import { FileArtifactRegistry } from "../build/file-artifact-registry.js";
 import { ProcessHermeticBuilder, type HermeticBuildPlan } from "../build/process-hermetic-builder.js";
 import type { BuildInputVector } from "../build/build-input.js";
@@ -112,7 +113,8 @@ async function commandRun(positional: string[], flags: Map<string, string | true
     },
     clock,
     undefined,
-    new FileSignedWorkOrderStore(join(root, "work-orders"))
+    new FileSignedWorkOrderStore(join(root, "work-orders")),
+    new FileTaskExecutionStore(join(root, "executions"))
   );
 
   const result = await runtime.run({

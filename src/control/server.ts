@@ -47,7 +47,7 @@ function parseUrl(request: IncomingMessage): URL {
 
 export function createControlServer(options: ControlServerOptions): Server {
   const roots = controlRoots(resolve(options.stateDir));
-  const tasks = new TaskReadModel(roots.stateRoot, roots.workOrderRoot);
+  const tasks = new TaskReadModel(roots.stateRoot, roots.workOrderRoot, roots.executionRoot);
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
 
   return createServer(async (request, response) => {
@@ -80,6 +80,14 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, result);
       }
 
+      const detailMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/detail$/.exec(url.pathname);
+      if (detailMatch?.[1]) {
+        const taskId = safeTaskId(detailMatch[1]);
+        if (!taskId) return sendJson(response, 400, { error: "INVALID_TASK_ID" });
+        const detail = await tasks.detail(taskId);
+        return detail ? sendJson(response, 200, detail) : sendJson(response, 404, { error: "TASK_NOT_FOUND" });
+      }
+
       const match = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)$/.exec(url.pathname);
       if (match?.[1]) {
         const taskId = safeTaskId(match[1]);
@@ -88,13 +96,16 @@ export function createControlServer(options: ControlServerOptions): Server {
         return task ? sendJson(response, 200, task) : sendJson(response, 404, { error: "TASK_NOT_FOUND" });
       }
 
+      const taskPage = /^\/tasks\/(TASK-[A-Za-z0-9._-]+)$/.exec(url.pathname);
       const staticFiles: Record<string, { name: string; type: string }> = {
         "/": { name: "index.html", type: "text/html; charset=utf-8" },
         "/index.html": { name: "index.html", type: "text/html; charset=utf-8" },
         "/styles.css": { name: "styles.css", type: "text/css; charset=utf-8" },
-        "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" }
+        "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
+        "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
+        "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" }
       };
-      const asset = staticFiles[url.pathname];
+      const asset = taskPage ? { name: "task.html", type: "text/html; charset=utf-8" } : staticFiles[url.pathname];
       if (!asset) return sendJson(response, 404, { error: "NOT_FOUND" });
       const body = await readFile(resolve(webRoot, asset.name), "utf8");
       if (request.method === "HEAD") {

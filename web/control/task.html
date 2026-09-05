@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Task Detail · Koordynator Control</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/task.css" />
+</head>
+<body>
+  <div class="detail-shell">
+    <header class="detail-topbar">
+      <a class="detail-brand" href="/" aria-label="Back to Tasks">
+        <span class="detail-brand-mark">◎</span>
+        <span><strong>KOORDYNATOR CONTROL</strong><small>HERMETIC BUILD OPERATOR CONSOLE</small></span>
+      </a>
+      <div class="detail-title-block">
+        <strong id="pageTitle">TASK DETAIL</strong>
+        <span id="revisionLabel">revision —</span>
+      </div>
+      <div class="detail-operator">
+        <span><small>OPERATOR</small><strong id="operatorLabel">operator@koordynator.local</strong></span>
+        <span class="detail-role"><small>ENV</small><strong id="environmentLabel">LOCAL</strong></span>
+        <span class="connection-dot"></span>
+      </div>
+    </header>
+
+    <aside class="lifecycle-panel">
+      <div class="panel-title">LIFECYCLE RAIL</div>
+      <ol id="lifecycleRail" class="lifecycle-rail"></ol>
+    </aside>
+
+    <main class="detail-main">
+      <section class="task-hero">
+        <div class="task-icon" aria-hidden="true">▧</div>
+        <div class="task-hero-copy">
+          <div class="task-heading-row">
+            <h1 id="taskTitle">Loading task…</h1>
+            <span class="revision-inline" id="revisionInline"></span>
+          </div>
+          <p id="taskObjective">Reading orchestration state.</p>
+          <div class="task-meta-line"><span id="buildMeta">Build —</span><span>•</span><span id="workspaceMeta">Workspace —</span></div>
+        </div>
+        <div class="hero-status-wrap">
+          <span class="hero-status" id="heroStatus">LOADING</span>
+          <span class="hero-substatus" id="heroSubstatus"></span>
+        </div>
+      </section>
+
+      <section class="triptych">
+        <article class="summary-card">
+          <div class="summary-icon green">▣</div>
+          <div><h2>WORK ORDER</h2><p id="workOrderSummary">Checking signed envelope…</p></div>
+          <span class="summary-badge" id="workOrderBadge">—</span>
+          <div class="summary-foot" id="workOrderFoot"></div>
+        </article>
+        <article class="summary-card emphasis">
+          <div class="summary-icon amber">❄</div>
+          <div><h2>CANDIDATE FREEZE</h2><p id="freezeSummary">Checking candidate…</p></div>
+          <span class="summary-badge amber" id="freezeBadge">—</span>
+          <div class="summary-foot" id="freezeFoot"></div>
+        </article>
+        <article class="summary-card">
+          <div class="summary-icon green">◇</div>
+          <div><h2>EVIDENCE RECEIPTS</h2><p id="evidenceSummary">Checking validation receipts…</p></div>
+          <span class="summary-badge" id="evidenceBadge">—</span>
+          <div class="summary-foot" id="evidenceFoot"></div>
+        </article>
+      </section>
+
+      <section class="detail-grid">
+        <article class="detail-card properties-card">
+          <div class="panel-title">TASK PROPERTIES</div>
+          <dl id="taskProperties" class="property-list"></dl>
+        </article>
+        <article class="detail-card lock-card">
+          <div class="panel-title">LOCK &amp; IMMUTABILITY</div>
+          <div id="lockContent" class="lock-content"></div>
+        </article>
+      </section>
+
+      <section class="manifest-card" id="manifestCard">
+        <div class="panel-title-row"><span class="panel-title">FROZEN CANDIDATE MANIFEST</span><button class="text-button" id="copyCandidateButton" type="button">COPY CANDIDATE SHA</button></div>
+        <dl id="manifestGrid" class="manifest-grid"></dl>
+      </section>
+    </main>
+
+    <aside class="receipts-panel">
+      <div class="panel-title-row"><span class="panel-title">EVIDENCE RECEIPTS</span><span class="receipt-count" id="receiptCount">0</span></div>
+      <div id="receiptList" class="receipt-list"></div>
+      <button id="auditButton" class="audit-button" type="button">▧ VIEW FULL AUDIT TRAIL</button>
+    </aside>
+
+    <footer class="detail-footer">
+      <div class="process-strip"><span class="cube">◇</span><strong>BUILD MODE:</strong><span id="buildModeLabel">UNKNOWN</span><span class="process-arrow">→</span><strong id="executionStatusLabel">STATE</strong></div>
+      <div class="attestation-strip" id="attestationStrip"><span>◇</span><strong>FREEZE INTEGRITY:</strong><span id="integrityLabel">READING…</span></div>
+      <a class="back-button" href="/">← Back to Tasks</a>
+    </footer>
+  </div>
+
+  <dialog id="auditDialog" class="audit-dialog">
+    <form method="dialog">
+      <header><div><small>AUDIT TRAIL</small><h2 id="auditTitle">Task history</h2></div><button value="close" class="icon-button" aria-label="Close">×</button></header>
+      <div id="auditBody" class="audit-body"></div>
+      <footer><button value="close" class="primary-button">Close</button></footer>
+    </form>
+  </dialog>
+
+  <div id="fatalError" class="detail-error hidden"><strong>Task detail unavailable</strong><span id="fatalErrorText"></span><a href="/">Back to Tasks</a></div>
+  <script src="/task.js" defer></script>
+</body>
+</html>
