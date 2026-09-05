@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { TaskId } from "../domain/ids.js";
 import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.js";
+import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -41,6 +42,10 @@ function safeTaskId(value: string): TaskId | null {
   return /^TASK-[A-Za-z0-9._-]+$/.test(value) ? value as TaskId : null;
 }
 
+function safeProviderId(value: string): string | null {
+  return /^[a-z0-9][a-z0-9._-]+$/i.test(value) ? value : null;
+}
+
 function parseUrl(request: IncomingMessage): URL {
   return new URL(request.url ?? "/", "http://127.0.0.1");
 }
@@ -55,8 +60,10 @@ function isClientInputError(message: string): boolean {
 }
 
 export function createControlServer(options: ControlServerOptions): Server {
-  const roots = controlRoots(resolve(options.stateDir));
+  const stateDir = resolve(options.stateDir);
+  const roots = controlRoots(stateDir);
   const tasks = new TaskReadModel(roots.stateRoot, roots.workOrderRoot, roots.executionRoot);
+  const providers = new ProviderReadModel(providerReceiptRoot(stateDir));
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
 
   return createServer(async (request, response) => {
@@ -79,13 +86,28 @@ export function createControlServer(options: ControlServerOptions): Server {
         });
       }
 
+      if (url.pathname === "/api/providers") {
+        return sendJson(response, 200, await providers.view(url.searchParams.get("refresh") === "1"));
+      }
+
+      const doctorMatch = /^\/api\/providers\/([A-Za-z0-9._-]+)\/doctor$/.exec(url.pathname);
+      if (doctorMatch?.[1]) {
+        const providerId = safeProviderId(doctorMatch[1]);
+        if (!providerId) return sendJson(response, 400, { error: "INVALID_PROVIDER_ID" });
+        const result = await providers.doctor(providerId, true);
+        return result ? sendJson(response, 200, result) : sendJson(response, 404, { error: "PROVIDER_NOT_FOUND" });
+      }
+
+      if (url.pathname === "/api/provider-receipts") {
+        const limitRaw = Number(url.searchParams.get("limit") ?? "50");
+        const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? limitRaw : 50;
+        return sendJson(response, 200, { receipts: (await providers.receipts(limit)) });
+      }
+
       if (url.pathname === "/api/tasks") {
         const rawFilter = url.searchParams.get("status") ?? "all";
         if (!FILTERS.has(rawFilter as TaskFilter)) return sendJson(response, 400, { error: "INVALID_TASK_FILTER" });
-        const result = await tasks.list({
-          filter: rawFilter as TaskFilter,
-          query: url.searchParams.get("q") ?? ""
-        });
+        const result = await tasks.list({ filter: rawFilter as TaskFilter, query: url.searchParams.get("q") ?? "" });
         return sendJson(response, 200, result);
       }
 
@@ -137,12 +159,15 @@ export function createControlServer(options: ControlServerOptions): Server {
       const staticFiles: Record<string, { name: string; type: string }> = {
         "/": { name: "index.html", type: "text/html; charset=utf-8" },
         "/index.html": { name: "index.html", type: "text/html; charset=utf-8" },
+        "/providers": { name: "providers.html", type: "text/html; charset=utf-8" },
         "/styles.css": { name: "styles.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
-        "/return.js": { name: "return.js", type: "text/javascript; charset=utf-8" }
+        "/return.js": { name: "return.js", type: "text/javascript; charset=utf-8" },
+        "/providers.css": { name: "providers.css", type: "text/css; charset=utf-8" },
+        "/providers.js": { name: "providers.js", type: "text/javascript; charset=utf-8" }
       };
       const asset = returnPage
         ? { name: "return.html", type: "text/html; charset=utf-8" }

@@ -67,6 +67,7 @@ jobs:
             ui/tasks-screen-e2e \
             ui/task-detail-e2e \
             ui/targeted-return-e2e \
+            ui/provider-fabric-e2e \
             chore/control-branch-hygiene \
             noop
           do
