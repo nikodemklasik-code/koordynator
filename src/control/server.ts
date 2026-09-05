@@ -45,6 +45,15 @@ function parseUrl(request: IncomingMessage): URL {
   return new URL(request.url ?? "/", "http://127.0.0.1");
 }
 
+function isClientInputError(message: string): boolean {
+  return [
+    "TASK_NOT_RETURNED",
+    "CURRENT_POLICY_FP_REQUIRED",
+    "CURRENT_POLICY_FP_INVALID",
+    "SIGNED_WORK_ORDER_NOT_FOUND"
+  ].includes(message);
+}
+
 export function createControlServer(options: ControlServerOptions): Server {
   const roots = controlRoots(resolve(options.stateDir));
   const tasks = new TaskReadModel(roots.stateRoot, roots.workOrderRoot, roots.executionRoot);
@@ -80,6 +89,33 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, result);
       }
 
+      const returnMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/return$/.exec(url.pathname);
+      if (returnMatch?.[1]) {
+        const taskId = safeTaskId(returnMatch[1]);
+        if (!taskId) return sendJson(response, 400, { error: "INVALID_TASK_ID" });
+        try {
+          const returned = await tasks.targetedReturn(taskId);
+          return returned ? sendJson(response, 200, returned) : sendJson(response, 404, { error: "TASK_NOT_FOUND" });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "TARGETED_RETURN_ERROR";
+          return isClientInputError(message) ? sendJson(response, 409, { error: message }) : sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
+        }
+      }
+
+      const nextOrderMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/next-work-order$/.exec(url.pathname);
+      if (nextOrderMatch?.[1]) {
+        const taskId = safeTaskId(nextOrderMatch[1]);
+        if (!taskId) return sendJson(response, 400, { error: "INVALID_TASK_ID" });
+        try {
+          const draft = await tasks.nextWorkOrderDraft(taskId, url.searchParams.get("policyFp") ?? undefined);
+          return sendJson(response, 200, { draft, safeToSign: true, persisted: false });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "NEXT_WORK_ORDER_ERROR";
+          if (message === "TASK_NOT_FOUND") return sendJson(response, 404, { error: message });
+          return isClientInputError(message) ? sendJson(response, 400, { error: message }) : sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
+        }
+      }
+
       const detailMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/detail$/.exec(url.pathname);
       if (detailMatch?.[1]) {
         const taskId = safeTaskId(detailMatch[1]);
@@ -97,15 +133,22 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
 
       const taskPage = /^\/tasks\/(TASK-[A-Za-z0-9._-]+)$/.exec(url.pathname);
+      const returnPage = /^\/tasks\/(TASK-[A-Za-z0-9._-]+)\/return$/.exec(url.pathname);
       const staticFiles: Record<string, { name: string; type: string }> = {
         "/": { name: "index.html", type: "text/html; charset=utf-8" },
         "/index.html": { name: "index.html", type: "text/html; charset=utf-8" },
         "/styles.css": { name: "styles.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
-        "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" }
+        "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
+        "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
+        "/return.js": { name: "return.js", type: "text/javascript; charset=utf-8" }
       };
-      const asset = taskPage ? { name: "task.html", type: "text/html; charset=utf-8" } : staticFiles[url.pathname];
+      const asset = returnPage
+        ? { name: "return.html", type: "text/html; charset=utf-8" }
+        : taskPage
+          ? { name: "task.html", type: "text/html; charset=utf-8" }
+          : staticFiles[url.pathname];
       if (!asset) return sendJson(response, 404, { error: "NOT_FOUND" });
       const body = await readFile(resolve(webRoot, asset.name), "utf8");
       if (request.method === "HEAD") {

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Targeted Return · Koordynator Control</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/return.css" />
+</head>
+<body>
+  <div class="return-shell">
+    <header class="return-topbar">
+      <div class="return-brand"><span class="return-logo">⬡</span><div><strong>KOORDYNATOR CONTROL</strong><small>TARGETED RETURN</small></div></div>
+      <div class="return-task"><strong id="taskTitle">TASK</strong><span id="revisionTitle">revision</span></div>
+      <div class="return-runtime"><span id="environmentLabel">LOCAL</span><span class="connection-dot"></span><span>CONNECTED</span></div>
+    </header>
+
+    <main class="return-grid">
+      <aside class="failure-panel">
+        <div class="panel-kicker fail">FAILED SUMMARY</div>
+        <section class="failure-card">
+          <div class="failure-icon">×</div>
+          <div>
+            <h1 id="primaryReason">RETURNED</h1>
+            <p id="reasonText">The task was returned by the runtime.</p>
+          </div>
+          <dl id="failureMeta"></dl>
+          <div class="policy-block">
+            <h2>POLICY FINGERPRINTS</h2>
+            <div class="policy-row"><span>Previous</span><code id="previousPolicy">—</code></div>
+            <div class="policy-row"><span>Current</span><code id="currentPolicy">not supplied</code></div>
+          </div>
+          <div class="reuse-row"><span>REUSABLE EVIDENCE</span><strong id="reusableEvidence">false</strong></div>
+          <p class="failure-note" id="requiredAction">Review the returned revision before continuing.</p>
+        </section>
+        <a id="taskDetailLink" class="secondary-link" href="/">Open full Task Detail</a>
+      </aside>
+
+      <section class="next-order-panel">
+        <div class="panel-heading">
+          <div><div class="panel-kicker">NEXT WORK ORDER</div><h2>Structured revision recovery</h2></div>
+          <span class="auto-badge">AUTO</span>
+        </div>
+
+        <div class="order-section">
+          <h3>WORK ORDER IDENTITY</h3>
+          <div class="identity-grid">
+            <div><span>Task ID</span><strong id="nextTaskId">—</strong></div>
+            <div><span>Revision</span><strong id="nextRevision">—</strong></div>
+            <div><span>Required action</span><strong id="actionLabel">—</strong></div>
+          </div>
+        </div>
+
+        <div class="order-section">
+          <h3>POLICY INPUT</h3>
+          <p id="policyHelp">If the task returned because policy evidence is stale, provide the current policy bundle fingerprint before generating revision N+1.</p>
+          <label class="policy-input-label" for="policyInput">Current policy fingerprint</label>
+          <div class="policy-input-row">
+            <input id="policyInput" type="text" spellcheck="false" autocomplete="off" placeholder="sha256:..." />
+            <button id="generateButton" class="primary-action" type="button">Generate Revision</button>
+          </div>
+          <div id="policyValidation" class="validation-message"></div>
+        </div>
+
+        <div class="order-section">
+          <h3>SIGNATURE REQUIREMENTS</h3>
+          <div class="signature-grid">
+            <div><span>Owner signature</span><strong>REQUIRED</strong></div>
+            <div><span>Next revision signed</span><strong id="nextSigned">NO</strong></div>
+            <div><span>WorkOrder FP</span><code id="nextWorkOrderFp">—</code></div>
+          </div>
+          <div class="action-row">
+            <button id="downloadDraftButton" class="secondary-action" type="button" disabled>Download WorkOrder JSON</button>
+            <button id="copySignButton" class="secondary-action" type="button" disabled>Copy Sign Command</button>
+          </div>
+        </div>
+
+        <div class="order-section">
+          <h3>EXECUTION CONTROL</h3>
+          <div class="execution-state">
+            <div><strong id="executionGate">BLOCKED: REVISION NOT SIGNED</strong><span>The console never handles private signing keys.</span></div>
+            <button id="copyRunButton" class="run-action" type="button" disabled>Copy Run Command</button>
+          </div>
+        </div>
+
+        <div class="order-section evidence-section">
+          <h3>RETURNED EVIDENCE</h3>
+          <div id="receiptList" class="receipt-grid"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="return-footer">
+      <div><strong id="footerTask">TASK</strong><span>•</span><span id="footerRevision">R0</span><span>•</span><strong class="fail" id="footerStatus">RETURNED</strong></div>
+      <a href="/">← Back to Tasks</a>
+    </footer>
+  </div>
+
+  <div id="fatalError" class="fatal hidden"><strong>Targeted Return unavailable</strong><span id="fatalErrorText"></span></div>
+  <script src="/return.js" defer></script>
+</body>
+</html>
