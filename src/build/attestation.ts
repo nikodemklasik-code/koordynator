@@ -43,6 +43,10 @@ export function signedAttestationFingerprint(attestation: BuilderAttestation): D
   });
 }
 
+export function expectedAttestationFp(base: BuilderAttestationBase): Digest {
+  return canonicalDigest({ kind: "legacy-attestation-v1", ...base });
+}
+
 export function verifyBuilderAttestation(
   base: BuilderAttestationBase,
   attestation: BuilderAttestation,
@@ -61,16 +65,11 @@ export function verifyBuilderAttestation(
   }
 }
 
-export function expectedAttestationFp(base: BuilderAttestationBase): Digest {
-  return canonicalDigest({ kind: "legacy-attestation-v1", ...base });
-}
-
 export function verifyStoredArtifactAttestation(
   artifact: StoredArtifact,
   resolvePublicKey?: (keyId: string) => KeyObject
 ): boolean {
-  if (artifact.revoked || !resolvePublicKey) return false;
-  if (!artifact.attestationKeyId || !artifact.attestationStatementFp || !artifact.attestationSignature) return false;
+  if (artifact.revoked) return false;
   const base: BuilderAttestationBase = {
     buildKey: artifact.buildKey,
     artifactFp: artifact.artifactFp,
@@ -78,6 +77,12 @@ export function verifyStoredArtifactAttestation(
     sbomFp: artifact.sbomFp,
     provenanceFp: artifact.provenanceFp
   };
+
+  if (!resolvePublicKey) {
+    return artifact.signedAttestationFp === expectedAttestationFp(base);
+  }
+
+  if (!artifact.attestationKeyId || !artifact.attestationStatementFp || !artifact.attestationSignature) return false;
   const attestation: BuilderAttestation = {
     keyId: artifact.attestationKeyId,
     statementFp: artifact.attestationStatementFp,

@@ -1,8 +1,7 @@
-import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { artifactFingerprint, buildKey, type BuildInputVector } from "./build-input.js";
 import type { ArtifactRegistry, StoredArtifact } from "./artifact-registry.js";
 import type { HermeticBuilder } from "./hermetic-builder.js";
-import { signedAttestationFingerprint, verifyStoredArtifactAttestation } from "./attestation.js";
+import { expectedAttestationFp, signedAttestationFingerprint, verifyStoredArtifactAttestation } from "./attestation.js";
 
 export type BuildDecision = { mode: "REUSE" | "BUILD"; artifact: StoredArtifact };
 
@@ -38,7 +37,7 @@ export async function buildOrReuse(
     bytes: built.bytes.slice()
   } : {
     ...attestationBase,
-    signedAttestationFp: canonicalDigest({ kind: "unattested-artifact-v1", ...attestationBase }),
+    signedAttestationFp: expectedAttestationFp(attestationBase),
     revoked: false,
     bytes: built.bytes.slice()
   };
