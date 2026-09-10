@@ -41,9 +41,12 @@
         <div class="chat-head-actions">
           <label class="model-picker">
             <span>MODEL · ALL CATALOG ROUTES</span>
-            <select id="modelSelect" aria-label="AI model" disabled>
-              <option value="" selected>Loading verified model routes…</option>
-            </select>
+            <div class="model-picker-row">
+              <span id="modelHealthLamp" class="model-health-lamp checking" title="Sprawdzanie modelu"></span>
+              <select id="modelSelect" aria-label="AI model" disabled>
+                <option value="" selected>Loading verified model routes…</option>
+              </select>
+            </div>
           </label>
           <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
           <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
