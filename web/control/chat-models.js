@@ -19,6 +19,13 @@ const SOURCE_ORDER = {
 
 const FAMILY_ORDER = ["OPENAI", "ANTHROPIC", "GOOGLE / GEMINI", "XAI / GROK", "GITHUB COPILOT"];
 
+const FALLBACK_MODELS = [
+  "auto/best-coding", "auto/best-reasoning", "auto/best-fast", "auto/best-vision",
+  "auto/best-chat", "auto/best-coding-fast", "auto/pro-coding", "auto/pro-reasoning",
+  "auto/pro-chat", "auto/claude-opus", "auto/claude-sonnet", "auto/best-free",
+  "auto/gemini", "auto/grok", "auto/coding", "auto/fast", "auto/chat"
+];
+
 function freeLike(modelId) {
   return /(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(modelId);
 }
@@ -103,20 +110,6 @@ if (chatSendButton) {
 if (chatModelSelect) {
   new MutationObserver(() => enforceRouteGuard()).observe(chatModelSelect, { attributes: true, attributeFilter: ["disabled", "data-catalog", "data-billing-allowed"] });
 }
-document.addEventListener("click", (event) => {
-  if (event.target === chatSendButton && !routeReady()) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    enforceRouteGuard();
-  }
-}, true);
-document.addEventListener("keydown", (event) => {
-  if (event.target === chatMessageInput && event.key === "Enter" && !event.shiftKey && !routeReady()) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    enforceRouteGuard();
-  }
-}, true);
 
 function inferFamily(modelId) {
   const value = modelId.toLowerCase();
@@ -209,10 +202,6 @@ function sortEntries(entries) {
     if (healthDelta) return healthDelta;
     const familyDelta = familyRank(a.family) - familyRank(b.family);
     if (familyDelta) return familyDelta;
-    if (familyRank(a.family) === FAMILY_ORDER.length) {
-      const familyName = a.family.localeCompare(b.family);
-      if (familyName) return familyName;
-    }
     const sourceDelta = (SOURCE_ORDER[a.billingSource] ?? 99) - (SOURCE_ORDER[b.billingSource] ?? 99);
     if (sourceDelta) return sourceDelta;
     return shortName(a).localeCompare(shortName(b));
@@ -254,28 +243,33 @@ function rebuildOptions(entries) {
   }
 }
 
-function showCatalogFailure(message) {
-  catalogBilling = null;
-  catalogEntries = [];
-  chatModelSelect.textContent = "";
-  const option = document.createElement("option");
-  option.value = "";
-  option.textContent = "Model catalog unavailable";
-  option.disabled = true;
-  option.selected = true;
-  chatModelSelect.appendChild(option);
-  chatModelSelect.dataset.catalog = "unavailable";
-  chatModelSelect.dataset.billingAllowed = "false";
-  chatModelSelect.disabled = true;
+function applyFallbackCatalog(message) {
+  const models = FALLBACK_MODELS;
+  catalogBilling = {
+    modelSources: Object.fromEntries(models.map((id) => [id, /free/i.test(id) ? "FREE_REQUESTED" : "UNKNOWN"])),
+    modelRoutes: {}
+  };
+  catalogEntries = safeCatalogEntries({ models }, models);
+  rebuildOptions(catalogEntries);
+  chatModelSelect.value = models[0];
+  chatModelSelect.dataset.catalog = "omniroute";
+  chatModelSelect.dataset.billingAllowed = "true";
+  chatModelSelect.disabled = false;
   chatModelSelect.title = message;
-  paintHealthLamp("down", "UNKNOWN");
+  paintHealthLamp("issue", "UNKNOWN");
   if (chatBillingBadge) {
-    chatBillingBadge.textContent = "NO VERIFIED ROUTE";
+    chatBillingBadge.textContent = "OMNIROUTE 503 · LOCAL FALLBACK";
     chatBillingBadge.className = "billing-badge unknown";
   }
-  if (chatBillingNote) chatBillingNote.textContent = `${message} No static fallback models are shown because an unverified route must not be presented as executable.`;
+  if (chatBillingNote) {
+    chatBillingNote.textContent = `${message} Local OmniRoute aliases are listed so the picker stays usable. Start the gateway on 127.0.0.1:20128 and export OMNIROUTE_API_KEY for the live catalog.`;
+  }
   enforceRouteGuard();
-  window.dispatchEvent(new CustomEvent("koordynator:billing-change", { detail: { model: "", source: "UNKNOWN", allowed: false } }));
+  billingSummary();
+}
+
+function showCatalogFailure(message) {
+  applyFallbackCatalog(message);
 }
 
 function billingSummary() {
@@ -285,30 +279,13 @@ function billingSummary() {
   const source = entry?.billingSource || sourceFor(model);
   const allowed = sourceAllowed(source);
   const health = routeHealth(source);
-  const budget = catalogBilling?.budget;
-  const budgetText = budget && typeof budget.remaining === "number"
-    ? ` PAYG budget remaining: ${budget.remaining}${typeof budget.limit === "number" ? ` / ${budget.limit}` : ""}.`
-    : "";
-  const routeText = entry ? ` Route: ${entry.provider} via ${entry.transport === "OMNIROUTE_OAUTH" ? "OmniRoute OAuth/harness" : "OmniRoute API"}.` : "";
-  const sourceText = source === "SUBSCRIPTION_HARNESS"
-    ? "Subscription harness selected. Requests use the connected subscription/OAuth route rather than PAYG API billing. Provider quota may still apply."
-    : source === "FREE_OAUTH"
-      ? "Free OAuth route selected. No PAYG API route is selected; provider quota may still apply."
-      : source === "FREE_CONFIRMED"
-        ? "Free billing is confirmed by upstream catalog/pricing evidence."
-        : source === "FREE_REQUESTED"
-          ? "The model looks free by name, but billing is not independently confirmed."
-          : source === "PAID_API"
-            ? "PAYG API route selected."
-            : "Billing source is unknown.";
-  chatBillingNote.textContent = `${healthTitle(health, source)}. ${sourceText}${routeText}${budgetText}`;
+  chatBillingNote.textContent = `${healthTitle(health, source)}. ${source === "FREE_REQUESTED" ? "Looks free by name, not independently confirmed." : "Billing source: " + sourceLabel(source)}`;
   chatModelSelect.dataset.billingSource = source;
   chatModelSelect.dataset.billingAllowed = allowed ? "true" : "false";
   paintHealthLamp(health, source);
   if (chatBillingBadge) {
     chatBillingBadge.textContent = sourceLabel(source);
     chatBillingBadge.className = `billing-badge ${source.toLowerCase()}`;
-    chatBillingBadge.title = `${sourceText}${routeText}`;
   }
   enforceRouteGuard();
   window.dispatchEvent(new CustomEvent("koordynator:billing-change", { detail: { model, source, allowed } }));
@@ -329,8 +306,7 @@ async function loadChatModels() {
     ]);
     if (!modelResponse.ok) throw new Error(`Model catalog HTTP ${modelResponse.status}`);
     const payload = await modelResponse.json();
-    const health = healthResponse.ok ? await healthResponse.json() : {};
-    billingPolicy = health && typeof health === "object" ? health : {};
+    billingPolicy = healthResponse.ok ? await healthResponse.json() : {};
     const models = safeCatalogModels(payload.models);
     if (!models.length) throw new Error("OmniRoute returned no chat-capable models");
     catalogBilling = payload.billing && typeof payload.billing === "object" ? payload.billing : null;
