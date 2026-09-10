@@ -35,15 +35,16 @@ function renderGitHubChatStatus(status) {
   const state = status?.state || "CHECKING";
   githubChatButton.dataset.state = state;
   githubChatDot.className = `github-chat-dot ${state.toLowerCase()}`;
-  githubChatButton.disabled = githubChatState.connecting || state === "UNAVAILABLE";
+  githubChatButton.disabled = githubChatState.connecting;
 
   if (githubChatState.connecting) {
     githubChatLabel.textContent = "GitHub connecting…";
     return;
   }
-  if (state === "CONNECTED") githubChatLabel.textContent = "GitHub connected";
+  if (state === "CONNECTED" && status?.connectionMethod === "GIT_CREDENTIAL") githubChatLabel.textContent = "GitHub connected · git";
+  else if (state === "CONNECTED") githubChatLabel.textContent = "GitHub connected · gh";
   else if (state === "AUTH_REQUIRED") githubChatLabel.textContent = "GitHub connect";
-  else if (state === "UNAVAILABLE") githubChatLabel.textContent = "GitHub unavailable";
+  else if (state === "UNAVAILABLE") githubChatLabel.textContent = "GitHub setup required";
   else if (state === "DEGRADED") githubChatLabel.textContent = "GitHub reconnect";
   else githubChatLabel.textContent = "GitHub checking…";
 }
@@ -84,13 +85,13 @@ function triggerPendingSend() {
 async function resolveRepositoryIntent() {
   const status = await loadGitHubChatStatus(true);
   if (status?.state === "CONNECTED") {
-    githubNotice("");
+    githubNotice(status.connectionMethod === "GIT_CREDENTIAL" ? "Repository access verified through local Git credentials." : "Repository access verified through GitHub CLI.", "success");
     triggerPendingSend();
     return;
   }
   if (status?.state === "UNAVAILABLE") {
     githubChatState.pendingSend = false;
-    githubNotice("GitHub CLI (gh) is unavailable. Repository connection cannot be started on this machine.", "error");
+    githubNotice("GitHub setup is required. Existing Git credentials could not be verified and GitHub CLI is unavailable.", "error");
     return;
   }
   openGitHubConsent();
@@ -108,7 +109,7 @@ function interceptRepositorySend(event) {
   event.stopPropagation();
   event.stopImmediatePropagation();
   githubChatState.pendingSend = true;
-  githubNotice("Repository request detected. Checking GitHub permission…", "pending");
+  githubNotice("Repository request detected. Checking existing Git/GitHub permission…", "pending");
   void resolveRepositoryIntent();
   return true;
 }
@@ -162,11 +163,11 @@ document.addEventListener("keydown", (event) => {
 githubChatButton?.addEventListener("click", async () => {
   const status = await loadGitHubChatStatus(true);
   if (status?.state === "CONNECTED") {
-    githubNotice("GitHub repository connection is active.", "success");
+    githubNotice(status.connectionMethod === "GIT_CREDENTIAL" ? "GitHub repository access is active through local Git credentials." : "GitHub repository connection is active through GitHub CLI.", "success");
     return;
   }
   if (status?.state === "UNAVAILABLE") {
-    githubNotice("GitHub CLI (gh) is unavailable. Install it before connecting repositories.", "error");
+    githubNotice("Run: brew install gh && gh auth login --hostname github.com --git-protocol https --web", "error");
     return;
   }
   githubChatState.pendingSend = false;
