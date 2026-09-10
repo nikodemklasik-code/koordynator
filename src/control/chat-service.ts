@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 export type ChatRole = "user" | "assistant";
@@ -33,6 +33,15 @@ export type ChatSession = {
   updatedAt: string;
   model: string;
   messages: ChatMessage[];
+};
+
+export type ChatSessionSummary = {
+  sessionId: string;
+  createdAt: string;
+  updatedAt: string;
+  model: string;
+  title: string;
+  messageCount: number;
 };
 
 export type ChatEvent =
@@ -133,6 +142,15 @@ function parseAttachmentDataUrl(value: unknown, mimeType: string): { dataUrl: st
   let decoded: Buffer;
   try { decoded = Buffer.from(match[2], "base64"); } catch { throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400); }
   return { dataUrl: value, base64: match[2], bytes: decoded.length };
+}
+
+function sessionTitle(session: ChatSession): string {
+  const firstUser = session.messages.find((message) => message.role === "user");
+  const fromText = firstUser?.content.trim().replace(/\s+/g, " ");
+  if (fromText) return fromText.length > 80 ? `${fromText.slice(0, 77)}…` : fromText;
+  const firstAttachment = firstUser?.attachments?.[0]?.name;
+  if (firstAttachment) return firstAttachment.length > 80 ? `${firstAttachment.slice(0, 77)}…` : firstAttachment;
+  return "New chat";
 }
 
 function extractDelta(payload: unknown): string {
@@ -242,6 +260,38 @@ export class ChatService {
     };
     await this.persist(session);
     return session;
+  }
+
+  async listSessions(limit = 50): Promise<ChatSessionSummary[]> {
+    const boundedLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 50;
+    let names: string[];
+    try {
+      names = (await readdir(this.root)).filter((name) => /^[0-9a-f-]+\.json$/i.test(name));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+    const sessions = await Promise.all(names.map(async (name) => {
+      try {
+        const raw = await readFile(join(this.root, name), "utf8");
+        const session = JSON.parse(raw) as ChatSession;
+        if (!SESSION_RE.test(session.sessionId) || !Array.isArray(session.messages)) return null;
+        return {
+          sessionId: session.sessionId,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
+          model: session.model,
+          title: sessionTitle(session),
+          messageCount: session.messages.length
+        } satisfies ChatSessionSummary;
+      } catch {
+        return null;
+      }
+    }));
+    return sessions
+      .filter((session): session is ChatSessionSummary => session !== null)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.createdAt.localeCompare(a.createdAt))
+      .slice(0, boundedLimit);
   }
 
   async getSession(sessionId: string): Promise<ChatSession | null> {
