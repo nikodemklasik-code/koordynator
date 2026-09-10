@@ -105,6 +105,7 @@ describe("GitHub runtime fallback", () => {
       webRoot: resolve("web/control"),
       chatApiKey: "secret",
       chatFetchImpl: fetchImpl,
+      chatAllowGithubContext: true,
       githubRepositoryContext,
       chatModelCatalog
     });

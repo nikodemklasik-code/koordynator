@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -10,6 +11,7 @@ import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPo
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
+import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -20,6 +22,8 @@ export type ControlServerOptions = {
   operator?: string;
   ciVerify?: "PASS" | "FAIL" | "UNKNOWN";
   version?: string;
+  controlToken?: string;
+  chatAllowGithubContext?: boolean;
   chatEndpoint?: string;
   chatApiKey?: string;
   chatApiKeyEnv?: string;
@@ -31,9 +35,20 @@ export type ControlServerOptions = {
   chatModelCatalog?: ChatModelCatalogPort;
 };
 
+export class ControlAuthError extends Error {
+  readonly code = "CONTROL_UNAUTHORIZED";
+  readonly status = 401;
+  constructor() {
+    super("CONTROL_UNAUTHORIZED");
+    this.name = "ControlAuthError";
+  }
+}
+
 const FILTERS = new Set<TaskFilter>(["all", "building", "frozen", "validating", "awaiting-approval", "released", "returned"]);
 const CHAT_SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHAT_MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
+const SSE_HEARTBEAT_MS = 15_000;
+const CHAT_MESSAGE_MAX_BYTES = 21 * 1024 * 1024;
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
@@ -71,6 +86,27 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/integrations/github/connect" ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname);
+}
+
+function presentedControlToken(request: IncomingMessage): string {
+  const header = String(request.headers["x-control-token"] ?? "").trim();
+  if (header) return header;
+  const authorization = String(request.headers.authorization ?? "");
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization);
+  return match?.[1] ?? "";
+}
+
+function tokensEqual(expected: string, presented: string): boolean {
+  const left = Buffer.from(expected);
+  const right = Buffer.from(presented);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+function assertControlAuth(request: IncomingMessage, token: string | undefined, pathname: string): void {
+  if (!token) return;
+  if (pathname === "/api/health") return;
+  if (!tokensEqual(token, presentedControlToken(request))) throw new ControlAuthError();
 }
 
 async function readJsonBody(request: IncomingMessage, maxBytes = 40 * 1024): Promise<Record<string, unknown>> {
@@ -117,6 +153,10 @@ function repositoryAttachment(repository: string, commit: string, context: strin
   };
 }
 
+function wantsGithubContext(options: ControlServerOptions): boolean {
+  return options.chatAllowGithubContext === true;
+}
+
 export function createControlServer(options: ControlServerOptions): Server {
   const stateDir = resolve(options.stateDir);
   const roots = controlRoots(stateDir);
@@ -145,6 +185,7 @@ export function createControlServer(options: ControlServerOptions): Server {
     try {
       const url = parseUrl(request);
       const method = request.method ?? "GET";
+      assertControlAuth(request, options.controlToken, url.pathname);
       if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isControlPost(url.pathname))) {
         response.setHeader("allow", "GET, HEAD");
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
@@ -177,7 +218,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
       if (method === "POST" && chatMessageMatch?.[1]) {
         const sessionId = safeSessionId(chatMessageMatch[1]);
-        const payload = await readJsonBody(request, 30 * 1024 * 1024);
+        const payload = await readJsonBody(request, CHAT_MESSAGE_MAX_BYTES);
         assertExactKeys(payload, ["message", "model", "attachments"]);
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
@@ -192,7 +233,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         if (billingError) throw new ChatServiceError(billingError, 403);
 
         const clientAttachments = payload.attachments ?? [];
-        const repoContext = await githubRepositories.fromMessage(payload.message);
+        const repoContext = wantsGithubContext(options) ? await githubRepositories.fromMessage(payload.message) : null;
         if (repoContext && clientAttachments.length >= 5) throw new ChatServiceError("CHAT_REPOSITORY_CONTEXT_ATTACHMENT_LIMIT", 413);
         const attachments = repoContext
           ? [...clientAttachments, repositoryAttachment(repoContext.repository, repoContext.commit, repoContext.context)]
@@ -237,7 +278,15 @@ export function createControlServer(options: ControlServerOptions): Server {
         });
         response.write(": connected\n\n");
         const unsubscribe = chat.subscribe(sessionId, (event) => sseWrite(response, event));
-        request.on("close", unsubscribe);
+        const heartbeat = setInterval(() => {
+          if (response.destroyed || response.writableEnded) return;
+          response.write(": heartbeat\n\n");
+        }, SSE_HEARTBEAT_MS);
+        heartbeat.unref();
+        request.on("close", () => {
+          clearInterval(heartbeat);
+          unsubscribe();
+        });
         return;
       }
 
@@ -260,7 +309,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           zone: options.zone ?? "local",
           operator: options.operator ?? "operator@koordynator.local",
           ciVerify: options.ciVerify ?? "UNKNOWN",
-          version: options.version ?? "0.1.0",
+          version: options.version ?? VERSION,
           liveChatBillingPolicy: "STRICT_PROVENANCE",
           paidApiAllowedByDefault: options.chatBillingPolicy?.allowPaidApi === true,
           unknownBillingAllowedByDefault: options.chatBillingPolicy?.allowUnknown === true,
@@ -283,7 +332,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (doctorMatch?.[1]) {
         const providerId = safeProviderId(doctorMatch[1]);
         if (!providerId) return sendJson(response, 400, { error: "INVALID_PROVIDER_ID" });
-        const result = await providers.doctor(providerId, true);
+        const result = await providers.doctor(providerId, method !== "HEAD");
         return result ? sendJson(response, 200, result) : sendJson(response, 404, { error: "PROVIDER_NOT_FOUND" });
       }
       if (url.pathname === "/api/provider-receipts") {
@@ -307,7 +356,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           return returned ? sendJson(response, 200, returned) : sendJson(response, 404, { error: "TASK_NOT_FOUND" });
         } catch (error) {
           const message = error instanceof Error ? error.message : "TARGETED_RETURN_ERROR";
-          return isClientInputError(message) ? sendJson(response, 409, { error: message }) : sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
+          return isClientInputError(message) ? sendJson(response, 409, { error: message }) : sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });
         }
       }
 
@@ -321,7 +370,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         } catch (error) {
           const message = error instanceof Error ? error.message : "NEXT_WORK_ORDER_ERROR";
           if (message === "TASK_NOT_FOUND") return sendJson(response, 404, { error: message });
-          return isClientInputError(message) ? sendJson(response, 400, { error: message }) : sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
+          return isClientInputError(message) ? sendJson(response, 400, { error: message }) : sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });
         }
       }
 
@@ -377,11 +426,13 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       return sendText(response, 200, asset.type, body);
     } catch (error) {
+      if (error instanceof ControlAuthError) {
+        return sendJson(response, error.status, { error: error.code });
+      }
       if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError) {
         return sendJson(response, error.status, { error: error.code });
       }
-      const message = error instanceof Error ? error.message : "CONTROL_SERVER_ERROR";
-      return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
+      return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });
     }
   });
 

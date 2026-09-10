@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, resolve } from "node:path";
 import { canonicalDigest, canonicalJson } from "../crypto/canonical-digest.js";
 import type { BuildArtifact, HermeticBuilder } from "./hermetic-builder.js";
 import type { BuildInputVector } from "./build-input.js";
+import { collectWorkspaceFiles } from "./safe-fs.js";
 
 export type ContainerHermeticBuildPlan = {
   kind: "container";
@@ -25,10 +26,6 @@ function assertPinnedImage(image: string): void {
   if (!/@sha256:[a-f0-9]{64}$/i.test(image)) throw new Error("CONTAINER_IMAGE_MUST_BE_PINNED_BY_SHA256");
 }
 
-function safeArtifactPath(path: string): void {
-  if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new Error(`UNSAFE_ARTIFACT_PATH:${path}`);
-}
-
 export function containerRunArgs(plan: ContainerHermeticBuildPlan, workspace: string): string[] {
   assertPinnedImage(plan.image);
   const mount = `type=bind,src=${workspace},dst=/workspace`;
@@ -43,24 +40,10 @@ export function containerRunArgs(plan: ContainerHermeticBuildPlan, workspace: st
   return args;
 }
 
-async function collect(root: string, relPath: string): Promise<Array<{ path: string; bytes: Uint8Array }>> {
-  safeArtifactPath(relPath);
-  const target = join(root, relPath);
-  const info = await stat(target);
-  if (info.isFile()) return [{ path: relPath.split(sep).join("/"), bytes: await readFile(target) }];
-  if (!info.isDirectory()) throw new Error(`UNSUPPORTED_ARTIFACT_TYPE:${relPath}`);
-  const result: Array<{ path: string; bytes: Uint8Array }> = [];
-  for (const name of (await readdir(target)).sort()) result.push(...await collect(root, join(relPath, name)));
-  return result;
-}
-
 async function pack(workspace: string, artifactPaths: string[]): Promise<Uint8Array> {
   const files: Array<{ path: string; bytes: Uint8Array }> = [];
   for (const path of [...artifactPaths].sort()) {
-    const full = resolve(workspace, path);
-    const rel = relative(workspace, full);
-    if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("ARTIFACT_ESCAPES_WORKSPACE");
-    files.push(...await collect(workspace, path));
+    files.push(...await collectWorkspaceFiles(workspace, path));
   }
   const unique = new Map(files.map((file) => [file.path, file.bytes]));
   const payload = [...unique.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([path, bytes]) => ({
