@@ -30,6 +30,17 @@ function normalizeEndpoint(value: string): string {
   return endpoint || "http://127.0.0.1:20128/v1";
 }
 
+function catalogUrls(endpoint: string): string[] {
+  const normalized = normalizeEndpoint(endpoint);
+  const urls = [`${normalized}/models`];
+  if (normalized.endsWith("/v1") && !normalized.endsWith("/api/v1")) {
+    urls.push(`${normalized.slice(0, -3)}/api/v1/models`);
+  } else if (normalized.endsWith("/api/v1")) {
+    urls.push(`${normalized.slice(0, -7)}/v1/models`);
+  }
+  return [...new Set(urls)];
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -90,19 +101,26 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     return value?.trim() || undefined;
   }
 
-  async list(): Promise<ChatModelCatalog> {
-    const key = this.credential();
-    if (!key) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
-
-    let response: Response;
+  private async readCatalog(url: string, key: string): Promise<Response> {
     try {
-      response = await this.fetchImpl(`${this.endpoint}/models`, {
+      return await this.fetchImpl(url, {
         method: "GET",
         headers: { accept: "application/json", authorization: `Bearer ${key}` },
         signal: AbortSignal.timeout(this.timeoutMs)
       });
     } catch {
       throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_UNAVAILABLE", 503);
+    }
+  }
+
+  async list(): Promise<ChatModelCatalog> {
+    const key = this.credential();
+    if (!key) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
+
+    const urls = catalogUrls(this.endpoint);
+    let response = await this.readCatalog(urls[0]!, key);
+    if ((response.status === 404 || response.status === 405) && urls[1]) {
+      response = await this.readCatalog(urls[1], key);
     }
 
     if (response.status === 401 || response.status === 403) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
