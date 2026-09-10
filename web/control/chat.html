@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/control-ui.css" />
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/chat-usage.css" />
+  <link rel="stylesheet" href="/chat-model-health.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -73,7 +74,7 @@
             <div class="welcome-mark">◇</div>
             <h2>Start a conversation</h2>
             <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
-            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files &amp; images</span><span>Chat history</span><span>GitHub permission gate</span></div>
+            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files & images</span><span>Chat history</span><span>GitHub permission gate</span></div>
           </div>
         </div>
 
@@ -128,7 +129,7 @@
       <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
       <p>This message appears to require a GitHub repository. Koordynator first reuses a working local Git credential path when one already exists. If GitHub CLI authentication is required, the official browser sign-in starts only after your approval. Koordynator does not collect your GitHub password, browser cookies or token.</p>
       <div class="github-chat-consent-points"><span>✓ Existing local Git credentials are reused when repository access already works.</span><span>✓ No new GitHub CLI sign-in starts before approval.</span><span>✓ GitHub controls which account and repository permissions you grant.</span></div>
-      <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button></footer>
+      <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve & connect</button></footer>
     </form>
   </dialog>
 
