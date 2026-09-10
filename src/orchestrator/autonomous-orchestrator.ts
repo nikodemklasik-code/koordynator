@@ -2,7 +2,7 @@ import { canonicalDigest } from "../crypto/canonical-digest.js";
 import type { WorkOrder } from "../domain/work-order.js";
 import { OrchestratorRuntime, type OrchestratorRunRequest, type OrchestratorRunResult } from "./orchestrator.js";
 
-export type ReturnedRunResult = OrchestratorRunResult & { status: "RETURNED" };
+export type ReturnedRunResult = Omit<OrchestratorRunResult, "status"> & { status: "RETURNED" };
 
 export type AutonomousRecoveryContext = {
   request: Readonly<OrchestratorRunRequest>;
@@ -88,23 +88,24 @@ export class AutonomousOrchestratorRuntime {
     while (true) {
       const result = await this.runtime.run(request);
       if (result.status !== "RETURNED") return result;
+      const returned: ReturnedRunResult = { ...result, status: "RETURNED" };
 
       if (recoveriesUsed >= retryBudget) {
-        return withReason(result, "Wyczerpano autonomiczną drabinę naprawy.");
+        return withReason(returned, "Wyczerpano autonomiczną drabinę naprawy.");
       }
 
       const decision = await this.recovery.recover({
         request,
-        result,
+        result: returned,
         recoveryAttempt: recoveriesUsed + 1,
         remainingRetries: retryBudget - recoveriesUsed
       });
 
       if (decision.action === "stop") {
-        return withReason(result, decision.reason.trim() || "Autonomiczna naprawa została zatrzymana.");
+        return withReason(returned, decision.reason.trim() || "Autonomiczna naprawa została zatrzymana.");
       }
 
-      assertAutonomousRetryInvariant(request, result, decision.request);
+      assertAutonomousRetryInvariant(request, returned, decision.request);
       request = decision.request;
       recoveriesUsed += 1;
     }
