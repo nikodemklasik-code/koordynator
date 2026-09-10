@@ -52,18 +52,7 @@ export class OmniRouteProviderAdapter implements ProviderAdapter {
       authMode: "API_KEY",
       billingMode: "API_PAYG",
       supportsHeadless: true,
-      supportsStructuredOutput: true,
-      modelFamily: "omniroute",
-      qualityScore: 100,
-      estimatedCostScore: 1,
-      typicalLatencyMs: 1,
-      roleAffinity: {
-        BUILDER: 100,
-        FIXER: 100,
-        REVIEWER: 100,
-        RESEARCHER: 100,
-        PLANNER: 100
-      }
+      supportsStructuredOutput: true
     };
   }
 
