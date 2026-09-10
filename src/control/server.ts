@@ -10,7 +10,7 @@ import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPo
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
-import { ProjectSourceError, ProjectSourceService } from "./project-source.js";
+import { ProjectSourceError, ProjectSourceService, type ProjectUploadFile } from "./project-source.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -153,10 +153,10 @@ export function createControlServer(options: ControlServerOptions): Server {
         assertExactKeys(payload, ["name", "objective", "githubUrl", "files"]);
         if (payload.files !== undefined && !Array.isArray(payload.files)) throw new ProjectSourceError("PROJECT_FILES_INVALID", 400);
         const created = await projects.create({
-          name: typeof payload.name === "string" ? payload.name : undefined,
-          objective: typeof payload.objective === "string" ? payload.objective : undefined,
-          githubUrl: typeof payload.githubUrl === "string" ? payload.githubUrl : undefined,
-          files: Array.isArray(payload.files) ? payload.files as never : []
+          ...(typeof payload.name === "string" ? { name: payload.name } : {}),
+          ...(typeof payload.objective === "string" ? { objective: payload.objective } : {}),
+          ...(typeof payload.githubUrl === "string" ? { githubUrl: payload.githubUrl } : {}),
+          files: Array.isArray(payload.files) ? payload.files as ProjectUploadFile[] : []
         });
         return sendJson(response, 201, created);
       }
@@ -341,6 +341,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/task-projects.js": { name: "task-projects.js", type: "text/javascript; charset=utf-8" },
+        "/chat-project.js": { name: "chat-project.js", type: "text/javascript; charset=utf-8" },
         "/task-projects.css": { name: "task-projects.css", type: "text/css; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
         "/return.js": { name: "return.js", type: "text/javascript; charset=utf-8" },
