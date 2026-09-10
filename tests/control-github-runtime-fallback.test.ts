@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitHubConnectionService, type GitHubCommandRunner } from "../src/control/github-connection-service.js";
 import type { GitHubRepositoryContextPort } from "../src/control/github-repository-context.js";
+import type { ChatModelCatalogPort } from "../src/control/chat-model-catalog.js";
 import { createControlServer } from "../src/control/server.js";
 
 const roots: string[] = [];
@@ -72,12 +73,28 @@ describe("GitHub runtime fallback", () => {
         };
       }
     };
+    const chatModelCatalog: ChatModelCatalogPort = {
+      async list() {
+        return {
+          models: ["auto/best-free"],
+          source: "OMNIROUTE",
+          checkedAt: "2026-09-10T15:00:00.000Z",
+          billing: {
+            liveChatTransport: "OMNIROUTE_API",
+            subscriptionHarnessUsed: false,
+            subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
+            modelSources: { "auto/best-free": "FREE_CONFIRMED" }
+          }
+        };
+      }
+    };
     const server = createControlServer({
       stateDir: root,
       webRoot: resolve("web/control"),
       chatApiKey: "secret",
       chatFetchImpl: fetchImpl,
-      githubRepositoryContext
+      githubRepositoryContext,
+      chatModelCatalog
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
