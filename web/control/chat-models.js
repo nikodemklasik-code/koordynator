@@ -1,6 +1,8 @@
 const chatModelSelect = document.getElementById("modelSelect");
 const chatBillingNote = document.querySelector(".composer-note");
 const chatBillingBadge = document.getElementById("billingBadge");
+const chatSendButton = document.getElementById("sendButton");
+const chatMessageInput = document.getElementById("messageInput");
 const CHAT_MODEL_SESSION_KEY = "koordynator.liveChat.sessionId";
 let catalogBilling = null;
 let catalogEntries = [];
@@ -51,6 +53,42 @@ function sourceAllowed(source) {
   if (source === "PAID_API") return billingPolicy?.paidApiAllowedByDefault === true && catalogBilling?.budget?.exhausted !== true;
   return billingPolicy?.unknownBillingAllowedByDefault === true;
 }
+
+function routeReady() {
+  return Boolean(
+    chatModelSelect
+    && chatModelSelect.dataset.catalog === "omniroute"
+    && chatModelSelect.dataset.billingAllowed === "true"
+    && chatModelSelect.value
+  );
+}
+
+function enforceRouteGuard() {
+  const ready = routeReady();
+  if (chatSendButton && !ready) chatSendButton.disabled = true;
+  if (chatModelSelect && chatModelSelect.dataset.catalog !== "omniroute") chatModelSelect.disabled = true;
+}
+
+if (chatSendButton) {
+  new MutationObserver(() => enforceRouteGuard()).observe(chatSendButton, { attributes: true, attributeFilter: ["disabled"] });
+}
+if (chatModelSelect) {
+  new MutationObserver(() => enforceRouteGuard()).observe(chatModelSelect, { attributes: true, attributeFilter: ["disabled", "data-catalog", "data-billing-allowed"] });
+}
+document.addEventListener("click", (event) => {
+  if (event.target === chatSendButton && !routeReady()) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    enforceRouteGuard();
+  }
+}, true);
+document.addEventListener("keydown", (event) => {
+  if (event.target === chatMessageInput && event.key === "Enter" && !event.shiftKey && !routeReady()) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    enforceRouteGuard();
+  }
+}, true);
 
 function inferFamily(modelId) {
   const value = modelId.toLowerCase();
@@ -196,20 +234,21 @@ function showCatalogFailure(message) {
   option.disabled = true;
   option.selected = true;
   chatModelSelect.appendChild(option);
-  chatModelSelect.disabled = true;
   chatModelSelect.dataset.catalog = "unavailable";
   chatModelSelect.dataset.billingAllowed = "false";
+  chatModelSelect.disabled = true;
   chatModelSelect.title = message;
   if (chatBillingBadge) {
     chatBillingBadge.textContent = "NO VERIFIED ROUTE";
     chatBillingBadge.className = "billing-badge unknown";
   }
   if (chatBillingNote) chatBillingNote.textContent = `${message} No static fallback models are shown because an unverified route must not be presented as executable.`;
+  enforceRouteGuard();
   window.dispatchEvent(new CustomEvent("koordynator:billing-change", { detail: { model: "", source: "UNKNOWN", allowed: false } }));
 }
 
 function billingSummary() {
-  if (!chatModelSelect || !chatBillingNote || chatModelSelect.disabled) return;
+  if (!chatModelSelect || !chatBillingNote || chatModelSelect.dataset.catalog !== "omniroute") return;
   const model = chatModelSelect.value;
   const entry = catalogEntries.find((item) => item.id === model);
   const source = entry?.billingSource || sourceFor(model);
@@ -238,13 +277,17 @@ function billingSummary() {
     chatBillingBadge.className = `billing-badge ${source.toLowerCase()}`;
     chatBillingBadge.title = `${sourceText}${routeText}`;
   }
+  enforceRouteGuard();
   window.dispatchEvent(new CustomEvent("koordynator:billing-change", { detail: { model, source, allowed } }));
 }
 
 async function loadChatModels() {
   if (!chatModelSelect) return;
+  chatModelSelect.dataset.catalog = "loading";
+  chatModelSelect.dataset.billingAllowed = "false";
   chatModelSelect.disabled = true;
   const previous = chatModelSelect.value;
+  enforceRouteGuard();
   try {
     const [modelResponse, healthResponse] = await Promise.all([
       fetch("/api/chat/models", { headers: { accept: "application/json" } }),
@@ -260,9 +303,7 @@ async function loadChatModels() {
     catalogEntries = safeCatalogEntries(payload, models);
 
     const usable = catalogEntries.filter((entry) => sourceAllowed(entry.billingSource));
-    if (!usable.length) {
-      throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
-    }
+    if (!usable.length) throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
 
     const usableIds = usable.map((entry) => entry.id);
     const preferred = usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
@@ -272,8 +313,8 @@ async function loadChatModels() {
     const desired = await desiredSessionModel(usableIds, preferred);
     rebuildOptions(usable);
     chatModelSelect.value = usableIds.includes(desired) ? desired : preferred;
-    chatModelSelect.disabled = false;
     chatModelSelect.dataset.catalog = "omniroute";
+    chatModelSelect.disabled = false;
     const hidden = catalogEntries.length - usable.length;
     chatModelSelect.title = `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
     billingSummary();
