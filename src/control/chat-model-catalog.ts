@@ -31,7 +31,7 @@ export type ChatModelCatalog = {
   billing?: {
     liveChatTransport: "OMNIROUTE_API";
     subscriptionHarnessUsed: boolean;
-    subscriptionHarnessPath: "OMNIROUTE_OAUTH_MODEL_ROUTES" | "NOT_AVAILABLE";
+    subscriptionHarnessPath: "OMNIROUTE_OAUTH_MODEL_ROUTES" | "NOT_AVAILABLE" | "NOT_WIRED_TO_LIVE_CHAT";
     modelSources: Record<string, ChatModelBillingSource>;
     modelRoutes?: Record<string, ChatModelRoute>;
     budget?: { exhausted: boolean; remaining?: number; limit?: number; used?: number };
@@ -58,6 +58,7 @@ export class ChatModelCatalogError extends Error {
 }
 
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
+const PROVIDER_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/;
 const PROTECTED_ROUTE_SOURCES = new Set<ChatModelBillingSource>(["SUBSCRIPTION_HARNESS", "FREE_OAUTH"]);
 
 const ROUTE_PREFIXES: Record<string, { provider: string; family: string; source: ChatModelBillingSource }> = {
@@ -77,7 +78,25 @@ const ROUTE_PREFIXES: Record<string, { provider: string; family: string; source:
   kiro: { provider: "kiro", family: "KIRO", source: "FREE_OAUTH" },
   if: { provider: "qoder", family: "QODER", source: "FREE_OAUTH" },
   qoder: { provider: "qoder", family: "QODER", source: "FREE_OAUTH" },
-  qw: { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" }
+  qw: { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" },
+  "qwen-oauth": { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" }
+};
+
+const KNOWN_PROVIDER_ALIASES: Record<string, string[]> = {
+  openai: ["openai", "codex"],
+  anthropic: ["anthropic", "claude", "claude-code"],
+  google: ["google", "gemini", "gemini-cli"],
+  xai: ["xai", "xai-oauth", "grok", "grok-cli"],
+  cohere: ["cohere"],
+  groq: ["groq"],
+  github: ["github-copilot", "github"],
+  openrouter: ["openrouter"],
+  qwen: ["qwen", "qwen-oauth"],
+  moonshot: ["moonshot", "kimi"],
+  minimax: ["minimax"],
+  glm: ["glm", "zhipu"],
+  kiro: ["kiro"],
+  qoder: ["qoder"]
 };
 
 function normalizeEndpoint(value: string): string {
@@ -94,11 +113,8 @@ function gatewayRoot(endpoint: string): string {
 function catalogUrls(endpoint: string): string[] {
   const normalized = normalizeEndpoint(endpoint);
   const urls = [`${normalized}/models`];
-  if (normalized.endsWith("/v1") && !normalized.endsWith("/api/v1")) {
-    urls.push(`${normalized.slice(0, -3)}/api/v1/models`);
-  } else if (normalized.endsWith("/api/v1")) {
-    urls.push(`${normalized.slice(0, -7)}/v1/models`);
-  }
+  if (normalized.endsWith("/v1") && !normalized.endsWith("/api/v1")) urls.push(`${normalized.slice(0, -3)}/api/v1/models`);
+  else if (normalized.endsWith("/api/v1")) urls.push(`${normalized.slice(0, -7)}/v1/models`);
   return [...new Set(urls)];
 }
 
@@ -128,20 +144,6 @@ function catalogItems(payload: unknown): unknown[] {
   return [];
 }
 
-function modelRecordMap(payload: unknown): Map<string, Record<string, unknown>> {
-  const records = new Map<string, Record<string, unknown>>();
-  for (const item of catalogItems(payload)) {
-    const id = modelId(item);
-    if (!id || records.has(id)) continue;
-    records.set(id, isObject(item) ? item : { id });
-  }
-  return records;
-}
-
-function uniqueModels(payload: unknown): string[] {
-  return [...modelRecordMap(payload).keys()];
-}
-
 function walk(value: unknown, visit: (record: Record<string, unknown>) => void, depth = 0): void {
   if (depth > 8) return;
   if (Array.isArray(value)) {
@@ -151,6 +153,23 @@ function walk(value: unknown, visit: (record: Record<string, unknown>) => void, 
   if (!isObject(value)) return;
   visit(value);
   for (const nested of Object.values(value)) walk(nested, visit, depth + 1);
+}
+
+function modelRecordMap(payload: unknown): Map<string, Record<string, unknown>> {
+  const records = new Map<string, Record<string, unknown>>();
+  walk(payload, (record) => {
+    const id = modelId(record);
+    if (id && !records.has(id)) records.set(id, record);
+  });
+  for (const item of catalogItems(payload)) {
+    const id = modelId(item);
+    if (id && !records.has(id)) records.set(id, isObject(item) ? item : { id });
+  }
+  return records;
+}
+
+function uniqueModels(payload: unknown): string[] {
+  return [...modelRecordMap(payload).keys()];
 }
 
 function numberValue(record: Record<string, unknown>, keys: string[]): number | undefined {
@@ -175,6 +194,34 @@ function boolValue(record: Record<string, unknown>, keys: string[]): boolean | u
     if (record[key] === false) return false;
   }
   return undefined;
+}
+
+function providerIds(payload: unknown): string[] {
+  const ids = new Set<string>();
+  const collect = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const id = value.trim().toLowerCase();
+    if (PROVIDER_RE.test(id)) ids.add(id);
+  };
+  walk(payload, (record) => {
+    for (const key of ["providerId", "provider", "slug", "key"]) collect(record[key]);
+    const id = record.id;
+    if (typeof id === "string" && /provider|oauth|codex|claude|gemini|grok|xai|openai|anthropic|cohere|groq|copilot|qwen|kiro|qoder|kimi|moonshot|minimax|glm/i.test(id)) collect(id);
+  });
+  if (isObject(payload)) {
+    for (const key of Object.keys(payload)) if (PROVIDER_RE.test(key)) ids.add(key.toLowerCase());
+  }
+  return [...ids].slice(0, 50);
+}
+
+function expandKnownProviderAliases(ids: string[]): string[] {
+  const expanded = new Set(ids);
+  for (const id of ids) {
+    for (const [family, aliases] of Object.entries(KNOWN_PROVIDER_ALIASES)) {
+      if (id === family || aliases.includes(id)) for (const alias of aliases) expanded.add(alias);
+    }
+  }
+  return [...expanded].filter((id) => PROVIDER_RE.test(id)).slice(0, 60);
 }
 
 function budgetFrom(payload: unknown): { exhausted: boolean; remaining?: number; limit?: number; used?: number } | undefined {
@@ -246,7 +293,6 @@ function explicitBillingSignal(record: Record<string, unknown>): ChatModelBillin
     if (record[key] === true) return "FREE_CONFIRMED";
     if (record[key] === false) return "PAID_API";
   }
-
   const direct = numberValue(record, ["estimatedCost", "cost", "price"]);
   if (direct !== undefined) return direct === 0 ? "FREE_CONFIRMED" : "PAID_API";
   const input = numberValue(record, ["inputCost", "inputPrice", "promptPrice", "input_cost", "input_price"]);
@@ -256,11 +302,7 @@ function explicitBillingSignal(record: Record<string, unknown>): ChatModelBillin
   return undefined;
 }
 
-function applyBillingEvidence(
-  sources: Record<string, ChatModelBillingSource>,
-  models: Set<string>,
-  payload: unknown
-): void {
+function applyBillingEvidence(sources: Record<string, ChatModelBillingSource>, models: Set<string>, payload: unknown): void {
   if (payload === undefined) return;
   walk(payload, (record) => {
     const id = modelId(record);
@@ -276,17 +318,11 @@ function applyBillingEvidence(
   });
 }
 
-function modelBillingSources(
-  models: string[],
-  records: Map<string, Record<string, unknown>>,
-  catalog: unknown,
-  pricing: unknown
-): Record<string, ChatModelBillingSource> {
+function modelBillingSources(models: string[], records: Map<string, Record<string, unknown>>, catalog: unknown, pricing: unknown): Record<string, ChatModelBillingSource> {
   const sources: Record<string, ChatModelBillingSource> = {};
   for (const model of models) {
     const routeSource = routeFor(model, records.get(model)).routeSource;
-    sources[model] = routeSource
-      ?? (/(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(model) ? "FREE_REQUESTED" : "UNKNOWN");
+    sources[model] = routeSource ?? (/(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(model) ? "FREE_REQUESTED" : "UNKNOWN");
   }
   const known = new Set(models);
   applyBillingEvidence(sources, known, catalog);
@@ -328,15 +364,16 @@ function obviousNonChat(model: string): boolean {
     || /(?:^|[\/:._-])orpheus(?:$|[\/:._-])/.test(id);
 }
 
-function endpointModelSet(payload: unknown): Set<string> {
-  return new Set(uniqueModels(payload));
+function endpointModelSet(payload: unknown): Set<string> { return new Set(uniqueModels(payload)); }
+
+function mergeRecords(target: Map<string, Record<string, unknown>>, payload: unknown, provider?: string): void {
+  for (const [id, record] of modelRecordMap(payload)) {
+    const existing = target.get(id) ?? {};
+    target.set(id, { ...existing, ...record, ...(provider && record.provider === undefined && record.providerId === undefined ? { provider } : {}) });
+  }
 }
 
-function buildEntries(
-  models: string[],
-  records: Map<string, Record<string, unknown>>,
-  sources: Record<string, ChatModelBillingSource>
-): ChatModelEntry[] {
+function buildEntries(models: string[], records: Map<string, Record<string, unknown>>, sources: Record<string, ChatModelBillingSource>): ChatModelEntry[] {
   return models.map((id) => {
     const record = records.get(id) ?? { id };
     const route = routeFor(id, record);
@@ -385,11 +422,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
 
   private async readCatalog(url: string, key: string): Promise<Response> {
     try {
-      return await this.fetchImpl(url, {
-        method: "GET",
-        headers: this.headers(key),
-        signal: AbortSignal.timeout(this.timeoutMs)
-      });
+      return await this.fetchImpl(url, { method: "GET", headers: this.headers(key), signal: AbortSignal.timeout(this.timeoutMs) });
     } catch {
       throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_UNAVAILABLE", 503);
     }
@@ -397,11 +430,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
 
   private async optionalJson(url: string, key: string): Promise<unknown | undefined> {
     try {
-      const response = await this.fetchImpl(url, {
-        method: "GET",
-        headers: this.headers(key),
-        signal: AbortSignal.timeout(this.timeoutMs)
-      });
+      const response = await this.fetchImpl(url, { method: "GET", headers: this.headers(key), signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) return undefined;
       const contentType = response.headers.get("content-type") ?? "";
       if (!contentType.toLowerCase().includes("json")) return undefined;
@@ -411,6 +440,19 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     }
   }
 
+  private async syncedProviderCatalogs(root: string, key: string, providersPayload: unknown, managementCatalog: unknown): Promise<Array<{ provider: string; payload: unknown }>> {
+    const discovered = expandKnownProviderAliases([
+      ...providerIds(providersPayload),
+      ...providerIds(managementCatalog)
+    ]);
+    if (discovered.length === 0) return [];
+    const results = await Promise.all(discovered.map(async (provider) => ({
+      provider,
+      payload: await this.optionalJson(`${root}/api/synced-available-models?provider=${encodeURIComponent(provider)}`, key)
+    })));
+    return results.filter((item) => item.payload !== undefined);
+  }
+
   async list(): Promise<ChatModelCatalog> {
     const key = this.credential();
     if (!key) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
@@ -418,7 +460,6 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     const urls = catalogUrls(this.endpoint);
     let response = await this.readCatalog(urls[0]!, key);
     if ((response.status === 404 || response.status === 405) && urls[1]) response = await this.readCatalog(urls[1], key);
-
     if (response.status === 401 || response.status === 403) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
     if (response.status === 429) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_RATE_LIMITED", 429);
     if (!response.ok) throw new ChatModelCatalogError(`CHAT_MODEL_CATALOG_UPSTREAM_${response.status}`, 502);
@@ -429,7 +470,8 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     if (records.size === 0) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_EMPTY", 502);
 
     const root = gatewayRoot(this.endpoint);
-    const [managementCatalog, availability, pricingModels, pricing, budgetPayload, embeddingPayload, imagePayload] = await Promise.all([
+    const [providersPayload, managementCatalog, availability, pricingModels, pricing, budgetPayload, embeddingPayload, imagePayload] = await Promise.all([
+      this.optionalJson(`${root}/api/providers`, key),
       this.optionalJson(`${root}/api/models/catalog`, key),
       this.optionalJson(`${root}/api/models/availability`, key),
       this.optionalJson(`${root}/api/pricing/models`, key),
@@ -438,6 +480,10 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
       this.optionalJson(`${this.endpoint}/embeddings`, key),
       this.optionalJson(`${this.endpoint}/images/generations`, key)
     ]);
+
+    mergeRecords(records, managementCatalog);
+    const synced = await this.syncedProviderCatalogs(root, key, providersPayload, managementCatalog);
+    for (const item of synced) mergeRecords(records, item.payload, item.provider);
 
     const unavailable = explicitlyUnavailable(availability);
     const typedNonChat = typedNonChatModels(managementCatalog);
@@ -453,7 +499,8 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     if (models.length === 0) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_NO_CHAT_MODELS", 502);
 
     const pricingEvidence = pricingModels ?? pricing;
-    const sources = modelBillingSources(models, records, managementCatalog ?? payload, pricingEvidence);
+    const combinedCatalogEvidence = [payload, managementCatalog, ...synced.map((item) => item.payload)];
+    const sources = modelBillingSources(models, records, combinedCatalogEvidence, pricingEvidence);
     const entries = buildEntries(models, records, sources);
     const modelRoutes = Object.fromEntries(entries.map((entry) => [entry.id, {
       provider: entry.provider,
