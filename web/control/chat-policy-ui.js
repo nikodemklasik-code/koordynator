@@ -27,16 +27,17 @@ function showBlockedReason() {
 function enforceControlState() {
   if (!policySendButton) return;
   if (!billingAllowed()) {
-    policySendButton.disabled = true;
+    if (!policySendButton.disabled) policySendButton.disabled = true;
     policySendButton.title = billingReason();
     policySendButton.setAttribute("aria-label", billingReason());
-  } else {
-    policySendButton.title = "Send message";
-    policySendButton.setAttribute("aria-label", "Send message");
-    const hasPayload = Boolean(policyInput?.value.trim()) || Boolean(document.querySelector("#attachmentTray:not(.hidden) .attachment-chip"));
-    const generating = Boolean(document.querySelector("#stopButton:not(.hidden)"));
-    if (hasPayload && !generating) policySendButton.disabled = false;
+    return;
   }
+  policySendButton.title = "Send message";
+  policySendButton.setAttribute("aria-label", "Send message");
+  const hasPayload = Boolean(policyInput?.value.trim()) || Boolean(document.querySelector("#attachmentTray:not(.hidden) .attachment-chip"));
+  const generating = Boolean(document.querySelector("#stopButton:not(.hidden)"));
+  const shouldDisable = !hasPayload || generating;
+  if (policySendButton.disabled !== shouldDisable) policySendButton.disabled = shouldDisable;
 }
 
 window.addEventListener("koordynator:billing-change", () => {
