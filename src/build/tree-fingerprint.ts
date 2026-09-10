@@ -1,43 +1,12 @@
-import { createHash } from "node:crypto";
-import { readdir, readFile, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
 import { canonicalDigest, canonicalJson } from "../crypto/canonical-digest.js";
 import type { Digest } from "../domain/ids.js";
 import type { BuildInputVector } from "./build-input.js";
-
-const SKIP = new Set([".git", "node_modules", ".orchestrator", "dist"]);
+import { listWorkspaceTree } from "./safe-fs.js";
 
 export type TreeFile = { path: string; sha256: Digest; size: number };
 
-function normalize(rel: string): string {
-  return rel.split(sep).join("/");
-}
-
 export async function listSourceFiles(root: string): Promise<TreeFile[]> {
-  const out: TreeFile[] = [];
-
-  async function walk(dir: string): Promise<void> {
-    const names = (await readdir(dir)).sort();
-    for (const name of names) {
-      if (SKIP.has(name)) continue;
-      const full = join(dir, name);
-      const info = await stat(full);
-      if (info.isDirectory()) {
-        await walk(full);
-        continue;
-      }
-      if (!info.isFile()) continue;
-      const bytes = await readFile(full);
-      out.push({
-        path: normalize(relative(root, full)),
-        sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-        size: bytes.byteLength
-      });
-    }
-  }
-
-  await walk(root);
-  return out.sort((a, b) => a.path.localeCompare(b.path));
+  return listWorkspaceTree(root);
 }
 
 export function sourceFingerprint(files: TreeFile[]): Digest {

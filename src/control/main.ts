@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
+import { VERSION } from "../version.js";
 
 function port(): number {
   const value = Number(process.env.KOORDYNATOR_CONTROL_PORT ?? "8787");
@@ -9,6 +10,10 @@ function port(): number {
 }
 
 const host = process.env.KOORDYNATOR_CONTROL_HOST ?? "127.0.0.1";
+const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
+const controlToken = process.env.KOORDYNATOR_CONTROL_TOKEN?.trim() || undefined;
+if (!loopback && !controlToken) throw new Error("CONTROL_TOKEN_REQUIRED_FOR_NON_LOOPBACK");
+
 const server = createControlServer({
   stateDir: resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator"),
   ...(process.env.KOORDYNATOR_WEB_ROOT === undefined ? {} : { webRoot: resolve(process.env.KOORDYNATOR_WEB_ROOT) }),
@@ -17,10 +22,12 @@ const server = createControlServer({
   ...(process.env.KOORDYNATOR_ZONE === undefined ? {} : { zone: process.env.KOORDYNATOR_ZONE }),
   ...(process.env.KOORDYNATOR_OPERATOR === undefined ? {} : { operator: process.env.KOORDYNATOR_OPERATOR }),
   ...(process.env.OMNIROUTE_ENDPOINT === undefined ? {} : { chatEndpoint: process.env.OMNIROUTE_ENDPOINT }),
+  ...(controlToken === undefined ? {} : { controlToken }),
+  chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: process.env.KOORDYNATOR_CHAT_MODEL ?? "auto/best-free",
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
-  version: process.env.KOORDYNATOR_VERSION ?? "0.1.0"
+  version: process.env.KOORDYNATOR_VERSION ?? VERSION
 });
 
 server.listen(port(), host, () => {
