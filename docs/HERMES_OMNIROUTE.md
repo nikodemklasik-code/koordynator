@@ -13,6 +13,10 @@ Dodaj/loguj połączenia przez flow dostępny w tej wersji OmniRoute:
 | --- | --- | --- |
 | OpenAI przez sesję Codex | Codex, zwykle `cx/…` lub `codex/…` | Konto zalogowane, model dostępny w planie, limit niewyczerpany |
 | Anthropic przez sesję Claude Code | Claude Code, zwykle `cc/…` lub `claude-code/…` | Dostęp danej sesji i obsługa tego sposobu logowania przez providera |
+| GitHub Copilot | Copilot OAuth, zwykle `gh/…`, `github/…` lub `github-copilot/…` | Aktywna sesja i model dostępny przez Copilot |
+| Grok / xAI przez chronioną sesję | Grok CLI lub xAI OAuth, np. `gc/…`, `grok-cli/…`, `xao/…` | Aktywna sesja i faktyczna dostępność modelu |
+| Gemini CLI | Gemini CLI OAuth, zwykle `gemini-cli/…` | Aktywna sesja OAuth i limit darmowego/planowego dostępu |
+| Kiro / Qoder / Qwen | Chronione OAuth, np. `kr/…`, `if/…`, `qw/…` | Aktywna sesja, quota i model obecny w katalogu |
 | Darmowe API | np. Groq / Gemini Free Tier / OpenRouter free | Klucz tego providera, jego model i rzeczywista darmowa kwota |
 | Płatne API | np. `openai/…` / `anthropic/…` | Osobny billing; domyślnie blokowany w tym launcherze |
 
@@ -41,12 +45,19 @@ OMNIROUTE_API_KEY=WPISZ_KLUCZ_GATEWAYA_LOKALNIE
 KOORDYNATOR_CHAT_MODEL=WPISZ_DOKLADNA_TRASE_Z_DIAGNOSTYKI
 KOORDYNATOR_OPENAI_MODEL=WPISZ_DOKLADNA_TRASE_CODEX
 KOORDYNATOR_ANTHROPIC_MODEL=WPISZ_DOKLADNA_TRASE_CLAUDE_CODE
+KOORDYNATOR_GITHUB_COPILOT_MODEL=WPISZ_DOKLADNA_TRASE_COPILOT
+KOORDYNATOR_GROK_MODEL=WPISZ_DOKLADNA_TRASE_GROK
+KOORDYNATOR_GEMINI_MODEL=WPISZ_DOKLADNA_TRASE_GEMINI_CLI
+KOORDYNATOR_KIRO_MODEL=WPISZ_DOKLADNA_TRASE_KIRO
+KOORDYNATOR_QODER_MODEL=WPISZ_DOKLADNA_TRASE_QODER
+KOORDYNATOR_QWEN_MODEL=WPISZ_DOKLADNA_TRASE_QWEN
 ```
 
 Wartości powyżej są miejscami do uzupełnienia, nie nazwami modeli.
 `npm run doctor:omniroute` odczytuje katalog i pokazuje `subscriptionRoutes`
-oraz politykę kosztów dla każdego modelu. Raport nadal zostaje pokazany, jeśli
-bieżący model nie istnieje lub jest zablokowany (kod wyjścia 1).
+(OpenAI, Anthropic, GitHub Copilot, Grok), `oauthRoutes` (Gemini CLI, Kiro,
+Qoder, Qwen) oraz politykę kosztów dla każdego modelu. Raport nadal zostaje
+pokazany, jeśli bieżący model nie istnieje lub jest zablokowany (kod wyjścia 1).
 Przepisz dokładne identyfikatory z własnego gatewaya do `.env`.
 Katalog importowany przez użytkownika 2026-09-10 ma 787 pozycji u 12 providerów;
 trzy przesłane kopie są równoważne. Nie zawiera dowodu logowania, salda ani
@@ -67,6 +78,12 @@ npm run hermes
 # albo wybrana rodzina modeli, według zmiennych z .env:
 npm run hermes:openai
 npm run hermes:anthropic
+npm run hermes:github
+npm run hermes:grok
+npm run hermes:gemini
+npm run hermes:kiro
+npm run hermes:qoder
+npm run hermes:qwen
 ```
 
 Wymagany jest zainstalowany `hermes` w PATH (`hermes --version`). Launcher
