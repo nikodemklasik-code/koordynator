@@ -64,6 +64,14 @@ export function validateWorkOrder(order: WorkOrder): void {
   if (!Array.isArray(order.scope.allowedPaths) || order.scope.allowedPaths.length === 0) throw new Error("WORK_ORDER_SCOPE_REQUIRED");
   if (!Array.isArray(order.scope.modules) || !Array.isArray(order.capabilities) || !Array.isArray(order.requiredGates)) throw new Error("WORK_ORDER_ARRAY_FIELD_INVALID");
   if (!Number.isInteger(order.revision) || order.revision < 0) throw new Error("WORK_ORDER_REVISION_INVALID");
+  if (typeof order.taskId !== "string" || !/^TASK-[A-Za-z0-9._-]+$/.test(order.taskId)) throw new Error("WORK_ORDER_TASK_ID_INVALID");
+  if (typeof order.workspaceId !== "string" || !/^WS-[A-Za-z0-9._-]+$/.test(order.workspaceId)) throw new Error("WORK_ORDER_WORKSPACE_ID_INVALID");
+  if (new Set(order.requiredGates).size !== order.requiredGates.length) throw new Error("WORK_ORDER_REQUIRED_GATES_NOT_UNIQUE");
+  const GATES = new Set(["unit", "static", "security", "contract", "integration", "performance", "resilience", "migration"]);
+  if (order.requiredGates.some((gate) => !GATES.has(gate))) throw new Error("WORK_ORDER_GATE_INVALID");
+  if (!Array.isArray(order.expectedEvidence)) throw new Error("WORK_ORDER_ARRAY_FIELD_INVALID");
+  const EVIDENCE = new Set(["contract", "security", "performance", "dependency", "integration", "resilience", "migration"]);
+  if (order.expectedEvidence.some((item) => !EVIDENCE.has(item))) throw new Error("WORK_ORDER_EVIDENCE_KIND_INVALID");
   if (order.budget.timeSec <= 0 || order.budget.costLimit < 0 || order.budget.retries < 0 || order.budget.maxDagDepth <= 0) {
     throw new Error("WORK_ORDER_BUDGET_INVALID");
   }

@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { canonicalDigest, canonicalJson } from "../crypto/canonical-digest.js";
 import type { Digest } from "../domain/ids.js";
 import type { BuildArtifact, HermeticBuilder } from "./hermetic-builder.js";
 import type { BuildInputVector } from "./build-input.js";
+import { collectWorkspaceFiles } from "./safe-fs.js";
 
 export type HermeticBuildPlan = {
   sourceDir: string;
@@ -26,29 +27,10 @@ export type BuildExecutionReceipt = {
   workspaceFp: Digest;
 };
 
-function assertRelativePath(path: string): void {
-  if (!path || isAbsolute(path) || path.split(/[\\/]/).includes("..")) throw new Error(`UNSAFE_ARTIFACT_PATH:${path}`);
-}
-
-async function collectFiles(root: string, relPath: string): Promise<Array<{ path: string; bytes: Uint8Array }>> {
-  const target = join(root, relPath);
-  const info = await stat(target);
-  if (info.isFile()) return [{ path: relPath.split(sep).join("/"), bytes: await readFile(target) }];
-  if (!info.isDirectory()) throw new Error(`UNSUPPORTED_ARTIFACT_TYPE:${relPath}`);
-  const names = (await readdir(target)).sort();
-  const nested: Array<{ path: string; bytes: Uint8Array }> = [];
-  for (const name of names) nested.push(...await collectFiles(root, join(relPath, name)));
-  return nested;
-}
-
 async function packageArtifacts(workspace: string, artifactPaths: string[]): Promise<Uint8Array> {
   const files: Array<{ path: string; bytes: Uint8Array }> = [];
   for (const path of [...artifactPaths].sort()) {
-    assertRelativePath(path);
-    const full = resolve(workspace, path);
-    const rel = relative(workspace, full);
-    if (rel.startsWith("..") || isAbsolute(rel)) throw new Error(`ARTIFACT_ESCAPES_WORKSPACE:${path}`);
-    files.push(...await collectFiles(workspace, path));
+    files.push(...await collectWorkspaceFiles(workspace, path));
   }
   const unique = new Map<string, Uint8Array>();
   for (const file of files) unique.set(file.path, file.bytes);
