@@ -1,10 +1,10 @@
 export type ProviderReportedUsage = {
   reportedBy: "PROVIDER";
-  inputTokens?: number;
-  outputTokens?: number;
-  totalTokens?: number;
-  cost?: number;
-  currency?: string;
+  inputTokens?: number | undefined;
+  outputTokens?: number | undefined;
+  totalTokens?: number | undefined;
+  cost?: number | undefined;
+  currency?: string | undefined;
 };
 
 type RecordValue = Record<string, unknown>;
