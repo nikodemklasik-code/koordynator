@@ -6,6 +6,7 @@ import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { validateWorkOrder, type WorkOrder } from "../domain/work-order.js";
 import type { Digest } from "../domain/ids.js";
 import { signWorkOrder, type SignedWorkOrder } from "../security/work-order-signature.js";
+import { acceptSignedWorkOrderExecution } from "../security/work-order-execution-gate.js";
 import { FileStateStore } from "../store/file-state-store.js";
 import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
 import { FileTaskExecutionStore } from "../store/task-execution-store.js";
@@ -18,8 +19,23 @@ import { ArtifactCommandValidator, type CommandValidatorSpec } from "../validato
 import { FileReleaseStore } from "../release/file-release-store.js";
 import { ReleaseController } from "../release/release-controller.js";
 import { OrchestratorRuntime } from "../orchestrator/orchestrator.js";
+import { AutonomousOrchestratorRuntime } from "../orchestrator/autonomous-orchestrator.js";
+import type { OrchestratorRunner } from "../orchestrator/prebuild-materialization.js";
 import { OfficialCliProviderAdapter, officialSubscriptionLaunchSpecs } from "../api/official-cli-adapter.js";
 import { generateModule } from "../module/module-factory.js";
+import {
+  cliOmniRoutePrebuildAuthorityFingerprint,
+  runCliOmniRoutePrebuild,
+  type CliOmniRoutePrebuildConfig
+} from "./omniroute-prebuild-runner.js";
+import {
+  CliDelegatedAutonomousRecovery,
+  assertCliAutonomousExecutionAuthority,
+  assertDelegatedExecutionPrivateKey,
+  cliAutonomousExecutionAuthorityFingerprint,
+  delegatedExecutionPublicKey,
+  type CliAutonomousExecutionConfig
+} from "./delegated-autonomous-runner.js";
 
 const VERSION = "0.3.0";
 
@@ -31,6 +47,8 @@ type RunConfig = {
   validators: CommandValidatorSpec[];
   humanApprovalFp?: Digest;
   promoteToProduction?: boolean;
+  omniRoutePrebuild?: CliOmniRoutePrebuildConfig;
+  autonomousExecution?: CliAutonomousExecutionConfig;
 };
 
 function parseFlags(args: string[]): { positional: string[]; flags: Map<string, string | true> } {
@@ -85,9 +103,23 @@ async function commandPlan(positional: string[]): Promise<void> {
   process.stdout.write(`${JSON.stringify({ taskId: order.taskId, revision: order.revision, workOrderFp: canonicalDigest(order), requiredGates: order.requiredGates }, null, 2)}\n`);
 }
 
+async function commandPrebuildFingerprint(positional: string[]): Promise<void> {
+  const source = positional[0];
+  if (!source) throw new Error("USAGE:orchestrator prebuild-fingerprint <prebuild.json>");
+  const config = await readJson<CliOmniRoutePrebuildConfig>(resolve(source));
+  process.stdout.write(`${cliOmniRoutePrebuildAuthorityFingerprint(config)}\n`);
+}
+
+async function commandAutonomousFingerprint(positional: string[]): Promise<void> {
+  const source = positional[0];
+  if (!source) throw new Error("USAGE:orchestrator autonomous-fingerprint <autonomous.json>");
+  const config = await readJson<CliAutonomousExecutionConfig>(resolve(source));
+  process.stdout.write(`${cliAutonomousExecutionAuthorityFingerprint(config)}\n`);
+}
+
 async function commandRun(positional: string[], flags: Map<string, string | true>): Promise<void> {
   const source = positional[0];
-  if (!source) throw new Error("USAGE:orchestrator run <run.json> --public-key <pem> --release-key <pem> [--builder-key <pem>] [--builder-public-key <pem>] [--builder-key-id <id>] [--state-dir <dir>]");
+  if (!source) throw new Error("USAGE:orchestrator run <run.json> --public-key <pem> --release-key <pem> [--execution-key <pem>] [--builder-key <pem>] [--builder-public-key <pem>] [--builder-key-id <id>] [--state-dir <dir>]");
   const configPath = resolve(source);
   const config = await readJson<RunConfig>(configPath);
   const plan = { ...config.buildPlan, sourceDir: resolveFrom(configPath, config.buildPlan.sourceDir) } as SealedBuildPlan;
@@ -104,6 +136,39 @@ async function commandRun(positional: string[], flags: Map<string, string | true
     : createPublicKey(builderPrivateKey);
   const builderKeyIdFlag = flags.get("builder-key-id");
   const builderKeyId = typeof builderKeyIdFlag === "string" ? builderKeyIdFlag : "builder-default";
+  const ownerKeyId = config.signedWorkOrder.keyId;
+  const expectedOwnerKeyId = flags.get("key-id");
+  if (typeof expectedOwnerKeyId === "string" && expectedOwnerKeyId !== ownerKeyId) {
+    throw new Error("WORK_ORDER_KEY_ID_MISMATCH");
+  }
+  const resolveOwnerWorkOrderKey = (keyId: string) => {
+    if (keyId !== ownerKeyId) throw new Error(`WORK_ORDER_KEY_ID_UNKNOWN:${keyId}`);
+    return publicKey;
+  };
+
+  acceptSignedWorkOrderExecution(config.signedWorkOrder, resolveOwnerWorkOrderKey);
+
+  let executionPrivateKey: ReturnType<typeof createPrivateKey> | undefined;
+  let executionPublicKey: ReturnType<typeof createPublicKey> | undefined;
+  if (config.autonomousExecution?.enabled === true) {
+    if (config.omniRoutePrebuild?.enabled !== true) throw new Error("CLI_AUTONOMOUS_PREBUILD_REQUIRED");
+    if (config.signedWorkOrder.order.budget.retries < 1) throw new Error("CLI_AUTONOMOUS_RETRY_BUDGET_REQUIRED");
+    if (config.autonomousExecution.delegateKeyId === ownerKeyId) throw new Error("CLI_AUTONOMOUS_DELEGATE_KEY_ID_MUST_DIFFER");
+    assertCliAutonomousExecutionAuthority(config.signedWorkOrder, config.autonomousExecution);
+    executionPrivateKey = createPrivateKey(await readFile(resolve(requiredFlag(flags, "execution-key")), "utf8"));
+    assertDelegatedExecutionPrivateKey(config.autonomousExecution, executionPrivateKey);
+    executionPublicKey = delegatedExecutionPublicKey(config.autonomousExecution);
+  }
+
+  const resolveRuntimeWorkOrderKey = (keyId: string) => {
+    if (keyId === ownerKeyId) return publicKey;
+    if (
+      config.autonomousExecution?.enabled === true
+      && executionPublicKey !== undefined
+      && keyId === config.autonomousExecution.delegateKeyId
+    ) return executionPublicKey;
+    throw new Error(`WORK_ORDER_KEY_ID_UNKNOWN:${keyId}`);
+  };
 
   const mode = plan.kind === "container" ? "container" : "process";
   const computedToolchainFp = toolchainFingerprint({
@@ -156,24 +221,61 @@ async function commandRun(positional: string[], flags: Map<string, string | true
     new SealedHermeticBuilder(plan, builderPrivateKey, builderKeyId),
     config.validators.map((spec) => new ArtifactCommandValidator(spec)),
     releaseController,
-    (keyId) => {
-      const expected = flags.get("key-id");
-      if (typeof expected === "string" && expected !== keyId) throw new Error("WORK_ORDER_KEY_ID_MISMATCH");
-      return publicKey;
-    },
+    resolveRuntimeWorkOrderKey,
     clock,
     verifyAttestation,
     new FileSignedWorkOrderStore(join(root, "work-orders")),
     new FileTaskExecutionStore(join(root, "executions"))
   );
 
-  const result = await runtime.run({
+  const request = {
     signedWorkOrder: config.signedWorkOrder,
     buildVector: measured.vector,
     moduleManifestFp: config.moduleManifestFp,
     ...(config.humanApprovalFp === undefined ? {} : { humanApprovalFp: config.humanApprovalFp }),
     ...(config.promoteToProduction === undefined ? {} : { promoteToProduction: config.promoteToProduction })
-  });
+  };
+
+  let runner: OrchestratorRunner = runtime;
+  if (
+    config.autonomousExecution?.enabled === true
+    && config.omniRoutePrebuild?.enabled === true
+    && executionPrivateKey !== undefined
+  ) {
+    runner = new AutonomousOrchestratorRuntime(
+      runtime,
+      new CliDelegatedAutonomousRecovery({
+        sourceDir: plan.sourceDir,
+        prebuild: config.omniRoutePrebuild,
+        authority: config.autonomousExecution,
+        delegatePrivateKey: executionPrivateKey
+      })
+    );
+  }
+
+  let result;
+  if (config.omniRoutePrebuild?.enabled === true) {
+    try {
+      const prebuild = await runCliOmniRoutePrebuild(runner, request, plan.sourceDir, config.omniRoutePrebuild);
+      if (prebuild.status === "PREBUILD_BLOCKED") {
+        process.stdout.write(`${JSON.stringify(prebuild, null, 2)}\n`);
+        process.exitCode = 5;
+        return;
+      }
+      result = prebuild.result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith("CLI_PREBUILD_HARMONIA_AUTHORITY_REQUIRED:")) {
+        process.stdout.write(`${JSON.stringify({ status: "PREBUILD_BLOCKED", reason: "HARMONIA_AUTHORITY_REQUIRED" }, null, 2)}\n`);
+        process.exitCode = 5;
+        return;
+      }
+      throw error;
+    }
+  } else {
+    result = await runner.run(request);
+  }
+
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (result.status === "RETURNED") process.exitCode = 2;
   if (result.status === "AWAITING_HUMAN_APPROVAL") process.exitCode = 3;
@@ -245,7 +347,7 @@ async function commandModule(positional: string[], flags: Map<string, string | t
 }
 
 function help(): void {
-  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  run <run.json> --public-key <pem> --release-key <pem> [--builder-key <pem>] [--builder-public-key <pem>] [--builder-key-id <id>] [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  module create <target-dir> --id <module-id> [--capabilities a,b]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
+  process.stdout.write(`koordynator-orchestrator ${VERSION}\n\nCommands:\n  plan <work-order.json>\n  sign <work-order.json> --private-key <pem> --key-id <id> --out <file>\n  prebuild-fingerprint <prebuild.json>\n  autonomous-fingerprint <autonomous.json>\n  run <run.json> --public-key <pem> --release-key <pem> [--execution-key <pem>] [--builder-key <pem>] [--builder-public-key <pem>] [--builder-key-id <id>] [--key-id <id>] [--state-dir <dir>]\n  status TASK-... [--state-dir <dir>]\n  replay TASK-... <revision> --public-key <pem> [--state-dir <dir>]\n  releases [--state-dir <dir>]\n  rollback sha256:... [--state-dir <dir>]\n  module create <target-dir> --id <module-id> [--capabilities a,b]\n  provider list\n  provider doctor\n  provider connect PROVIDER_ID\n  version\n`);
 }
 
 async function main(): Promise<void> {
@@ -255,6 +357,8 @@ async function main(): Promise<void> {
   if (command === "version" || command === "--version") { process.stdout.write(`${VERSION}\n`); return; }
   if (command === "plan") return commandPlan(positional);
   if (command === "sign") return commandSign(positional, flags);
+  if (command === "prebuild-fingerprint") return commandPrebuildFingerprint(positional);
+  if (command === "autonomous-fingerprint") return commandAutonomousFingerprint(positional);
   if (command === "run") return commandRun(positional, flags);
   if (command === "status") return commandStatus(positional, flags);
   if (command === "replay") return commandReplay(positional, flags);

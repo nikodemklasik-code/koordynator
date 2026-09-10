@@ -1,5 +1,6 @@
 import type { Digest, TaskId } from "../domain/ids.js";
 import type { ProviderAccessMode, ProviderAuthMode, ProviderBillingMode, ProviderTransport } from "./provider-contract.js";
+import type { ProviderReportedUsage } from "./provider-usage.js";
 
 export type ProviderExecutionReceipt = {
   executionId?: string;
@@ -25,6 +26,7 @@ export type ProviderExecutionReceipt = {
   result: "SUCCESS" | "FAIL" | "TIMEOUT" | "BLOCKED";
   failureCode?: string;
   failoverFrom?: string[];
+  usage?: ProviderReportedUsage;
   costReceiptFp?: Digest;
   receiptFp: Digest;
 };

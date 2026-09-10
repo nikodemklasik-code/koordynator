@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Live Chat · Koordynator Control</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/control-ui.css" />
+  <link rel="stylesheet" href="/chat.css" />
+  <link rel="stylesheet" href="/chat-usage.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">◇</div>
+        <div><div class="brand-title">KOORDYNATOR CONTROL</div><div class="brand-subtitle">AUTONOMOUS ORCHESTRATION</div></div>
+      </div>
+      <div class="building-block" aria-label="Current environment"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
+      <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
+    </header>
+
+    <aside class="sidebar" aria-label="Primary navigation">
+      <nav class="nav-list">
+        <a class="nav-item" href="/"><span>☷</span><span>Tasks</span></a>
+        <a class="nav-item active" href="/chat" aria-current="page"><span>◉</span><span>Live Chat</span></a>
+        <a class="nav-item" href="/providers"><span>⬡</span><span>Providers</span></a>
+        <a class="nav-item" href="/releases"><span>◫</span><span>Releases</span></a>
+      </nav>
+      <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">OmniRoute chat online</div></div>
+    </aside>
+
+    <main class="content chat-content">
+      <section class="chat-head">
+        <div class="chat-title-block">
+          <div class="chat-kicker">REAL-TIME AI</div>
+          <h1>Live Chat</h1>
+          <p>Persistent multi-turn conversation streamed directly through the local OmniRoute gateway.</p>
+        </div>
+        <div class="chat-head-actions">
+          <label class="model-picker">
+            <span>MODEL · OMNIROUTE</span>
+            <select id="modelSelect" aria-label="AI model">
+              <option value="auto/best-free">Best free route · FREE REQUESTED</option>
+              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol · billing unknown</option>
+              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5 · billing unknown</option>
+              <option value="anthropic/claude-opus-5">Claude Opus 5 · billing unknown</option>
+            </select>
+          </label>
+          <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
+          <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
+        </div>
+      </section>
+
+      <section class="chat-frame" aria-label="Live conversation">
+        <div class="chat-connection-bar">
+          <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
+          <div class="chat-connection-right">
+            <button class="github-chat-button" id="githubChatButton" type="button" aria-label="GitHub repository connection"><span class="github-chat-dot checking" id="githubChatDot"></span><span id="githubChatLabel">GitHub checking…</span></button>
+            <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
+          </div>
+        </div>
+
+        <div class="chat-usage-bar" aria-label="Billing and token provenance">
+          <span class="billing-badge checking" id="billingBadge">BILLING CHECKING</span>
+          <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
+          <span class="strict-policy">STRICT: PAID + UNKNOWN + UNCONFIRMED FREE BLOCKED</span>
+        </div>
+
+        <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
+          <div class="chat-welcome" id="chatWelcome">
+            <div class="welcome-mark">◇</div>
+            <h2>Start a conversation</h2>
+            <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
+            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files &amp; images</span><span>Chat history</span><span>GitHub permission gate</span></div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer" id="composer">
+            <input
+              id="fileInput"
+              class="visually-hidden-file"
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              aria-label="Attach files"
+            />
+            <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
+            <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message"></textarea>
+            <div class="composer-actions">
+              <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
+              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line <span>·</span> drag, drop or paste files</div>
+              <button class="stop-button hidden" id="stopButton" type="button">■ Stop</button>
+              <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
+            </div>
+          </div>
+          <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
+          <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
+          <div class="composer-note">Strict billing provenance is enabled. Live Chat executes only routes confirmed free by upstream catalog/pricing evidence. Subscription-harness work is accounted separately in provider receipts. Token totals are provider-reported only; missing telemetry is shown as UNREPORTED.</div>
+        </div>
+      </section>
+
+      <footer class="statusbar chat-statusbar">
+        <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
+        <div class="runtime-meta"><span id="regionLabel">local</span> • <span id="zoneLabel">local</span> • <span class="connection-dot"></span> <span id="footerConnection">CONNECTING</span></div>
+      </footer>
+    </main>
+  </div>
+
+  <div class="history-backdrop hidden" id="historyBackdrop"></div>
+  <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
+    <div class="history-head">
+      <div><div class="chat-kicker">PERSISTENT SESSIONS</div><h2 id="historyTitle">Chat history</h2></div>
+      <button class="history-close" id="historyCloseButton" type="button" aria-label="Close chat history">×</button>
+    </div>
+    <div class="history-toolbar">
+      <button class="secondary-button history-new-button" id="historyNewChatButton" type="button">＋ New chat</button>
+      <button class="history-refresh" id="historyRefreshButton" type="button" aria-label="Refresh chat history" title="Refresh">↻</button>
+    </div>
+    <div class="history-list" id="historyList" aria-live="polite"></div>
+    <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
+  </aside>
+
+  <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
+    <form method="dialog">
+      <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
+      <p>This message appears to require a GitHub repository. Koordynator first reuses a working local Git credential path when one already exists. If GitHub CLI authentication is required, the official browser sign-in starts only after your approval. Koordynator does not collect your GitHub password, browser cookies or token.</p>
+      <div class="github-chat-consent-points"><span>✓ Existing local Git credentials are reused when repository access already works.</span><span>✓ No new GitHub CLI sign-in starts before approval.</span><span>✓ GitHub controls which account and repository permissions you grant.</span></div>
+      <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button></footer>
+    </form>
+  </dialog>
+
+  <script src="/chat-models.js" defer></script>
+  <script src="/chat.js" defer></script>
+  <script src="/chat-history.js" defer></script>
+  <script src="/chat-github.js" defer></script>
+  <script src="/chat-usage.js" defer></script>
+</body>
+</html>

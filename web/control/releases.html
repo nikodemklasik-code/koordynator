@@ -7,57 +7,98 @@
   <title>Releases · Koordynator Control</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/releases.css" />
+  <link rel="stylesheet" href="/control-ui.css" />
 </head>
 <body>
 <div class="app-shell">
   <header class="topbar">
-    <div class="brand-block"><div class="brand-mark">◎</div><div><div class="brand-title">KOORDYNATOR CONTROL</div><div class="brand-subtitle">RELEASE CONTROL</div></div></div>
-    <div class="building-block"><span>ENV:</span><strong id="environmentLabel">LOCAL</strong></div>
-    <div class="operator-block"><span class="operator-icon">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
+    <div class="brand-block"><div class="brand-mark" aria-hidden="true">◇</div><div><div class="brand-title">KOORDYNATOR CONTROL</div><div class="brand-subtitle">AUTONOMOUS ORCHESTRATION</div></div></div>
+    <div class="building-block"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
+    <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
   </header>
-  <aside class="sidebar">
+  <aside class="sidebar" aria-label="Primary navigation">
     <nav class="nav-list">
       <a class="nav-item" href="/"><span>☷</span><span>Tasks</span></a>
-      <a class="nav-item disabled" href="#" aria-disabled="true"><span>▣</span><span>Work Orders</span></a>
-      <a class="nav-item disabled" href="#" aria-disabled="true"><span>♧</span><span>Candidates</span></a>
-      <a class="nav-item active" href="/releases" aria-current="page"><span>◷</span><span>Releases</span></a>
-      <a class="nav-item" href="/providers"><span>⌘</span><span>Providers</span></a>
-      <a class="nav-item disabled" href="#" aria-disabled="true"><span>◔</span><span>Modules</span></a>
-      <a class="nav-item disabled" href="#" aria-disabled="true"><span>⚙</span><span>Audit</span></a>
+      <a class="nav-item" href="/chat"><span>◉</span><span>Live Chat</span></a>
+      <a class="nav-item" href="/providers"><span>⬡</span><span>Providers</span></a>
+      <a class="nav-item active" href="/releases" aria-current="page"><span>◫</span><span>Releases</span></a>
     </nav>
-    <div class="sidebar-foot"><div><span id="versionLabel">v0.3.0</span> <span>•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">immutable release ledger</div></div>
+    <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span>•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">Release ledger online</div></div>
   </aside>
   <main class="content release-content">
-    <section class="page-head">
-      <div><h1>Releases</h1><p>Production identity, canary state and rollback chain from the durable release ledger.</p></div>
-      <button class="icon-button large" id="refreshButton" type="button" aria-label="Refresh releases">↻</button>
-    </section>
-
-    <section class="release-kpis">
-      <article><span>TOTAL</span><strong id="countTotal">0</strong></article>
-      <article><span>CANARY</span><strong id="countCanary">0</strong></article>
-      <article><span>PRODUCTION</span><strong id="countProduction">0</strong></article>
-      <article><span>ROLLED BACK</span><strong id="countRolledBack">0</strong></article>
-    </section>
-
-    <section class="production-card" id="productionCard">
-      <div class="production-head"><div><span class="eyebrow">CURRENT PRODUCTION</span><h2 id="productionSha">No production release</h2></div><span class="release-state production" id="productionState">NONE</span></div>
-      <div class="production-grid" id="productionGrid"><p class="muted">The release ledger has no current production pointer.</p></div>
-    </section>
-
-    <section class="release-table-wrap">
-      <div class="section-head"><div><h2>Release ledger</h2><p>Latest durable state for each signed release identity.</p></div><span class="integrity-key"><i></i> manifest integrity verified locally</span></div>
-      <div class="table-scroll">
-        <table class="release-table">
-          <thead><tr><th>RELEASE SHA</th><th>STATE</th><th>CHANNEL</th><th>CANDIDATE</th><th>ARTIFACT</th><th>CHANGED</th><th>INTEGRITY</th></tr></thead>
-          <tbody id="releaseRows"></tbody>
-        </table>
+    <section class="page-head release-head">
+      <div>
+        <div class="release-kicker">RELEASE CONTROL</div>
+        <h1>Releases</h1>
+        <p>Track validated release identities, production state and rollback history from the durable ledger.</p>
       </div>
-      <div class="empty-state hidden" id="emptyState"><strong>No releases persisted</strong><span>A release appears after candidate validation and canary creation.</span></div>
-      <div class="loading-state" id="loadingState"><span class="spinner"></span> Reading release ledger…</div>
+      <div class="release-actions">
+        <a class="release-link-button" href="/">Open tasks</a>
+        <a class="release-link-button" href="/providers">Inspect providers</a>
+        <button class="icon-button large" id="refreshButton" type="button" aria-label="Refresh releases">↻</button>
+      </div>
     </section>
 
-    <section class="rollback-chain"><div><h2>Rollback chain</h2><p>Each release keeps its previous production identity. The console is read-only; rollback remains an explicit operator command.</p></div><div id="rollbackChain" class="chain"></div></section>
+    <section class="release-kpis" aria-label="Release summary">
+      <article><div><span>TOTAL RELEASES</span><strong id="countTotal">0</strong></div><i class="kpi-icon">◇</i></article>
+      <article><div><span>ACTIVE CANARIES</span><strong id="countCanary">0</strong></div><i class="kpi-icon success">▷</i></article>
+      <article><div><span>PRODUCTION</span><strong id="countProduction">0</strong></div><i class="kpi-icon accent">●</i></article>
+      <article><div><span>ROLLED BACK</span><strong id="countRolledBack">0</strong></div><i class="kpi-icon muted">↶</i></article>
+    </section>
+
+    <section class="release-dashboard">
+      <div class="release-primary-column">
+        <section class="production-card" id="productionCard">
+          <div class="production-head">
+            <div><span class="eyebrow">CURRENT PRODUCTION</span><h2 id="productionSha">No production release</h2><p id="productionHint">Nothing is promoted to production yet.</p></div>
+            <span class="release-state production" id="productionState">NONE</span>
+          </div>
+          <div class="production-grid" id="productionGrid"><p class="muted">The release ledger has no current production pointer.</p></div>
+        </section>
+
+        <section class="release-table-wrap">
+          <div class="section-head">
+            <div><h2>Release ledger</h2><p>Signed release identities and their latest durable state.</p></div>
+            <div class="ledger-meta"><span class="integrity-key"><i></i> integrity checked</span><span id="lastUpdated">Not refreshed yet</span></div>
+          </div>
+          <div class="table-scroll">
+            <table class="release-table">
+              <thead><tr><th>RELEASE SHA</th><th>STATE</th><th>CHANNEL</th><th>CANDIDATE</th><th>ARTIFACT</th><th>CHANGED</th><th>INTEGRITY</th></tr></thead>
+              <tbody id="releaseRows"></tbody>
+            </table>
+          </div>
+          <div class="empty-state hidden" id="emptyState">
+            <div class="release-empty-icon">◇</div>
+            <strong>No releases persisted</strong>
+            <span>A release appears after candidate validation and canary creation.</span>
+            <div class="empty-actions"><a href="/">Open tasks</a><button id="emptyRefreshButton" type="button">Refresh ledger</button></div>
+          </div>
+          <div class="loading-state" id="loadingState"><span class="spinner"></span> Reading release ledger…</div>
+        </section>
+      </div>
+
+      <aside class="release-side-column">
+        <section class="side-card">
+          <div class="side-card-head"><div><span class="eyebrow">RECENT ACTIVITY</span><h2>Pipeline activity</h2></div><span class="live-dot" aria-label="Live"></span></div>
+          <div id="activityList" class="activity-list"><div class="activity-empty">Waiting for release activity.</div></div>
+        </section>
+
+        <section class="side-card">
+          <div class="side-card-head"><div><span class="eyebrow">RELEASE PATH</span><h2>Lifecycle</h2></div></div>
+          <ol class="release-path" aria-label="Release lifecycle">
+            <li><span>1</span><div><strong>Validate candidate</strong><small>Required gates must pass.</small></div></li>
+            <li><span>2</span><div><strong>Create canary</strong><small>Release identity enters canary state.</small></div></li>
+            <li><span>3</span><div><strong>Promote production</strong><small>Production pointer moves explicitly.</small></div></li>
+            <li><span>4</span><div><strong>Rollback if needed</strong><small>Previous production identity remains linked.</small></div></li>
+          </ol>
+        </section>
+
+        <section class="side-card compact-card">
+          <div><span class="eyebrow">Rollback chain</span><h2>Production history</h2><p>Read-only view of previous production pointers.</p></div>
+          <div id="rollbackChain" class="chain"></div>
+        </section>
+      </aside>
+    </section>
 
     <footer class="statusbar"><div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div><div class="runtime-meta"><span id="regionLabel">local</span> • <span id="zoneLabel">local</span> • <span class="connection-dot"></span> CONNECTED</div></footer>
   </main>

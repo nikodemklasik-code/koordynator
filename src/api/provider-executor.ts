@@ -4,6 +4,7 @@ import type { ProviderAdapter, ProviderAuthMode, ProviderBillingMode, ProviderRe
 import type { ProviderExecutionReceipt } from "./provider-receipt.js";
 import type { ProviderReceiptStore } from "./provider-receipt-store.js";
 import { ProviderRouter } from "./provider-router.js";
+import { extractProviderReportedUsage } from "./provider-usage.js";
 
 export type Clock = { now(): string };
 
@@ -51,7 +52,9 @@ export class ProviderExecutor {
       const meta = providerMetadata(provider);
       try {
         const result = await provider.execute<T>(request);
+        this.router.reportSuccess(provider.descriptor.providerId);
         const completedAt = this.clock.now();
+        const usage = extractProviderReportedUsage(result.output);
         const base = {
           executionId: `${request.requestId}:${index}`,
           taskId: request.taskId,
@@ -70,6 +73,7 @@ export class ProviderExecutor {
           outputFp: canonicalDigest(result.output),
           ...(result.workspaceBeforeFp === undefined ? {} : { workspaceBeforeFp: result.workspaceBeforeFp }),
           ...(result.workspaceAfterFp === undefined ? {} : { workspaceAfterFp: result.workspaceAfterFp }),
+          ...(usage === undefined ? {} : { usage }),
           startedAt,
           completedAt,
           result: "SUCCESS" as const,
@@ -81,6 +85,7 @@ export class ProviderExecutor {
       } catch (error) {
         const completedAt = this.clock.now();
         const failureCode = error instanceof Error ? error.message : "UNKNOWN_PROVIDER_ERROR";
+        this.router.reportFailure(provider.descriptor.providerId, failureCode);
         const result = failureCode.includes("TIMEOUT") ? "TIMEOUT" as const : failureCode.includes("BLOCK") ? "BLOCKED" as const : "FAIL" as const;
         const base = {
           executionId: `${request.requestId}:${index}`,

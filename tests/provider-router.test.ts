@@ -22,7 +22,7 @@ const request: CapabilityRequest = {
   requirements: { externalProviderAllowed: true }
 };
 
-function descriptor(providerId: string, priority: number): ProviderDescriptor {
+function descriptor(providerId: string, priority: number, extra: Partial<ProviderDescriptor> = {}): ProviderDescriptor {
   return {
     providerId,
     accessMode: "SUBSCRIPTION",
@@ -30,7 +30,8 @@ function descriptor(providerId: string, priority: number): ProviderDescriptor {
     allowedSecurityClasses: ["S0", "S1", "S2"],
     external: true,
     priority,
-    enabled: true
+    enabled: true,
+    ...extra
   };
 }
 
@@ -56,5 +57,37 @@ describe("provider router", () => {
     const router = new ProviderRouter(registry, { mode: "MULTI", strategy: "POLICY" });
     await expect(router.select({ ...request, requirements: { externalProviderAllowed: false } }))
       .rejects.toThrow("NO_ALLOWED_PROVIDER");
+  });
+
+  it("uses OmniRoute first in the default profile when it is healthy", async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new FakeProvider(descriptor("claude-code-sub", 0), "HEALTHY"));
+    registry.register(new FakeProvider(descriptor("omniroute", 10, { accessMode: "API" }), "HEALTHY"));
+    const selected = await new ProviderRouter(registry).select(request);
+    expect(selected.descriptor.providerId).toBe("omniroute");
+  });
+
+  it("LOWEST_LATENCY uses latency metadata rather than provider name", async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new FakeProvider(descriptor("slow", 0, { typicalLatencyMs: 900 }), "HEALTHY"));
+    registry.register(new FakeProvider(descriptor("fast", 10, { typicalLatencyMs: 100 }), "HEALTHY"));
+    const selected = await new ProviderRouter(registry, { mode: "MULTI", strategy: "LOWEST_LATENCY" }).select(request);
+    expect(selected.descriptor.providerId).toBe("fast");
+  });
+
+  it("QUALITY uses quality metadata", async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new FakeProvider(descriptor("cheap", 0, { qualityScore: 20 }), "HEALTHY"));
+    registry.register(new FakeProvider(descriptor("strong", 10, { qualityScore: 95 }), "HEALTHY"));
+    const selected = await new ProviderRouter(registry, { mode: "MULTI", strategy: "QUALITY" }).select(request);
+    expect(selected.descriptor.providerId).toBe("strong");
+  });
+
+  it("ROLE_PINNED chooses the provider that best fits the requested role", async () => {
+    const registry = new ProviderRegistry();
+    registry.register(new FakeProvider(descriptor("general", 0, { roleAffinity: { BUILDER: 20 } }), "HEALTHY"));
+    registry.register(new FakeProvider(descriptor("builder", 10, { roleAffinity: { BUILDER: 100 } }), "HEALTHY"));
+    const selected = await new ProviderRouter(registry, { mode: "MULTI", strategy: "ROLE_PINNED" }).select(request);
+    expect(selected.descriptor.providerId).toBe("builder");
   });
 });
