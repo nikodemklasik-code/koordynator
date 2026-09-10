@@ -114,6 +114,12 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
       }
 
+      if (method === "GET" && url.pathname === "/api/chat/sessions") {
+        const limitRaw = Number(url.searchParams.get("limit") ?? "50");
+        const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 100 ? limitRaw : 50;
+        return sendJson(response, 200, { sessions: await chat.listSessions(limit) });
+      }
+
       if (method === "POST" && url.pathname === "/api/chat/sessions") {
         const payload = await readJsonBody(request);
         assertExactKeys(payload, ["model"]);
