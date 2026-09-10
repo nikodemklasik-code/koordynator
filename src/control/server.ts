@@ -7,6 +7,7 @@ import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js
 import { ReleaseReadModel } from "./release-read-model.js";
 import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
+import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -23,6 +24,7 @@ export type ControlServerOptions = {
   chatDefaultModel?: string;
   chatFetchImpl?: typeof fetch;
   githubConnection?: GitHubConnectionPort;
+  chatModelCatalog?: ChatModelCatalogPort;
 };
 
 const FILTERS = new Set<TaskFilter>(["all", "building", "frozen", "validating", "awaiting-approval", "released", "returned"]);
@@ -99,6 +101,12 @@ export function createControlServer(options: ControlServerOptions): Server {
   const providers = new ProviderReadModel(providerReceiptRoot(stateDir));
   const releases = new ReleaseReadModel(join(stateDir, "release"));
   const github = options.githubConnection ?? new GitHubConnectionService();
+  const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
+    ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
+    ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
+    ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+  });
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
   const chat = new ChatService({
     stateDir,
@@ -116,6 +124,10 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isControlPost(url.pathname))) {
         response.setHeader("allow", "GET, HEAD");
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/chat/models") {
+        return sendJson(response, 200, await modelCatalog.list());
       }
 
       if (method === "GET" && url.pathname === "/api/chat/sessions") {
@@ -294,6 +306,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
         "/chat-history.js": { name: "chat-history.js", type: "text/javascript; charset=utf-8" },
         "/chat-github.js": { name: "chat-github.js", type: "text/javascript; charset=utf-8" },
+        "/chat-models.js": { name: "chat-models.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
@@ -312,7 +325,9 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       return sendText(response, 200, asset.type, body);
     } catch (error) {
-      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError) return sendJson(response, error.status, { error: error.code });
+      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError) {
+        return sendJson(response, error.status, { error: error.code });
+      }
       const message = error instanceof Error ? error.message : "CONTROL_SERVER_ERROR";
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
     }
