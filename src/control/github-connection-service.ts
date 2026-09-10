@@ -39,7 +39,7 @@ function minimalEnv(): NodeJS.ProcessEnv {
 }
 
 function defaultRunner(executable: string, args: string[], options: { interactive: boolean; timeoutMs: number }): Promise<GitHubCommandResult> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolvePromise, reject) => {
     const child = spawn(executable, args, {
       shell: false,
       env: minimalEnv(),
@@ -47,15 +47,29 @@ function defaultRunner(executable: string, args: string[], options: { interactiv
     });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
+    let outputBytes = 0;
     let timedOut = false;
+    let outputExceeded = false;
+    const maxOutputBytes = 128 * 1024;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, options.timeoutMs);
 
+    const collect = (target: Buffer[]) => (chunk: Buffer) => {
+      const copy = Buffer.from(chunk);
+      outputBytes += copy.length;
+      if (outputBytes > maxOutputBytes) {
+        outputExceeded = true;
+        child.kill("SIGKILL");
+        return;
+      }
+      target.push(copy);
+    };
+
     if (!options.interactive) {
-      child.stdout?.on("data", (chunk: Buffer) => stdout.push(Buffer.from(chunk)));
-      child.stderr?.on("data", (chunk: Buffer) => stderr.push(Buffer.from(chunk)));
+      child.stdout?.on("data", collect(stdout));
+      child.stderr?.on("data", collect(stderr));
     }
 
     child.on("error", (error) => {
@@ -65,7 +79,8 @@ function defaultRunner(executable: string, args: string[], options: { interactiv
     child.on("close", (code) => {
       clearTimeout(timer);
       if (timedOut) return reject(new GitHubConnectionError("GITHUB_CONNECT_TIMEOUT", 504));
-      resolve({
+      if (outputExceeded) return reject(new GitHubConnectionError("GITHUB_OUTPUT_LIMIT_EXCEEDED", 502));
+      resolvePromise({
         code: code ?? 1,
         stdout: Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8")
@@ -81,6 +96,7 @@ export interface GitHubConnectionPort {
 
 export class GitHubConnectionService implements GitHubConnectionPort {
   private cached: { value: GitHubConnectionStatus; expiresAt: number } | null = null;
+  private connecting: Promise<GitHubConnectionStatus> | null = null;
 
   constructor(
     private readonly runner: GitHubCommandRunner = defaultRunner,
@@ -89,6 +105,11 @@ export class GitHubConnectionService implements GitHubConnectionPort {
 
   private async command(args: string[], interactive = false, timeoutMs = 10_000): Promise<GitHubCommandResult> {
     return this.runner("gh", args, { interactive, timeoutMs });
+  }
+
+  private remember(value: GitHubConnectionStatus): GitHubConnectionStatus {
+    this.cached = { value, expiresAt: Date.now() + this.cacheTtlMs };
+    return value;
   }
 
   async status(force = false): Promise<GitHubConnectionStatus> {
@@ -101,7 +122,7 @@ export class GitHubConnectionService implements GitHubConnectionPort {
       version = await this.command(["--version"]);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        const unavailable: GitHubConnectionStatus = {
+        return this.remember({
           provider: "github",
           hostname: "github.com",
           state: "UNAVAILABLE",
@@ -109,11 +130,9 @@ export class GitHubConnectionService implements GitHubConnectionPort {
           authenticated: false,
           gitConfigured: false,
           checkedAt
-        };
-        this.cached = { value: unavailable, expiresAt: nowMs + this.cacheTtlMs };
-        return unavailable;
+        });
       }
-      const degraded: GitHubConnectionStatus = {
+      return this.remember({
         provider: "github",
         hostname: "github.com",
         state: "DEGRADED",
@@ -121,13 +140,11 @@ export class GitHubConnectionService implements GitHubConnectionPort {
         authenticated: false,
         gitConfigured: false,
         checkedAt
-      };
-      this.cached = { value: degraded, expiresAt: nowMs + this.cacheTtlMs };
-      return degraded;
+      });
     }
 
     if (version.code !== 0) {
-      const unavailable: GitHubConnectionStatus = {
+      return this.remember({
         provider: "github",
         hostname: "github.com",
         state: "UNAVAILABLE",
@@ -135,14 +152,26 @@ export class GitHubConnectionService implements GitHubConnectionPort {
         authenticated: false,
         gitConfigured: false,
         checkedAt
-      };
-      this.cached = { value: unavailable, expiresAt: nowMs + this.cacheTtlMs };
-      return unavailable;
+      });
     }
 
-    const auth = await this.command(["auth", "status", "--hostname", "github.com"]);
+    let auth: GitHubCommandResult;
+    try {
+      auth = await this.command(["auth", "status", "--hostname", "github.com"]);
+    } catch {
+      return this.remember({
+        provider: "github",
+        hostname: "github.com",
+        state: "DEGRADED",
+        cliAvailable: true,
+        authenticated: false,
+        gitConfigured: false,
+        checkedAt
+      });
+    }
+
     const authenticated = auth.code === 0;
-    const value: GitHubConnectionStatus = {
+    return this.remember({
       provider: "github",
       hostname: "github.com",
       state: authenticated ? "CONNECTED" : "AUTH_REQUIRED",
@@ -150,13 +179,10 @@ export class GitHubConnectionService implements GitHubConnectionPort {
       authenticated,
       gitConfigured: authenticated,
       checkedAt
-    };
-    this.cached = { value, expiresAt: nowMs + this.cacheTtlMs };
-    return value;
+    });
   }
 
-  async connect(approved: boolean): Promise<GitHubConnectionStatus> {
-    if (!approved) throw new GitHubConnectionError("GITHUB_CONSENT_REQUIRED", 400);
+  private async connectApproved(): Promise<GitHubConnectionStatus> {
     const before = await this.status(true);
     if (!before.cliAvailable) throw new GitHubConnectionError("GITHUB_CLI_UNAVAILABLE", 503);
 
@@ -180,6 +206,17 @@ export class GitHubConnectionService implements GitHubConnectionPort {
     this.cached = null;
     const after = await this.status(true);
     if (!after.authenticated) throw new GitHubConnectionError("GITHUB_AUTH_FAILED", 502);
-    return { ...after, gitConfigured: true, state: "CONNECTED" };
+    return this.remember({ ...after, gitConfigured: true, state: "CONNECTED" });
+  }
+
+  async connect(approved: boolean): Promise<GitHubConnectionStatus> {
+    if (!approved) throw new GitHubConnectionError("GITHUB_CONSENT_REQUIRED", 400);
+    if (this.connecting) return this.connecting;
+    this.connecting = this.connectApproved();
+    try {
+      return await this.connecting;
+    } finally {
+      this.connecting = null;
+    }
   }
 }
