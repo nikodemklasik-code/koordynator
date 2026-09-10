@@ -96,8 +96,13 @@ export class ChatUsageLedger {
     this.path = resolve(stateDir, "chat-usage.jsonl");
   }
 
-  async append(record: ChatUsageRecord): Promise<void> {
+  async ensureWritable(): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
+    await appendFile(this.path, "", { encoding: "utf8", mode: 0o600 });
+  }
+
+  async append(record: ChatUsageRecord): Promise<void> {
+    await this.ensureWritable();
     await appendFile(this.path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
   }
 
