@@ -28,7 +28,7 @@ function asInput(value: unknown): OmniRouteInput {
 export class OmniRouteProviderAdapter implements ProviderAdapter {
   readonly descriptor: ProviderDescriptor;
   private readonly endpoint: string;
-  private readonly apiKey?: string;
+  private readonly apiKey: string | undefined;
   private readonly apiKeyEnv: string;
   private readonly defaultModel: string;
   private readonly fetchImpl: typeof fetch;
