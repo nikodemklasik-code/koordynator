@@ -42,8 +42,7 @@ export function issueFingerprint(issue: IssueIdentity): Digest {
     location: issue.location,
     kind: issue.kind,
     expected: issue.expected,
-    actual: issue.actual,
-    detectedBy: issue.detectedBy
+    actual: issue.actual
   });
 }
 
