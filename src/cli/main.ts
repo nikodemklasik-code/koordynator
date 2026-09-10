@@ -23,6 +23,7 @@ import { AutonomousOrchestratorRuntime } from "../orchestrator/autonomous-orches
 import type { OrchestratorRunner } from "../orchestrator/prebuild-materialization.js";
 import { OfficialCliProviderAdapter, officialSubscriptionLaunchSpecs } from "../api/official-cli-adapter.js";
 import { generateModule } from "../module/module-factory.js";
+import { loadLocalConfig } from "../runtime/local-config.js";
 import {
   cliOmniRoutePrebuildAuthorityFingerprint,
   runCliOmniRoutePrebuild,
@@ -38,6 +39,7 @@ import {
 } from "./delegated-autonomous-runner.js";
 
 const VERSION = "0.3.0";
+loadLocalConfig();
 
 type RunConfig = {
   signedWorkOrder: SignedWorkOrder;
