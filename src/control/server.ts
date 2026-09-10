@@ -125,11 +125,17 @@ export function createControlServer(options: ControlServerOptions): Server {
       const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
       if (method === "POST" && chatMessageMatch?.[1]) {
         const sessionId = safeSessionId(chatMessageMatch[1]);
-        const payload = await readJsonBody(request);
-        assertExactKeys(payload, ["message", "model"]);
+        const payload = await readJsonBody(request, 30 * 1024 * 1024);
+        assertExactKeys(payload, ["message", "model", "attachments"]);
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
-        return sendJson(response, 202, await chat.startMessage(sessionId, payload.message, typeof payload.model === "string" ? payload.model : undefined));
+        if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+        return sendJson(response, 202, await chat.startMessage(
+          sessionId,
+          payload.message,
+          typeof payload.model === "string" ? payload.model : undefined,
+          payload.attachments
+        ));
       }
 
       const chatStopMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/stop$/i.exec(url.pathname);
