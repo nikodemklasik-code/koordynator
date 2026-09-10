@@ -15,6 +15,7 @@ export type PreBuildMaterializationOptions<E> = {
   createLoop(request: Readonly<OrchestratorRunRequest>): AutonomousMaterializationLoop<OrchestratorRunRequest, E>;
   materializationOrder(request: Readonly<OrchestratorRunRequest>): MaterializationOrder;
   initialConditions?(request: Readonly<OrchestratorRunRequest>): ExecutionConditions;
+  initialCorrection?(request: Readonly<OrchestratorRunRequest>): string | undefined;
 };
 
 export type PreBuildMaterializationResult =
@@ -79,8 +80,9 @@ export class PreBuildMaterializationRuntime<E = unknown> {
       aiRoute: "OmniRoute",
       generation: 0
     };
+    const initialCorrection = this.options.initialCorrection?.(request)?.trim() || undefined;
 
-    const outcome = await loop.run(order, conditions);
+    const outcome = await loop.run(order, conditions, initialCorrection);
     if (outcome.status === "potrzebny człowiek") {
       return {
         status: "PREBUILD_BLOCKED",
