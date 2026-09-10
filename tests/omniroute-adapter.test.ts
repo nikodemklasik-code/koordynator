@@ -33,17 +33,35 @@ describe("OmniRoute provider adapter", () => {
     }
   });
 
-  it("uses the local OmniRoute models endpoint for real health", async () => {
+  it("uses the gateway healthz endpoint for live readiness", async () => {
     const seen: string[] = [];
     const adapter = new OmniRouteProviderAdapter({
       apiKey: "test-only",
       fetchImpl: async (input) => {
         seen.push(String(input));
+        return new Response("ok", { status: 200 });
+      }
+    });
+    await expect(adapter.health()).resolves.toBe("HEALTHY");
+    expect(seen).toEqual(["http://127.0.0.1:20128/healthz"]);
+  });
+
+  it("falls back to the authenticated model catalog when healthz is not exposed", async () => {
+    const seen: string[] = [];
+    const adapter = new OmniRouteProviderAdapter({
+      apiKey: "test-only",
+      fetchImpl: async (input) => {
+        const url = String(input);
+        seen.push(url);
+        if (url.endsWith("/healthz")) return new Response("", { status: 404 });
         return new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } });
       }
     });
     await expect(adapter.health()).resolves.toBe("HEALTHY");
-    expect(seen).toEqual(["http://127.0.0.1:20128/v1/models"]);
+    expect(seen).toEqual([
+      "http://127.0.0.1:20128/healthz",
+      "http://127.0.0.1:20128/v1/models"
+    ]);
   });
 
   it("maps authentication and rate limits to provider health", async () => {
