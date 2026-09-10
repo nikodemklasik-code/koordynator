@@ -293,6 +293,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
         "/chat-history.js": { name: "chat-history.js", type: "text/javascript; charset=utf-8" },
+        "/chat-github.js": { name: "chat-github.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
