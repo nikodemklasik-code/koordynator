@@ -1,4 +1,4 @@
-import type { CapabilityRequest, SecurityClass } from "./capability-api.js";
+import type { AgentRole, CapabilityRequest, SecurityClass } from "./capability-api.js";
 
 export type ProviderHealth = "HEALTHY" | "DEGRADED" | "RATE_LIMITED" | "UNAVAILABLE" | "AUTH_REQUIRED" | "BLOCKED" | "QUARANTINED";
 export type ProviderAccessMode = "API" | "SUBSCRIPTION" | "LOCAL";
@@ -8,6 +8,7 @@ export type ProviderBillingMode = "SUBSCRIPTION_INCLUDED" | "SUBSCRIPTION_CREDIT
 
 export type ProviderDescriptor = {
   providerId: string;
+  displayName?: string;
   accessMode: ProviderAccessMode;
   capabilities: string[];
   allowedSecurityClasses: SecurityClass[];
@@ -20,6 +21,11 @@ export type ProviderDescriptor = {
   supportsHeadless?: boolean;
   supportsStructuredOutput?: boolean;
   adapterVersionFp?: `sha256:${string}`;
+  modelFamily?: string;
+  qualityScore?: number;
+  estimatedCostScore?: number;
+  typicalLatencyMs?: number;
+  roleAffinity?: Partial<Record<AgentRole, number>>;
 };
 
 export type ProviderResult<T = unknown> = {
