@@ -26,7 +26,13 @@
     "doctor:omniroute": "npm run build && node dist/runtime/main.js doctor",
     "hermes": "npm run build && node dist/runtime/main.js hermes",
     "hermes:openai": "npm run build && node dist/runtime/main.js hermes openai",
-    "hermes:anthropic": "npm run build && node dist/runtime/main.js hermes anthropic"
+    "hermes:anthropic": "npm run build && node dist/runtime/main.js hermes anthropic",
+    "hermes:github": "npm run build && node dist/runtime/main.js hermes github",
+    "hermes:grok": "npm run build && node dist/runtime/main.js hermes grok",
+    "hermes:gemini": "npm run build && node dist/runtime/main.js hermes gemini",
+    "hermes:kiro": "npm run build && node dist/runtime/main.js hermes kiro",
+    "hermes:qoder": "npm run build && node dist/runtime/main.js hermes qoder",
+    "hermes:qwen": "npm run build && node dist/runtime/main.js hermes qwen"
   },
   "devDependencies": {
     "@types/node": "22.10.0",
