@@ -20,9 +20,20 @@ function normalizeEndpoint(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
+function gatewayRoot(endpoint: string): string {
+  return endpoint.endsWith("/v1") ? endpoint.slice(0, -3) : endpoint;
+}
+
 function asInput(value: unknown): OmniRouteInput {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) return value as OmniRouteInput;
   return { messages: [{ role: "user", content: typeof value === "string" ? value : JSON.stringify(value) }] };
+}
+
+function mapHealthStatus(status: number): ProviderHealth | undefined {
+  if (status === 401 || status === 403) return "AUTH_REQUIRED";
+  if (status === 429) return "RATE_LIMITED";
+  if (status >= 500) return "DEGRADED";
+  return undefined;
 }
 
 export class OmniRouteProviderAdapter implements ProviderAdapter {
@@ -69,17 +80,31 @@ export class OmniRouteProviderAdapter implements ProviderAdapter {
     };
   }
 
+  private async probe(url: string): Promise<Response> {
+    return this.fetchImpl(url, {
+      method: "GET",
+      headers: this.headers(),
+      signal: AbortSignal.timeout(3000)
+    });
+  }
+
   async health(): Promise<ProviderHealth> {
     if (this.credential() === undefined) return "AUTH_REQUIRED";
+
     try {
-      const response = await this.fetchImpl(`${this.endpoint}/models`, {
-        method: "GET",
-        headers: this.headers(),
-        signal: AbortSignal.timeout(3000)
-      });
-      if (response.status === 401 || response.status === 403) return "AUTH_REQUIRED";
-      if (response.status === 429) return "RATE_LIMITED";
-      if (response.status >= 500) return "DEGRADED";
+      const response = await this.probe(`${gatewayRoot(this.endpoint)}/healthz`);
+      const mapped = mapHealthStatus(response.status);
+      if (mapped !== undefined) return mapped;
+      if (response.ok) return "HEALTHY";
+      if (response.status !== 404 && response.status !== 405) return "UNAVAILABLE";
+    } catch {
+      // Some compatible gateways do not expose /healthz. Fall back to the authenticated model catalog below.
+    }
+
+    try {
+      const response = await this.probe(`${this.endpoint}/models`);
+      const mapped = mapHealthStatus(response.status);
+      if (mapped !== undefined) return mapped;
       return response.ok ? "HEALTHY" : "UNAVAILABLE";
     } catch {
       return "UNAVAILABLE";
