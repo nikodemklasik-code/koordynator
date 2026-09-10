@@ -46,6 +46,7 @@
               <option value="anthropic/claude-opus-5">Claude Opus 5</option>
             </select>
           </label>
+          <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
           <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
         </div>
       </section>
@@ -53,7 +54,10 @@
       <section class="chat-frame" aria-label="Live conversation">
         <div class="chat-connection-bar">
           <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
-          <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
+          <div class="chat-connection-right">
+            <button class="github-chat-button" id="githubChatButton" type="button" aria-label="GitHub repository connection"><span class="github-chat-dot checking" id="githubChatDot"></span><span id="githubChatLabel">GitHub checking…</span></button>
+            <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
+          </div>
         </div>
 
         <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
@@ -61,20 +65,32 @@
             <div class="welcome-mark">◇</div>
             <h2>Start a conversation</h2>
             <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
-            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>OmniRoute only</span></div>
+            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files &amp; images</span><span>Chat history</span><span>GitHub permission gate</span></div>
           </div>
         </div>
 
         <div class="composer-wrap">
           <div class="composer" id="composer">
+            <input
+              id="fileInput"
+              class="visually-hidden-file"
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              aria-label="Attach files"
+            />
+            <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
             <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message"></textarea>
             <div class="composer-actions">
-              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</div>
+              <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
+              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line <span>·</span> drag, drop or paste files</div>
               <button class="stop-button hidden" id="stopButton" type="button">■ Stop</button>
               <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
             </div>
           </div>
-          <div class="composer-note">Responses may contain mistakes. Execution remains governed by signed WorkOrders and is not available from chat.</div>
+          <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
+          <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
+          <div class="composer-note">Up to 5 attachments, 10 MB each / 20 MB total. Repository requests require explicit GitHub authorization when no authenticated session exists. Execution remains governed by signed WorkOrders and is not available from chat.</div>
         </div>
       </section>
 
@@ -84,6 +100,33 @@
       </footer>
     </main>
   </div>
+
+  <div class="history-backdrop hidden" id="historyBackdrop"></div>
+  <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
+    <div class="history-head">
+      <div><div class="chat-kicker">PERSISTENT SESSIONS</div><h2 id="historyTitle">Chat history</h2></div>
+      <button class="history-close" id="historyCloseButton" type="button" aria-label="Close chat history">×</button>
+    </div>
+    <div class="history-toolbar">
+      <button class="secondary-button history-new-button" id="historyNewChatButton" type="button">＋ New chat</button>
+      <button class="history-refresh" id="historyRefreshButton" type="button" aria-label="Refresh chat history" title="Refresh">↻</button>
+    </div>
+    <div class="history-list" id="historyList" aria-live="polite"></div>
+    <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
+  </aside>
+
+  <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
+    <form method="dialog">
+      <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
+      <p>This message appears to require a GitHub repository. Koordynator can start the official GitHub CLI browser sign-in and configure Git after your approval. It does not collect your GitHub password, browser cookies or token.</p>
+      <div class="github-chat-consent-points"><span>✓ GitHub controls which account and repository permissions you grant.</span><span>✓ No connection attempt starts before approval.</span><span>✓ Once authenticated, the existing GitHub session is reused.</span></div>
+      <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button></footer>
+    </form>
+  </dialog>
+
+  <script src="/chat-models.js" defer></script>
   <script src="/chat.js" defer></script>
+  <script src="/chat-history.js" defer></script>
+  <script src="/chat-github.js" defer></script>
 </body>
 </html>

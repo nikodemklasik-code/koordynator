@@ -1,5 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let fabric = null;
+let githubConnection = null;
+let githubConnecting = false;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -81,6 +83,106 @@ async function runDoctor(providerId, button) {
   }
 }
 
+function githubStateCopy(status) {
+  if (!status) return { badge: "CHECKING", detail: "Checking the local GitHub CLI connection.", action: "Connect GitHub", disabled: true };
+  if (status.state === "CONNECTED") {
+    return {
+      badge: "CONNECTED",
+      detail: "GitHub CLI is authenticated for github.com. Existing authentication will be reused for repository operations.",
+      action: "Connected",
+      disabled: true
+    };
+  }
+  if (status.state === "AUTH_REQUIRED") {
+    return {
+      badge: "AUTH REQUIRED",
+      detail: "GitHub CLI is available but not authenticated. Connection starts only after your explicit approval.",
+      action: "Connect GitHub",
+      disabled: false
+    };
+  }
+  if (status.state === "UNAVAILABLE") {
+    return {
+      badge: "UNAVAILABLE",
+      detail: "GitHub CLI (gh) is not available on this machine. Install it before repository connection can be started.",
+      action: "GitHub CLI unavailable",
+      disabled: true
+    };
+  }
+  return {
+    badge: "DEGRADED",
+    detail: "GitHub CLI could not report a reliable authentication state. Refresh the check or reconnect.",
+    action: "Reconnect",
+    disabled: false
+  };
+}
+
+function renderGitHubConnection(status) {
+  githubConnection = status;
+  const copy = githubStateCopy(status);
+  const badge = $("githubStateBadge");
+  badge.textContent = copy.badge;
+  badge.className = `github-state ${String(status?.state ?? "checking").toLowerCase()}`;
+  $("githubConnectionDetail").textContent = copy.detail;
+  const button = $("githubConnectButton");
+  button.textContent = githubConnecting ? "Connecting…" : copy.action;
+  button.disabled = githubConnecting || copy.disabled;
+  $("githubRefreshButton").disabled = githubConnecting;
+}
+
+async function loadGitHubConnection(force = false) {
+  if (!githubConnecting) renderGitHubConnection(null);
+  const response = await fetch(`/api/integrations/github${force ? "?refresh=1" : ""}`, { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`GITHUB_STATUS_HTTP_${response.status}`);
+  const status = await response.json();
+  renderGitHubConnection(status);
+  return status;
+}
+
+function requestGitHubConsent() {
+  if (githubConnecting) return;
+  if (githubConnection?.state === "CONNECTED") return;
+  if (githubConnection?.state === "UNAVAILABLE") {
+    openCommand("GitHub CLI unavailable", "Repository connection requires the official GitHub CLI on this machine.", "gh --version");
+    return;
+  }
+  $("githubConsentDialog").showModal();
+}
+
+async function connectGitHub() {
+  if (githubConnecting) return;
+  githubConnecting = true;
+  renderGitHubConnection(githubConnection);
+  const approve = $("githubConsentApprove");
+  const before = approve.textContent;
+  approve.disabled = true;
+  approve.textContent = "Waiting for GitHub…";
+  try {
+    const response = await fetch("/api/integrations/github/connect", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ approved: true })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `GITHUB_CONNECT_HTTP_${response.status}`);
+    $("githubConsentDialog").close();
+    renderGitHubConnection(payload);
+  } catch (error) {
+    $("githubConsentDialog").close();
+    openCommand(
+      "GitHub connection failed",
+      error instanceof Error ? error.message : "GitHub connection failed",
+      "gh auth status --hostname github.com"
+    );
+    await loadGitHubConnection(true).catch(() => undefined);
+  } finally {
+    githubConnecting = false;
+    approve.disabled = false;
+    approve.textContent = before;
+    renderGitHubConnection(githubConnection);
+  }
+}
+
 $("providerRows").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");
   if (!button) return;
@@ -101,6 +203,9 @@ $("providerRows").addEventListener("click", (event) => {
 });
 
 $("refreshProviders").addEventListener("click", () => loadProviders(true).catch((error) => openCommand("Provider refresh failed", error.message, "orchestrator provider doctor")));
+$("githubRefreshButton").addEventListener("click", () => loadGitHubConnection(true).catch((error) => openCommand("GitHub refresh failed", error.message, "gh auth status --hostname github.com")));
+$("githubConnectButton").addEventListener("click", requestGitHubConsent);
+$("githubConsentApprove").addEventListener("click", () => void connectGitHub());
 $("copyCommand").addEventListener("click", async () => {
   await navigator.clipboard.writeText($("commandText").textContent);
   const before = $("copyCommand").textContent;
@@ -110,7 +215,8 @@ $("copyCommand").addEventListener("click", async () => {
 
 Promise.all([
   fetch("/api/health", { headers: { accept: "application/json" } }).then((response) => response.ok ? response.json() : Promise.reject(new Error(`HEALTH_HTTP_${response.status}`))),
-  loadProviders()
+  loadProviders(),
+  loadGitHubConnection()
 ]).then(([health]) => {
   $("versionLabel").textContent = `v${health.version}`;
 }).catch((error) => {

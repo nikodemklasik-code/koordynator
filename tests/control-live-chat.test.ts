@@ -59,6 +59,64 @@ describe("Live Chat service", () => {
     service.close();
   });
 
+  it("forwards images and documents as multimodal chat content and persists attachment metadata", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-attachments-"));
+    roots.push(root);
+    let upstreamPayload: { messages?: Array<{ role: string; content: unknown }> } | undefined;
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      upstreamPayload = JSON.parse(String(init?.body ?? "{}")) as typeof upstreamPayload;
+      return streamingFetch(["seen"])(input, init);
+    }) as typeof fetch;
+    const service = new ChatService({ stateDir: root, apiKey: "secret", fetchImpl });
+    const session = await service.createSession();
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done") resolvePromise();
+      });
+    });
+
+    await service.startMessage(session.sessionId, "Review these", undefined, [
+      { name: "photo.png", mimeType: "image/png", size: 1, dataUrl: "data:image/png;base64,YQ==" },
+      { name: "brief.pdf", mimeType: "application/pdf", size: 1, dataUrl: "data:application/pdf;base64,Yg==" }
+    ]);
+    await done;
+
+    const user = upstreamPayload?.messages?.[0];
+    expect(user?.role).toBe("user");
+    expect(user?.content).toEqual([
+      { type: "text", text: "Review these" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,YQ==" } },
+      { type: "file", file: { filename: "brief.pdf", file_data: "Yg==" } }
+    ]);
+    const restored = await service.getSession(session.sessionId);
+    expect(restored?.messages[0]?.attachments?.map((attachment) => [attachment.name, attachment.mimeType, attachment.size])).toEqual([
+      ["photo.png", "image/png", 1],
+      ["brief.pdf", "application/pdf", 1]
+    ]);
+    service.close();
+  });
+
+  it("rejects unsupported and oversized attachments before contacting the model", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-attachments-"));
+    roots.push(root);
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return streamingFetch(["unexpected"])("http://test");
+    }) as typeof fetch;
+    const service = new ChatService({ stateDir: root, apiKey: "secret", fetchImpl, maxAttachmentBytes: 1 });
+    const session = await service.createSession();
+
+    await expect(service.startMessage(session.sessionId, "", undefined, [
+      { name: "script.sh", mimeType: "application/x-sh", size: 1, dataUrl: "data:application/x-sh;base64,YQ==" }
+    ])).rejects.toThrow("CHAT_ATTACHMENT_TYPE_UNSUPPORTED");
+    await expect(service.startMessage(session.sessionId, "", undefined, [
+      { name: "photo.png", mimeType: "image/png", size: 2, dataUrl: "data:image/png;base64,YWI=" }
+    ])).rejects.toThrow("CHAT_ATTACHMENT_TOO_LARGE");
+    expect(calls).toBe(0);
+    service.close();
+  });
+
   it("blocks DeepSeek and rejects a second generation while one is active", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-"));
     roots.push(root);
@@ -79,7 +137,7 @@ describe("Live Chat service", () => {
 });
 
 describe("Live Chat HTTP boundary and UI", () => {
-  it("serves a functional chat screen, scopes POST to chat endpoints and keeps secrets server-side", async () => {
+  it("serves a functional chat screen, accepts attachments, scopes POST to chat endpoints and keeps secrets server-side", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-http-"));
     roots.push(root);
     const server = createControlServer({
@@ -100,6 +158,8 @@ describe("Live Chat HTTP boundary and UI", () => {
       expect(page).toContain('id="sendButton"');
       expect(page).toContain('id="stopButton"');
       expect(page).toContain('id="newChatButton"');
+      expect(page).toContain('id="attachButton"');
+      expect(page).toContain('id="fileInput"');
       expect(page).not.toContain("browser-must-never-see-this");
       expect(page.toLowerCase()).not.toContain("deepseek");
       expect(await fetch(`${base}/control-ui.css`).then((response) => response.status)).toBe(200);
@@ -112,7 +172,23 @@ describe("Live Chat HTTP boundary and UI", () => {
       expect(created.status).toBe(201);
       const session = await created.json() as { sessionId: string };
 
-      const unknown = await fetch(`${base}/api/chat/sessions/${session.sessionId}/messages`, {
+      const attached = await fetch(`${base}/api/chat/sessions/${session.sessionId}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "",
+          attachments: [{ name: "note.txt", mimeType: "text/plain", size: 1, dataUrl: "data:text/plain;base64,YQ==" }]
+        })
+      });
+      expect(attached.status).toBe(202);
+
+      const other = await fetch(`${base}/api/chat/sessions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}"
+      });
+      const otherSession = await other.json() as { sessionId: string };
+      const unknown = await fetch(`${base}/api/chat/sessions/${otherSession.sessionId}/messages`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "hello", extra: true })

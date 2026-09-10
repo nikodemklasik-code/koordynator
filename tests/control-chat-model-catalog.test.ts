@@ -1,0 +1,100 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { once } from "node:events";
+import { afterEach, describe, expect, it } from "vitest";
+import { ChatModelCatalogService, type ChatModelCatalogPort } from "../src/control/chat-model-catalog.js";
+import { createControlServer } from "../src/control/server.js";
+
+const roots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+describe("Live Chat model catalog", () => {
+  it("loads the OmniRoute catalog, preserves order, deduplicates models and rejects forbidden routes", async () => {
+    let requestedUrl = "";
+    let authorization = "";
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      requestedUrl = String(input);
+      authorization = String((init?.headers as Record<string, string> | undefined)?.authorization ?? "");
+      return new Response(JSON.stringify({
+        data: [
+          { id: "openai/gpt-5.6-sol" },
+          { id: "google/gemini-2.5-pro" },
+          { id: "deepseek/deepseek-r1" },
+          { id: "google/gemini-2.5-pro" },
+          { id: "anthropic/claude-opus-5" }
+        ]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const catalog = new ChatModelCatalogService({
+      endpoint: "http://127.0.0.1:20128/v1/",
+      apiKey: "catalog-secret",
+      fetchImpl,
+      now: () => "2026-09-10T12:00:00.000Z"
+    });
+
+    await expect(catalog.list()).resolves.toEqual({
+      models: ["openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
+      source: "OMNIROUTE",
+      checkedAt: "2026-09-10T12:00:00.000Z"
+    });
+    expect(requestedUrl).toBe("http://127.0.0.1:20128/v1/models");
+    expect(authorization).toBe("Bearer catalog-secret");
+  });
+
+  it("fails closed when no server-side OmniRoute credential is available", async () => {
+    const catalog = new ChatModelCatalogService({ apiKey: " " });
+    await expect(catalog.list()).rejects.toThrow("CHAT_MODEL_CATALOG_AUTH_REQUIRED");
+  });
+
+  it("serves the dynamic catalog and browser loader without exposing credentials", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-models-"));
+    roots.push(root);
+    const modelCatalog: ChatModelCatalogPort = {
+      async list() {
+        return {
+          models: ["openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
+          source: "OMNIROUTE",
+          checkedAt: "2026-09-10T12:00:00.000Z"
+        };
+      }
+    };
+    const server = createControlServer({
+      stateDir: root,
+      webRoot: resolve("web/control"),
+      chatApiKey: "browser-must-not-see-this",
+      chatModelCatalog: modelCatalog
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("CHAT_MODELS_TEST_ADDRESS");
+      const base = `http://127.0.0.1:${address.port}`;
+
+      const response = await fetch(`${base}/api/chat/models`);
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({
+        models: ["openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
+        source: "OMNIROUTE",
+        checkedAt: "2026-09-10T12:00:00.000Z"
+      });
+
+      const loader = await fetch(`${base}/chat-models.js`).then((item) => item.text());
+      expect(loader).toContain("/api/chat/models");
+      expect(loader.toLowerCase()).toContain("deepseek");
+      expect(loader).not.toContain("browser-must-not-see-this");
+
+      const page = await fetch(`${base}/chat`).then((item) => item.text());
+      expect(page).toContain('src="/chat-models.js"');
+      expect(page).not.toContain("browser-must-not-see-this");
+    } finally {
+      server.close();
+      if (server.listening) await once(server, "close");
+    }
+  });
+});

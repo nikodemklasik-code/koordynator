@@ -6,6 +6,8 @@ import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.
 import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 import { ReleaseReadModel } from "./release-read-model.js";
 import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
+import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
+import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -21,6 +23,8 @@ export type ControlServerOptions = {
   chatApiKeyEnv?: string;
   chatDefaultModel?: string;
   chatFetchImpl?: typeof fetch;
+  githubConnection?: GitHubConnectionPort;
+  chatModelCatalog?: ChatModelCatalogPort;
 };
 
 const FILTERS = new Set<TaskFilter>(["all", "building", "frozen", "validating", "awaiting-approval", "released", "returned"]);
@@ -50,8 +54,9 @@ function isClientInputError(message: string): boolean {
   return ["TASK_NOT_RETURNED", "CURRENT_POLICY_FP_REQUIRED", "CURRENT_POLICY_FP_INVALID", "SIGNED_WORK_ORDER_NOT_FOUND"].includes(message);
 }
 
-function isChatPost(pathname: string): boolean {
+function isControlPost(pathname: string): boolean {
   return pathname === "/api/chat/sessions" ||
+    pathname === "/api/integrations/github/connect" ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname);
 }
@@ -95,6 +100,13 @@ export function createControlServer(options: ControlServerOptions): Server {
   const tasks = new TaskReadModel(roots.stateRoot, roots.workOrderRoot, roots.executionRoot);
   const providers = new ProviderReadModel(providerReceiptRoot(stateDir));
   const releases = new ReleaseReadModel(join(stateDir, "release"));
+  const github = options.githubConnection ?? new GitHubConnectionService();
+  const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
+    ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
+    ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
+    ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+  });
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
   const chat = new ChatService({
     stateDir,
@@ -109,9 +121,19 @@ export function createControlServer(options: ControlServerOptions): Server {
     try {
       const url = parseUrl(request);
       const method = request.method ?? "GET";
-      if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isChatPost(url.pathname))) {
+      if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isControlPost(url.pathname))) {
         response.setHeader("allow", "GET, HEAD");
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/chat/models") {
+        return sendJson(response, 200, await modelCatalog.list());
+      }
+
+      if (method === "GET" && url.pathname === "/api/chat/sessions") {
+        const limitRaw = Number(url.searchParams.get("limit") ?? "50");
+        const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 100 ? limitRaw : 50;
+        return sendJson(response, 200, { sessions: await chat.listSessions(limit) });
       }
 
       if (method === "POST" && url.pathname === "/api/chat/sessions") {
@@ -125,11 +147,17 @@ export function createControlServer(options: ControlServerOptions): Server {
       const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
       if (method === "POST" && chatMessageMatch?.[1]) {
         const sessionId = safeSessionId(chatMessageMatch[1]);
-        const payload = await readJsonBody(request);
-        assertExactKeys(payload, ["message", "model"]);
+        const payload = await readJsonBody(request, 30 * 1024 * 1024);
+        assertExactKeys(payload, ["message", "model", "attachments"]);
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
-        return sendJson(response, 202, await chat.startMessage(sessionId, payload.message, typeof payload.model === "string" ? payload.model : undefined));
+        if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+        return sendJson(response, 202, await chat.startMessage(
+          sessionId,
+          payload.message,
+          typeof payload.model === "string" ? payload.model : undefined,
+          payload.attachments
+        ));
       }
 
       const chatStopMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/stop$/i.exec(url.pathname);
@@ -165,6 +193,17 @@ export function createControlServer(options: ControlServerOptions): Server {
         const unsubscribe = chat.subscribe(sessionId, (event) => sseWrite(response, event));
         request.on("close", unsubscribe);
         return;
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/integrations/github") {
+        return sendJson(response, 200, await github.status(url.searchParams.get("refresh") === "1"));
+      }
+
+      if (method === "POST" && url.pathname === "/api/integrations/github/connect") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["approved"]);
+        if (payload.approved !== true) throw new GitHubConnectionError("GITHUB_CONSENT_REQUIRED", 400);
+        return sendJson(response, 200, await github.connect(true));
       }
 
       if (url.pathname === "/api/health") {
@@ -265,6 +304,9 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat.css": { name: "chat.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
+        "/chat-history.js": { name: "chat-history.js", type: "text/javascript; charset=utf-8" },
+        "/chat-github.js": { name: "chat-github.js", type: "text/javascript; charset=utf-8" },
+        "/chat-models.js": { name: "chat-models.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
@@ -283,7 +325,9 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       return sendText(response, 200, asset.type, body);
     } catch (error) {
-      if (error instanceof ChatServiceError) return sendJson(response, error.status, { error: error.code });
+      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError) {
+        return sendJson(response, error.status, { error: error.code });
+      }
       const message = error instanceof Error ? error.message : "CONTROL_SERVER_ERROR";
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
     }
