@@ -8,7 +8,7 @@ import { createControlServer } from "../src/control/server.js";
 const knownHealth = new Set(["HEALTHY", "DEGRADED", "RATE_LIMITED", "UNAVAILABLE", "AUTH_REQUIRED", "BLOCKED", "QUARANTINED"]);
 
 describe("Control Provider Fabric screen", () => {
-  it("projects official providers, visible actions, natural page scrolling and billing provenance", async () => {
+  it("projects official providers, live doctor status and safe connect commands", async () => {
     const root = await mkdtemp(join(tmpdir(), "control-providers-"));
     const server = createControlServer({ stateDir: root, webRoot: join(process.cwd(), "web", "control"), environment: "TEST", version: "0.2.0" });
     try {
@@ -31,9 +31,12 @@ describe("Control Provider Fabric screen", () => {
         expect(provider.descriptor.billingMode).toBe("SUBSCRIPTION_INCLUDED");
         expect(knownHealth.has(provider.health)).toBe(true);
         expect(provider.connectCommand).toBe(`orchestrator provider connect ${provider.providerId}`);
+        expect(provider.connectCommand.toLowerCase()).not.toContain("password");
+        expect(provider.connectCommand.toLowerCase()).not.toContain("cookie");
       }
       expect(fabric.architecture.failoverRule).toBe("IDEMPOTENCY_KEY_REQUIRED");
       expect(fabric.architecture.credentialRule).toBe("NO_BROWSER_PASSWORD_OR_COOKIE_CAPTURE");
+      expect(fabric.receipts).toEqual([]);
 
       const doctor = await fetch(`${base}/api/providers/openai-codex-sub/doctor`);
       expect(doctor.status).toBe(200);
@@ -41,29 +44,32 @@ describe("Control Provider Fabric screen", () => {
       expect(doctorPayload.providerId).toBe("openai-codex-sub");
       expect(knownHealth.has(doctorPayload.health)).toBe(true);
 
+      const missing = await fetch(`${base}/api/providers/unknown-provider/doctor`);
+      expect(missing.status).toBe(404);
+
       const page = await fetch(`${base}/providers`).then((item) => item.text());
       expect(page).toContain("OFFICIAL CLI PROVIDERS");
       expect(page).toContain("FABRIC ARCHITECTURE");
       expect(page).toContain("No password or cookie capture");
       expect(page).not.toContain('type="password"');
+      expect(page).not.toContain("API key field");
 
       const cssResponse = await fetch(`${base}/providers.css`);
       expect(cssResponse.status).toBe(200);
       const css = await cssResponse.text();
-      expect(css).toMatch(/body\s*\{[^}]*overflow-x:hidden[^}]*overflow-y:auto/s);
-      expect(css).toMatch(/\.provider-sidebar\s*\{[^}]*position:sticky/s);
+      expect(css).toMatch(/body\s*\{[^}]*overflow-y:auto/s);
+      expect(css).toMatch(/\.provider-shell\s*\{[^}]*min-height:100vh/s);
       expect(css).toMatch(/\.provider-content\s*\{[^}]*overflow:visible/s);
-      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow:visible/s);
-      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow:visible/s);
-      expect(css).toMatch(/\.provider-actions\s*\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/s);
-      expect(css).toContain("@media (max-width:1500px)");
+      expect(css).toMatch(/\.provider-row\s*\{[^}]*min-width:0/s);
+      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow-x:visible/s);
+      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow-x:visible/s);
       expect(css).not.toContain("margin-top:-35vh");
-      expect(css).not.toMatch(/\.provider-row\s*\{[^}]*min-width:720px/s);
 
-      const js = await fetch(`${base}/providers.js`).then((item) => item.text());
-      expect(js).toContain("SUBSCRIPTION-HARNESS");
-      expect(js).toContain("PAID-API");
-      expect(js).toContain('data-label="ACTIONS"');
+      const client = await fetch(`${base}/providers.js`).then((item) => item.text());
+      expect(client).toContain("SUBSCRIPTION-HARNESS");
+      expect(client).toContain("PAID-API");
+      expect(client).toContain("TOKEN COUNT UNREPORTED");
+      expect(client).toContain("PROVIDER REPORTED");
 
       const denied = await fetch(`${base}/api/providers`, { method: "POST" });
       expect(denied.status).toBe(405);
