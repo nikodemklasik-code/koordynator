@@ -27,6 +27,7 @@ export type ExactPreBuildPipelineOptions<E> = {
   maxAgentCorrections: number;
   maxConditionChanges: number;
   initialConditions?(request: Readonly<OrchestratorRunRequest>): ExecutionConditions;
+  initialCorrection?(request: Readonly<OrchestratorRunRequest>): string | undefined;
 };
 
 export class ExactPreBuildPipeline<E = unknown> {
@@ -69,7 +70,10 @@ export class ExactPreBuildPipeline<E = unknown> {
       }),
       ...(this.options.initialConditions === undefined
         ? {}
-        : { initialConditions: this.options.initialConditions })
+        : { initialConditions: this.options.initialConditions }),
+      ...(this.options.initialCorrection === undefined
+        ? {}
+        : { initialCorrection: this.options.initialCorrection })
     });
 
     return runtime.run(request);
