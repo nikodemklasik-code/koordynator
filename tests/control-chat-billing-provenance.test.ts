@@ -61,8 +61,8 @@ async function waitForComplete(base: string, sessionId: string): Promise<Record<
 describe("Live Chat strict billing provenance", () => {
   it("allows verified free, free OAuth and subscription harness routes by default", () => {
     expect(evaluateChatBilling("m", catalogWith("FREE_CONFIRMED", "m")).decision).toBe("ALLOW_FREE_CONFIRMED");
-    expect(evaluateChatBilling("m", catalogWith("FREE_OAUTH", "m")).toMatchObject({ allowed: true, decision: "ALLOW_FREE_OAUTH", transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: false });
-    expect(evaluateChatBilling("m", catalogWith("SUBSCRIPTION_HARNESS", "m")).toMatchObject({ allowed: true, decision: "ALLOW_SUBSCRIPTION_HARNESS", transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: true });
+    expect(evaluateChatBilling("m", catalogWith("FREE_OAUTH", "m"))).toMatchObject({ allowed: true, decision: "ALLOW_FREE_OAUTH", transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: false });
+    expect(evaluateChatBilling("m", catalogWith("SUBSCRIPTION_HARNESS", "m"))).toMatchObject({ allowed: true, decision: "ALLOW_SUBSCRIPTION_HARNESS", transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: true });
     expect(evaluateChatBilling("m", catalogWith("FREE_REQUESTED", "m")).decision).toBe("BLOCK_FREE_UNCONFIRMED");
     expect(evaluateChatBilling("m", catalogWith("PAID_API", "m")).decision).toBe("BLOCK_PAID_API");
     expect(evaluateChatBilling("m", catalogWith("UNKNOWN", "m")).decision).toBe("BLOCK_UNKNOWN");
