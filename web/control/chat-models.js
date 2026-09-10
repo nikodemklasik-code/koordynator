@@ -97,6 +97,7 @@ function rebuildOptions(models) {
     option.value = modelId;
     option.textContent = readableModelLabel(modelId);
     option.title = `${modelId} · ${sourceLabel(sourceFor(modelId))}`;
+    option.disabled = sourceFor(modelId) !== "FREE_CONFIRMED";
     chatModelSelect.appendChild(option);
   }
 }
@@ -112,8 +113,10 @@ async function loadChatModels() {
     if (!models.length) throw new Error("CHAT_MODEL_CATALOG_EMPTY");
     catalogBilling = payload.billing && typeof payload.billing === "object" ? payload.billing : null;
 
-    const preferred = models.includes("auto/best-free") ? "auto/best-free" : (models.includes(fallback) ? fallback : models[0]);
-    const desired = await desiredSessionModel(models, preferred);
+    const confirmedFree = models.find((model) => sourceFor(model) === "FREE_CONFIRMED");
+    const preferred = confirmedFree || (models.includes(fallback) ? fallback : models[0]);
+    const desiredFromSession = await desiredSessionModel(models, preferred);
+    const desired = sourceFor(desiredFromSession) === "FREE_CONFIRMED" ? desiredFromSession : preferred;
     rebuildOptions(models);
     chatModelSelect.value = desired;
     chatModelSelect.dataset.catalog = "omniroute";
