@@ -29,5 +29,7 @@ const server = createControlServer({
 });
 
 server.listen(port(), host, () => {
-  process.stdout.write(`KOORDYNATOR_CONTROL http://${host}:${port()}\n`);
+  const bind = port();
+  process.stdout.write(`KOORDYNATOR_CONTROL http://${host}:${bind}\n`);
+  process.stdout.write(`KOORDYNATOR_CONTROL http://koordynator:${bind}/\n`);
 });

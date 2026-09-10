@@ -1,0 +1,10 @@
+.project-sources { display:flex; flex-wrap:wrap; gap:8px; padding:0 0 12px; }
+.project-chip { display:flex; flex-direction:column; gap:3px; min-width:160px; padding:10px 12px; border:1px solid #334049; border-radius:8px; background:#12181d; color:#e8ecef; text-decoration:none; }
+.project-chip strong { font-size:11px; letter-spacing:.04em; }
+.project-chip span { color:#9aa3ab; font-size:12px; }
+.project-field { display:grid; gap:6px; margin:0 0 12px; color:#c5ccd1; font-size:12px; }
+.project-field input, .project-field textarea { width:100%; box-sizing:border-box; border:1px solid #394349; border-radius:6px; background:#0d1317; color:white; padding:8px 10px; }
+.project-drop { width:100%; min-height:88px; border:1px dashed #4a5963; border-radius:8px; background:#0f161b; color:#d5dde2; cursor:pointer; }
+.project-drop.drag-active { border-color:#57a7ff; background:#15222c; }
+.project-file-list { display:grid; gap:4px; margin-top:10px; color:#b7c0c6; font-size:12px; }
+.project-error { min-height:1.2em; color:#ff555b; font-size:12px; }
