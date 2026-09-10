@@ -5,6 +5,7 @@ import type { Digest, TaskId } from "../domain/ids.js";
 import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.js";
 import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 import { ReleaseReadModel } from "./release-read-model.js";
+import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -15,9 +16,15 @@ export type ControlServerOptions = {
   operator?: string;
   ciVerify?: "PASS" | "FAIL" | "UNKNOWN";
   version?: string;
+  chatEndpoint?: string;
+  chatApiKey?: string;
+  chatApiKeyEnv?: string;
+  chatDefaultModel?: string;
+  chatFetchImpl?: typeof fetch;
 };
 
 const FILTERS = new Set<TaskFilter>(["all", "building", "frozen", "validating", "awaiting-approval", "released", "returned"]);
+const CHAT_SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
@@ -43,6 +50,45 @@ function isClientInputError(message: string): boolean {
   return ["TASK_NOT_RETURNED", "CURRENT_POLICY_FP_REQUIRED", "CURRENT_POLICY_FP_INVALID", "SIGNED_WORK_ORDER_NOT_FOUND"].includes(message);
 }
 
+function isChatPost(pathname: string): boolean {
+  return pathname === "/api/chat/sessions" ||
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname);
+}
+
+async function readJsonBody(request: IncomingMessage, maxBytes = 40 * 1024): Promise<Record<string, unknown>> {
+  const type = String(request.headers["content-type"] ?? "").split(";", 1)[0]?.trim().toLowerCase();
+  if (type !== "application/json") throw new ChatServiceError("CHAT_CONTENT_TYPE_REQUIRED", 415);
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (total > maxBytes) throw new ChatServiceError("CHAT_BODY_TOO_LARGE", 413);
+    chunks.push(buffer);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
+  let parsed: unknown;
+  try { parsed = raw ? JSON.parse(raw) : {}; } catch { throw new ChatServiceError("CHAT_JSON_INVALID", 400); }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new ChatServiceError("CHAT_JSON_OBJECT_REQUIRED", 400);
+  return parsed as Record<string, unknown>;
+}
+
+function assertExactKeys(payload: Record<string, unknown>, allowed: string[]): void {
+  const allowedSet = new Set(allowed);
+  if (Object.keys(payload).some((key) => !allowedSet.has(key))) throw new ChatServiceError("CHAT_UNKNOWN_FIELD", 400);
+}
+
+function safeSessionId(value: string): string {
+  if (!CHAT_SESSION_RE.test(value)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
+  return value;
+}
+
+function sseWrite(response: ServerResponse, event: ChatEvent): void {
+  if (response.destroyed || response.writableEnded) return;
+  response.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 export function createControlServer(options: ControlServerOptions): Server {
   const stateDir = resolve(options.stateDir);
   const roots = controlRoots(stateDir);
@@ -50,15 +96,77 @@ export function createControlServer(options: ControlServerOptions): Server {
   const providers = new ProviderReadModel(providerReceiptRoot(stateDir));
   const releases = new ReleaseReadModel(join(stateDir, "release"));
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
+  const chat = new ChatService({
+    stateDir,
+    ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
+    ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
+    ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
+    ...(options.chatDefaultModel === undefined ? {} : { defaultModel: options.chatDefaultModel }),
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+  });
 
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     try {
-      if (request.method !== "GET" && request.method !== "HEAD") {
+      const url = parseUrl(request);
+      const method = request.method ?? "GET";
+      if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isChatPost(url.pathname))) {
         response.setHeader("allow", "GET, HEAD");
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
       }
 
-      const url = parseUrl(request);
+      if (method === "POST" && url.pathname === "/api/chat/sessions") {
+        const payload = await readJsonBody(request);
+        assertExactKeys(payload, ["model"]);
+        if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
+        const session = await chat.createSession(typeof payload.model === "string" ? payload.model : undefined);
+        return sendJson(response, 201, { sessionId: session.sessionId, model: session.model, createdAt: session.createdAt });
+      }
+
+      const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
+      if (method === "POST" && chatMessageMatch?.[1]) {
+        const sessionId = safeSessionId(chatMessageMatch[1]);
+        const payload = await readJsonBody(request);
+        assertExactKeys(payload, ["message", "model"]);
+        if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
+        if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
+        return sendJson(response, 202, await chat.startMessage(sessionId, payload.message, typeof payload.model === "string" ? payload.model : undefined));
+      }
+
+      const chatStopMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/stop$/i.exec(url.pathname);
+      if (method === "POST" && chatStopMatch?.[1]) {
+        const sessionId = safeSessionId(chatStopMatch[1]);
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, []);
+        const session = await chat.getSession(sessionId);
+        if (!session) return sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
+        return sendJson(response, 200, { stopped: await chat.stop(sessionId) });
+      }
+
+      const chatSessionMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)$/i.exec(url.pathname);
+      if ((method === "GET" || method === "HEAD") && chatSessionMatch?.[1]) {
+        const sessionId = safeSessionId(chatSessionMatch[1]);
+        const session = await chat.getSession(sessionId);
+        return session ? sendJson(response, 200, session) : sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
+      }
+
+      const chatEventsMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/events$/i.exec(url.pathname);
+      if (method === "GET" && chatEventsMatch?.[1]) {
+        const sessionId = safeSessionId(chatEventsMatch[1]);
+        const session = await chat.getSession(sessionId);
+        if (!session) return sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
+        response.writeHead(200, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive",
+          "x-accel-buffering": "no",
+          "x-content-type-options": "nosniff"
+        });
+        response.write(": connected\n\n");
+        const unsubscribe = chat.subscribe(sessionId, (event) => sseWrite(response, event));
+        request.on("close", unsubscribe);
+        return;
+      }
+
       if (url.pathname === "/api/health") {
         return sendJson(response, 200, {
           ok: true,
@@ -149,11 +257,14 @@ export function createControlServer(options: ControlServerOptions): Server {
       const staticFiles: Record<string, { name: string; type: string }> = {
         "/": { name: "index.html", type: "text/html; charset=utf-8" },
         "/index.html": { name: "index.html", type: "text/html; charset=utf-8" },
+        "/chat": { name: "chat.html", type: "text/html; charset=utf-8" },
         "/providers": { name: "providers.html", type: "text/html; charset=utf-8" },
         "/releases": { name: "releases.html", type: "text/html; charset=utf-8" },
         "/styles.css": { name: "styles.css", type: "text/css; charset=utf-8" },
         "/control-ui.css": { name: "control-ui.css", type: "text/css; charset=utf-8" },
+        "/chat.css": { name: "chat.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
+        "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
@@ -166,14 +277,18 @@ export function createControlServer(options: ControlServerOptions): Server {
       const asset = returnPage ? { name: "return.html", type: "text/html; charset=utf-8" } : taskPage ? { name: "task.html", type: "text/html; charset=utf-8" } : staticFiles[url.pathname];
       if (!asset) return sendJson(response, 404, { error: "NOT_FOUND" });
       const body = await readFile(resolve(webRoot, asset.name), "utf8");
-      if (request.method === "HEAD") {
+      if (method === "HEAD") {
         response.writeHead(200, { "content-type": asset.type, "content-length": Buffer.byteLength(body) });
         return response.end();
       }
       return sendText(response, 200, asset.type, body);
     } catch (error) {
+      if (error instanceof ChatServiceError) return sendJson(response, error.status, { error: error.code });
       const message = error instanceof Error ? error.message : "CONTROL_SERVER_ERROR";
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR", message });
     }
   });
+
+  server.on("close", () => chat.close());
+  return server;
 }
