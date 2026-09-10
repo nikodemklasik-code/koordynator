@@ -54,6 +54,14 @@ describe("Control Provider Fabric screen", () => {
       expect(page).not.toContain('type="password"');
       expect(page).not.toContain("API key field");
 
+      const cssResponse = await fetch(`${base}/providers.css`);
+      expect(cssResponse.status).toBe(200);
+      const css = await cssResponse.text();
+      expect(css).toContain("grid-template-rows:78px minmax(0,1fr) 62px");
+      expect(css).toMatch(/\.provider-content\s*\{[^}]*min-height:0[^}]*overflow:auto/s);
+      expect(css).toMatch(/\.provider-sidebar nav\s*\{[^}]*overflow-y:auto/s);
+      expect(css).not.toContain("margin-top:-35vh");
+
       const denied = await fetch(`${base}/api/providers`, { method: "POST" });
       expect(denied.status).toBe(405);
     } finally {
