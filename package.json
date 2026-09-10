@@ -18,6 +18,7 @@
     "e2e": "node scripts/e2e-smoke.mjs",
     "golden": "node scripts/golden-path.mjs",
     "provider-golden": "node scripts/provider-golden.mjs",
+    "live:cli-prebuild": "npm run build && node scripts/live-cli-prebuild-smoke.mjs",
     "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden && npm run provider-golden"
   },
   "devDependencies": {
