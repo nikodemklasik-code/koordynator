@@ -38,7 +38,7 @@ function minimalEnv(): NodeJS.ProcessEnv {
 function defaultGitRunner(executable: string, args: string[], options: { cwd?: string; timeoutMs: number; maxOutputBytes: number }): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(executable, args, {
-      cwd: options.cwd,
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
       env: minimalEnv()
@@ -118,7 +118,11 @@ export class GitHubRepositoryContextService implements GitHubRepositoryContextPo
   ) {}
 
   private async git(args: string[], cwd?: string, timeoutMs = 30_000, maxOutputBytes = 1024 * 1024) {
-    return this.runner("git", args, { cwd, timeoutMs, maxOutputBytes });
+    return this.runner("git", args, {
+      ...(cwd === undefined ? {} : { cwd }),
+      timeoutMs,
+      maxOutputBytes
+    });
   }
 
   async fromMessage(message: string): Promise<GitHubRepositoryContext | null> {
