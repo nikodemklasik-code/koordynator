@@ -13,12 +13,22 @@ afterEach(async () => {
 });
 
 describe("Live Chat model catalog", () => {
-  it("loads the OmniRoute catalog, preserves order, deduplicates models and rejects forbidden routes", async () => {
-    let requestedUrl = "";
+  it("loads the OmniRoute catalog and reports billing provenance without calling subscription harnesses", async () => {
+    const requested: string[] = [];
     let authorization = "";
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
-      requestedUrl = String(input);
+      const url = String(input);
+      requested.push(url);
       authorization = String((init?.headers as Record<string, string> | undefined)?.authorization ?? "");
+      if (url.endsWith("/api/pricing/models")) {
+        return new Response(JSON.stringify({ models: [
+          { id: "openai/gpt-5.6-sol", estimatedCost: 1 },
+          { id: "google/gemini-2.5-pro", estimatedCost: 0 }
+        ] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("/api/usage/budget")) {
+        return new Response(JSON.stringify({ remaining: 8, limit: 10, used: 2 }), { status: 200, headers: { "content-type": "application/json" } });
+      }
       return new Response(JSON.stringify({
         data: [
           { id: "auto/best-free" },
@@ -38,12 +48,21 @@ describe("Live Chat model catalog", () => {
       now: () => "2026-09-10T12:00:00.000Z"
     });
 
-    await expect(catalog.list()).resolves.toEqual({
-      models: ["auto/best-free", "openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
-      source: "OMNIROUTE",
-      checkedAt: "2026-09-10T12:00:00.000Z"
+    const result = await catalog.list();
+    expect(result.models).toEqual(["auto/best-free", "openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"]);
+    expect(result.billing).toEqual({
+      liveChatTransport: "OMNIROUTE_API",
+      subscriptionHarnessUsed: false,
+      subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
+      modelSources: {
+        "auto/best-free": "FREE_ROUTE",
+        "openai/gpt-5.6-sol": "PAID_API",
+        "google/gemini-2.5-pro": "FREE_ROUTE",
+        "anthropic/claude-opus-5": "UNKNOWN"
+      },
+      budget: { exhausted: false, remaining: 8, limit: 10, used: 2 }
     });
-    expect(requestedUrl).toBe("http://127.0.0.1:20128/v1/models");
+    expect(requested[0]).toBe("http://127.0.0.1:20128/v1/models");
     expect(authorization).toBe("Bearer catalog-secret");
   });
 
@@ -53,15 +72,13 @@ describe("Live Chat model catalog", () => {
       const url = String(input);
       requested.push(url);
       if (url.endsWith("/v1/models") && !url.endsWith("/api/v1/models")) return new Response("", { status: 404 });
-      return new Response(JSON.stringify({ models: [{ id: "auto/best-free" }, { id: "openai/gpt-5.6-sol" }] }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
+      if (url.endsWith("/api/v1/models")) return new Response(JSON.stringify({ models: [{ id: "auto/best-free" }, { id: "openai/gpt-5.6-sol" }] }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response("", { status: 404 });
     }) as typeof fetch;
     const catalog = new ChatModelCatalogService({ endpoint: "http://127.0.0.1:20128/v1", apiKey: "key", fetchImpl });
     const result = await catalog.list();
     expect(result.models).toEqual(["auto/best-free", "openai/gpt-5.6-sol"]);
-    expect(requested).toEqual([
+    expect(requested.filter((url) => url.endsWith("/models") && !url.includes("pricing"))).toEqual([
       "http://127.0.0.1:20128/v1/models",
       "http://127.0.0.1:20128/api/v1/models"
     ]);
@@ -80,7 +97,13 @@ describe("Live Chat model catalog", () => {
         return {
           models: ["auto/best-free", "openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
           source: "OMNIROUTE",
-          checkedAt: "2026-09-10T12:00:00.000Z"
+          checkedAt: "2026-09-10T12:00:00.000Z",
+          billing: {
+            liveChatTransport: "OMNIROUTE_API",
+            subscriptionHarnessUsed: false,
+            subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
+            modelSources: { "auto/best-free": "FREE_ROUTE", "openai/gpt-5.6-sol": "UNKNOWN", "google/gemini-2.5-pro": "UNKNOWN", "anthropic/claude-opus-5": "UNKNOWN" }
+          }
         };
       }
     };
@@ -99,8 +122,9 @@ describe("Live Chat model catalog", () => {
 
       const response = await fetch(`${base}/api/chat/models`);
       expect(response.status).toBe(200);
-      const payload = await response.json() as { models: string[] };
+      const payload = await response.json() as { models: string[]; billing?: { subscriptionHarnessUsed?: boolean } };
       expect(payload.models[0]).toBe("auto/best-free");
+      expect(payload.billing?.subscriptionHarnessUsed).toBe(false);
 
       const loader = await fetch(`${base}/chat-models.js`).then((item) => item.text());
       expect(loader).toContain("/api/chat/models");
