@@ -5,6 +5,16 @@ import { join, resolve } from "node:path";
 export type ChatRole = "user" | "assistant";
 export type ChatMessageState = "complete" | "streaming" | "stopped" | "error";
 
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
+
+export type ChatAttachmentInput = Omit<ChatAttachment, "id">;
+
 export type ChatMessage = {
   id: string;
   sessionId: string;
@@ -14,6 +24,7 @@ export type ChatMessage = {
   state: ChatMessageState;
   model?: string;
   providerRequestId?: string;
+  attachments?: ChatAttachment[];
 };
 
 export type ChatSession = {
@@ -49,14 +60,44 @@ export type ChatServiceOptions = {
   maxMessageBytes?: number;
   maxHistoryMessages?: number;
   maxHistoryChars?: number;
+  maxAttachments?: number;
+  maxAttachmentBytes?: number;
+  maxAttachmentTotalBytes?: number;
+  maxHistoryAttachmentBytes?: number;
   timeoutMs?: number;
 };
 
 type Subscriber = (event: ChatEvent) => void;
 type ActiveGeneration = { controller: AbortController; messageId: string };
+type UpstreamTextPart = { type: "text"; text: string };
+type UpstreamImagePart = { type: "image_url"; image_url: { url: string } };
+type UpstreamFilePart = { type: "file"; file: { filename: string; file_data: string } };
+type UpstreamContentPart = UpstreamTextPart | UpstreamImagePart | UpstreamFilePart;
+type UpstreamMessage = { role: ChatRole; content: string | UpstreamContentPart[] };
 
 const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
+const MIME_RE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
+const DATA_URL_RE = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/;
+const ALLOWED_ATTACHMENT_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
+  "application/xml",
+  "text/xml",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+]);
 
 function now(): string { return new Date().toISOString(); }
 function normalizeEndpoint(value: string): string { return value.replace(/\/+$/, ""); }
@@ -67,6 +108,31 @@ function safeModel(value: string): string {
   if (!MODEL_RE.test(model)) throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
   if (model.toLowerCase().includes("deepseek")) throw new ChatServiceError("CHAT_MODEL_FORBIDDEN", 400);
   return model;
+}
+
+function safeAttachmentName(value: unknown): string {
+  if (typeof value !== "string") throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  const name = value.trim();
+  if (!name || name.length > 180 || /[\\/\u0000-\u001f\u007f]/.test(name)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  return name;
+}
+
+function safeAttachmentMime(value: unknown): string {
+  if (typeof value !== "string") throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  const mimeType = value.trim().toLowerCase();
+  if (!MIME_RE.test(mimeType)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  if (!ALLOWED_ATTACHMENT_TYPES.has(mimeType)) throw new ChatServiceError("CHAT_ATTACHMENT_TYPE_UNSUPPORTED", 415);
+  return mimeType;
+}
+
+function parseAttachmentDataUrl(value: unknown, mimeType: string): { dataUrl: string; base64: string; bytes: number } {
+  if (typeof value !== "string") throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  const match = DATA_URL_RE.exec(value);
+  if (!match?.[1] || match[2] === undefined) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  if (match[1].toLowerCase() !== mimeType) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+  let decoded: Buffer;
+  try { decoded = Buffer.from(match[2], "base64"); } catch { throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400); }
+  return { dataUrl: value, base64: match[2], bytes: decoded.length };
 }
 
 function extractDelta(payload: unknown): string {
@@ -99,6 +165,10 @@ export class ChatService {
   private readonly maxMessageBytes: number;
   private readonly maxHistoryMessages: number;
   private readonly maxHistoryChars: number;
+  private readonly maxAttachments: number;
+  private readonly maxAttachmentBytes: number;
+  private readonly maxAttachmentTotalBytes: number;
+  private readonly maxHistoryAttachmentBytes: number;
   private readonly timeoutMs: number;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
   private readonly active = new Map<string, ActiveGeneration>();
@@ -113,6 +183,10 @@ export class ChatService {
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
     this.maxHistoryChars = options.maxHistoryChars ?? 64 * 1024;
+    this.maxAttachments = options.maxAttachments ?? 5;
+    this.maxAttachmentBytes = options.maxAttachmentBytes ?? 10 * 1024 * 1024;
+    this.maxAttachmentTotalBytes = options.maxAttachmentTotalBytes ?? 20 * 1024 * 1024;
+    this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 24 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 120_000;
   }
 
@@ -131,6 +205,30 @@ export class ChatService {
     const tmp = `${target}.${randomUUID()}.tmp`;
     await writeFile(tmp, `${JSON.stringify(session, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     await rename(tmp, target);
+  }
+
+  private normalizeAttachments(value: unknown): ChatAttachment[] {
+    if (value === undefined) return [];
+    if (!Array.isArray(value)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+    if (value.length > this.maxAttachments) throw new ChatServiceError("CHAT_TOO_MANY_ATTACHMENTS", 413);
+    const attachments: ChatAttachment[] = [];
+    let totalBytes = 0;
+    for (const item of value) {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+      const record = item as Record<string, unknown>;
+      const keys = Object.keys(record);
+      if (keys.some((key) => !["name", "mimeType", "size", "dataUrl"].includes(key))) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+      const name = safeAttachmentName(record.name);
+      const mimeType = safeAttachmentMime(record.mimeType);
+      if (typeof record.size !== "number" || !Number.isSafeInteger(record.size) || record.size < 0) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+      const parsed = parseAttachmentDataUrl(record.dataUrl, mimeType);
+      if (parsed.bytes !== record.size) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+      if (parsed.bytes > this.maxAttachmentBytes) throw new ChatServiceError("CHAT_ATTACHMENT_TOO_LARGE", 413);
+      totalBytes += parsed.bytes;
+      if (totalBytes > this.maxAttachmentTotalBytes) throw new ChatServiceError("CHAT_ATTACHMENTS_TOO_LARGE", 413);
+      attachments.push({ id: randomUUID(), name, mimeType, size: parsed.bytes, dataUrl: parsed.dataUrl });
+    }
+    return attachments;
   }
 
   async createSession(model?: string): Promise<ChatSession> {
@@ -176,22 +274,49 @@ export class ChatService {
     return true;
   }
 
-  private boundedHistory(messages: ChatMessage[]): Array<{ role: ChatRole; content: string }> {
-    const selected: ChatMessage[] = [];
-    let chars = 0;
-    for (const message of messages.slice().reverse()) {
-      if (message.state === "error") continue;
-      const next = chars + message.content.length;
-      if (selected.length >= this.maxHistoryMessages || next > this.maxHistoryChars) break;
-      selected.push(message);
-      chars = next;
+  private upstreamMessage(message: ChatMessage): UpstreamMessage {
+    const attachments = message.role === "user" ? message.attachments ?? [] : [];
+    if (attachments.length === 0) return { role: message.role, content: message.content };
+    const parts: UpstreamContentPart[] = [];
+    if (message.content) parts.push({ type: "text", text: message.content });
+    for (const attachment of attachments) {
+      const match = DATA_URL_RE.exec(attachment.dataUrl);
+      if (!match || match[2] === undefined) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+      if (attachment.mimeType.startsWith("image/")) {
+        parts.push({ type: "image_url", image_url: { url: attachment.dataUrl } });
+      } else {
+        parts.push({ type: "file", file: { filename: attachment.name, file_data: match[2] } });
+      }
     }
-    return selected.reverse().map(({ role, content }) => ({ role, content }));
+    return { role: message.role, content: parts };
   }
 
-  async startMessage(sessionId: string, messageText: string, requestedModel?: string): Promise<{ accepted: true; messageId: string; model: string }> {
+  private boundedHistory(messages: ChatMessage[]): UpstreamMessage[] {
+    const selected: ChatMessage[] = [];
+    let chars = 0;
+    let attachmentBytes = 0;
+    for (const message of messages.slice().reverse()) {
+      if (message.state === "error") continue;
+      const nextChars = chars + message.content.length;
+      const messageAttachmentBytes = (message.attachments ?? []).reduce((sum, attachment) => sum + attachment.size, 0);
+      const nextAttachmentBytes = attachmentBytes + messageAttachmentBytes;
+      if (selected.length >= this.maxHistoryMessages || nextChars > this.maxHistoryChars || nextAttachmentBytes > this.maxHistoryAttachmentBytes) break;
+      selected.push(message);
+      chars = nextChars;
+      attachmentBytes = nextAttachmentBytes;
+    }
+    return selected.reverse().map((message) => this.upstreamMessage(message));
+  }
+
+  async startMessage(
+    sessionId: string,
+    messageText: string,
+    requestedModel?: string,
+    rawAttachments?: unknown
+  ): Promise<{ accepted: true; messageId: string; model: string }> {
     const text = messageText.trim();
-    if (!text) throw new ChatServiceError("CHAT_MESSAGE_EMPTY", 400);
+    const attachments = this.normalizeAttachments(rawAttachments);
+    if (!text && attachments.length === 0) throw new ChatServiceError("CHAT_MESSAGE_EMPTY", 400);
     if (Buffer.byteLength(text, "utf8") > this.maxMessageBytes) throw new ChatServiceError("CHAT_MESSAGE_TOO_LARGE", 413);
     if (this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
     const session = await this.getSession(sessionId);
@@ -201,7 +326,15 @@ export class ChatService {
     const model = requestedModel === undefined ? session.model : safeModel(requestedModel);
     session.model = model;
 
-    const user: ChatMessage = { id: randomUUID(), sessionId, role: "user", content: text, createdAt: now(), state: "complete" };
+    const user: ChatMessage = {
+      id: randomUUID(),
+      sessionId,
+      role: "user",
+      content: text,
+      createdAt: now(),
+      state: "complete",
+      ...(attachments.length === 0 ? {} : { attachments })
+    };
     const assistant: ChatMessage = { id: randomUUID(), sessionId, role: "assistant", content: "", createdAt: now(), state: "streaming", model };
     session.messages.push(user, assistant);
     session.updatedAt = now();
