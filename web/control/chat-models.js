@@ -51,6 +51,37 @@ function sourceAllowed(_source) {
   return true;
 }
 
+function budgetExhausted() {
+  return catalogBilling?.budget?.exhausted === true;
+}
+
+function routeHealth(source) {
+  if (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" || source === "FREE_CONFIRMED") return "ok";
+  if (source === "PAID_API" && budgetExhausted()) return "down";
+  if (source === "FREE_REQUESTED" || source === "PAID_API") return "issue";
+  return "down";
+}
+
+function healthMark(health) {
+  if (health === "ok") return "🟢";
+  if (health === "issue") return "🟠";
+  return "🔴";
+}
+
+function healthTitle(health, source) {
+  if (health === "ok") return "Działa · zweryfikowana trasa";
+  if (health === "issue" && source === "PAID_API") return "Issue · PAYG / limit";
+  if (health === "issue") return "Issue · billing niepotwierdzony";
+  return "Nie działa · brak zweryfikowanej trasy";
+}
+
+function paintHealthLamp(health, source) {
+  const lamp = document.getElementById("modelHealthLamp");
+  if (!lamp) return;
+  lamp.className = `model-health-lamp ${health}`;
+  lamp.title = health === "checking" ? "Sprawdzanie modelu" : healthTitle(health, source);
+}
+
 function routeReady() {
   return Boolean(
     chatModelSelect
@@ -162,10 +193,8 @@ function shortName(entry) {
 }
 
 function entryLabel(entry) {
-  const parts = [shortName(entry), sourceLabel(entry.billingSource)];
-  if (entry.supportsVision) parts.push("VISION");
-  if (entry.inputTokenLimit) parts.push(`${Math.round(entry.inputTokenLimit / 1000)}K CTX`);
-  return parts.join(" · ");
+  const health = routeHealth(entry.billingSource);
+  return `${healthMark(health)} ${shortName(entry)} · ${sourceLabel(entry.billingSource)}`;
 }
 
 function familyRank(family) {
@@ -175,6 +204,9 @@ function familyRank(family) {
 
 function sortEntries(entries) {
   return [...entries].sort((a, b) => {
+    const rank = { ok: 0, issue: 1, down: 2 };
+    const healthDelta = (rank[routeHealth(a.billingSource)] ?? 3) - (rank[routeHealth(b.billingSource)] ?? 3);
+    if (healthDelta) return healthDelta;
     const familyDelta = familyRank(a.family) - familyRank(b.family);
     if (familyDelta) return familyDelta;
     if (familyRank(a.family) === FAMILY_ORDER.length) {
@@ -215,7 +247,7 @@ function rebuildOptions(entries) {
       const option = document.createElement("option");
       option.value = entry.id;
       option.textContent = entryLabel(entry);
-      option.title = `${entry.id} · ${entry.provider} · ${sourceLabel(entry.billingSource)} · ${entry.transport}`;
+      option.title = `${healthTitle(routeHealth(entry.billingSource), entry.billingSource)} · ${entry.id}`;
       group.appendChild(option);
     }
     chatModelSelect.appendChild(group);
@@ -236,6 +268,7 @@ function showCatalogFailure(message) {
   chatModelSelect.dataset.billingAllowed = "false";
   chatModelSelect.disabled = true;
   chatModelSelect.title = message;
+  paintHealthLamp("down", "UNKNOWN");
   if (chatBillingBadge) {
     chatBillingBadge.textContent = "NO VERIFIED ROUTE";
     chatBillingBadge.className = "billing-badge unknown";
@@ -251,6 +284,7 @@ function billingSummary() {
   const entry = catalogEntries.find((item) => item.id === model);
   const source = entry?.billingSource || sourceFor(model);
   const allowed = sourceAllowed(source);
+  const health = routeHealth(source);
   const budget = catalogBilling?.budget;
   const budgetText = budget && typeof budget.remaining === "number"
     ? ` PAYG budget remaining: ${budget.remaining}${typeof budget.limit === "number" ? ` / ${budget.limit}` : ""}.`
@@ -267,9 +301,10 @@ function billingSummary() {
           : source === "PAID_API"
             ? "PAYG API route selected."
             : "Billing source is unknown.";
-  chatBillingNote.textContent = `${sourceText}${routeText}${budgetText}`;
+  chatBillingNote.textContent = `${healthTitle(health, source)}. ${sourceText}${routeText}${budgetText}`;
   chatModelSelect.dataset.billingSource = source;
   chatModelSelect.dataset.billingAllowed = allowed ? "true" : "false";
+  paintHealthLamp(health, source);
   if (chatBillingBadge) {
     chatBillingBadge.textContent = sourceLabel(source);
     chatBillingBadge.className = `billing-badge ${source.toLowerCase()}`;
@@ -284,6 +319,7 @@ async function loadChatModels() {
   chatModelSelect.dataset.catalog = "loading";
   chatModelSelect.dataset.billingAllowed = "false";
   chatModelSelect.disabled = true;
+  paintHealthLamp("checking", "UNKNOWN");
   const previous = chatModelSelect.value;
   enforceRouteGuard();
   try {
@@ -299,10 +335,8 @@ async function loadChatModels() {
     if (!models.length) throw new Error("OmniRoute returned no chat-capable models");
     catalogBilling = payload.billing && typeof payload.billing === "object" ? payload.billing : null;
     catalogEntries = safeCatalogEntries(payload, models);
-
     const listed = catalogEntries;
     if (!listed.length) throw new Error("OmniRoute returned no chat-capable models");
-
     const listedIds = listed.map((entry) => entry.id);
     const preferred = listed.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
       || listed.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
