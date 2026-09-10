@@ -1,5 +1,6 @@
 import type { BillingPolicy, CapabilityRequest } from "./capability-api.js";
 import type { ProviderAdapter, ProviderAccessMode } from "./provider-contract.js";
+import { ProviderHealthManager } from "./provider-health-manager.js";
 import { ProviderRegistry } from "./provider-registry.js";
 
 export type ProviderProfile =
@@ -33,7 +34,19 @@ function metric(value: number | undefined, fallback: number): number {
 }
 
 export class ProviderRouter {
-  constructor(private readonly registry: ProviderRegistry, readonly profile: ProviderProfile = DEFAULT_AI_PROVIDER_PROFILE) {}
+  constructor(
+    private readonly registry: ProviderRegistry,
+    readonly profile: ProviderProfile = DEFAULT_AI_PROVIDER_PROFILE,
+    private readonly healthManager: ProviderHealthManager = new ProviderHealthManager()
+  ) {}
+
+  reportSuccess(providerId: string): void {
+    this.healthManager.recordSuccess(providerId);
+  }
+
+  reportFailure(providerId: string, failureCode: string): void {
+    this.healthManager.recordFailure(providerId, failureCode);
+  }
 
   private compare(a: ProviderAdapter, b: ProviderAdapter, request: CapabilityRequest): number {
     if (this.profile.mode === "MONO") return 0;
@@ -134,7 +147,7 @@ export class ProviderRouter {
       }
     }
     this.assertBillingAllowed(provider, request);
-    const health = await provider.health();
+    const health = await this.healthManager.health(provider);
     if (["UNAVAILABLE", "AUTH_REQUIRED", "RATE_LIMITED", "BLOCKED", "QUARANTINED"].includes(health)) {
       throw new Error(`PROVIDER_${health}`);
     }
