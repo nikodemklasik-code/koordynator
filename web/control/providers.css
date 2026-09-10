@@ -20,7 +20,21 @@ body { overflow:hidden; }
 .mode { color:#aeb5bc; font-size:13px; }
 .mode strong { margin-left:8px; color:white; border:1px solid #343c44; background:#171d22; border-radius:6px; padding:10px 12px; }
 .provider-content { min-width:0; min-height:0; padding:18px; display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:14px; align-content:start; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; scrollbar-width:thin; scrollbar-color:#33414b transparent; }
-.provider-list-card,.fabric-card,.receipts-card { min-width:0; border:1px solid #343b42; border-radius:8px; background:#11161a; }
+.provider-list-card,.fabric-card,.receipts-card,.github-connection-card { min-width:0; border:1px solid #343b42; border-radius:8px; background:#11161a; }
+.github-connection-card { grid-column:1/-1; display:flex; align-items:center; justify-content:space-between; gap:20px; padding:15px 16px; border-color:#334654; background:linear-gradient(180deg,#111a21,#0f161b); }
+.github-connection-copy { min-width:0; }
+.github-connection-title-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.github-connection-title-row h1 { margin:0; font-size:13px; letter-spacing:.07em; }
+.github-connection-copy p { margin:7px 0 0; max-width:900px; color:var(--p-muted); font-size:11px; line-height:1.5; }
+.github-state { display:inline-flex; align-items:center; width:max-content; padding:4px 7px; border:1px solid #414a52; border-radius:5px; font-size:9px; letter-spacing:.06em; }
+.github-state.connected { color:var(--p-green); border-color:rgba(98,211,123,.35); background:rgba(31,91,47,.22); }
+.github-state.auth_required,.github-state.degraded { color:var(--p-amber); border-color:rgba(240,164,60,.35); background:rgba(101,66,20,.22); }
+.github-state.unavailable { color:var(--p-red); border-color:rgba(255,85,91,.35); background:rgba(108,25,29,.22); }
+.github-state.checking { color:#94a3ae; }
+.github-connection-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.github-connection-actions button { min-height:36px; padding:0 12px; border:1px solid #3a4650; border-radius:6px; background:#172027; color:white; cursor:pointer; }
+.github-connection-actions #githubRefreshButton { width:38px; padding:0; }
+.github-connection-actions button:disabled { cursor:not-allowed; opacity:.48; }
 .provider-list-card { overflow:hidden; }
 .card-head { min-height:78px; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid var(--p-line); }
 .card-head h1,.card-head h2 { margin:0; font-size:14px; letter-spacing:.07em; }
@@ -64,4 +78,7 @@ body { overflow:hidden; }
 .command-dialog p { padding:0 16px; color:#aeb5bb; line-height:1.5; }
 .command-dialog pre { margin:14px 16px; padding:14px; background:#080b0e; border:1px solid #30383f; border-radius:6px; overflow:auto; }
 .command-dialog button { min-height:34px; border:1px solid #3b454d; background:#182028; color:white; border-radius:5px; padding:0 10px; cursor:pointer; }
-@media (max-width: 900px) { body { overflow:auto; } .provider-shell { height:auto; min-height:100vh; grid-template-columns:1fr; overflow:visible; } .provider-sidebar { display:none; } .provider-main { height:auto; min-height:100vh; grid-template-rows:78px minmax(0,1fr) 62px; overflow:visible; } .provider-content { min-height:0; grid-template-columns:1fr; overflow:visible; } .fabric-card,.receipts-card { grid-column:1; } .provider-table-head { display:none; } .provider-row { min-width:0; grid-template-columns:1fr 1fr; } .receipt-row { min-width:0; grid-template-columns:1fr 1fr; } }
+.command-dialog button:disabled { cursor:not-allowed; opacity:.5; }
+.github-consent-points { display:grid; gap:8px; margin:0 16px 16px; padding:12px 14px; border:1px solid #2f3e49; border-radius:7px; background:#0c1217; color:#aeb9c1; font-size:11px; }
+.github-consent-dialog .github-approve { border-color:#49728f; background:#1b3447; }
+@media (max-width: 900px) { body { overflow:auto; } .provider-shell { height:auto; min-height:100vh; grid-template-columns:1fr; overflow:visible; } .provider-sidebar { display:none; } .provider-main { height:auto; min-height:100vh; grid-template-rows:78px minmax(0,1fr) 62px; overflow:visible; } .provider-content { min-height:0; grid-template-columns:1fr; overflow:visible; } .github-connection-card,.fabric-card,.receipts-card { grid-column:1; } .github-connection-card { align-items:flex-start; flex-direction:column; } .provider-table-head { display:none; } .provider-row { min-width:0; grid-template-columns:1fr 1fr; } .receipt-row { min-width:0; grid-template-columns:1fr 1fr; } }
