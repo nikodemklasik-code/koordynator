@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canonicalDigest } from "../src/crypto/canonical-digest.js";
 import { measureBuildVector } from "../src/build/tree-fingerprint.js";
+import type { WorkOrder } from "../src/domain/work-order.js";
 import type { OrchestratorRunRequest, OrchestratorRunResult } from "../src/orchestrator/orchestrator.js";
 import {
   cliOmniRoutePrebuildAuthorityFingerprint,
@@ -52,35 +53,37 @@ async function request(root: string, prebuild: CliOmniRoutePrebuildConfig): Prom
     buildEnvironmentFp: canonicalDigest("environment")
   };
   const measured = await measureBuildVector(root, fixed);
+  const workOrder: WorkOrder = {
+    taskId: "TASK-CLI-PREBUILD",
+    workspaceId: "WS-CLI-PREBUILD",
+    revision: 0,
+    objective: "Zweryfikuj produkcyjny prebuild.",
+    scope: { modules: ["test"], allowedPaths: ["src/**"] },
+    requiredInputs: [
+      {
+        uri: prebuild.authorityInputUri,
+        digest: cliOmniRoutePrebuildAuthorityFingerprint(prebuild)
+      }
+    ],
+    capabilities: ["ai.code"],
+    budget: { timeSec: 120, costLimit: 5, retries: 1, maxDagDepth: 2 },
+    requiredGates: [],
+    expectedEvidence: [],
+    acceptanceCriteria: ["prebuild 1/1"],
+    failureCriteria: ["materializacja niezgodna"],
+    securityContractRef: canonicalDigest("security"),
+    performanceContractRef: canonicalDigest("performance"),
+    rollbackRequirement: "REVERSIBLE",
+    humanApprovalPolicy: "AUTO_IF_POLICY_PASS",
+    policyRef: { policyId: "test", bundleHash: canonicalDigest("policy") }
+  };
   return {
     signedWorkOrder: {
-      order: {
-        taskId: "TASK-CLI-PREBUILD",
-        workspaceId: "WS-CLI-PREBUILD",
-        revision: 0,
-        objective: "Zweryfikuj produkcyjny prebuild.",
-        scope: { modules: ["test"], allowedPaths: ["src/**"] },
-        requiredInputs: [
-          {
-            uri: prebuild.authorityInputUri,
-            digest: cliOmniRoutePrebuildAuthorityFingerprint(prebuild)
-          }
-        ],
-        capabilities: ["ai.code"],
-        budget: { timeSec: 120, costLimit: 5, retries: 1, maxDagDepth: 2 },
-        requiredGates: [],
-        expectedEvidence: [],
-        acceptanceCriteria: ["prebuild 1/1"],
-        failureCriteria: ["materializacja niezgodna"],
-        securityContractRef: canonicalDigest("security"),
-        performanceContractRef: canonicalDigest("performance"),
-        rollbackRequirement: "REVERSIBLE",
-        humanApprovalPolicy: "AUTO_IF_POLICY_PASS",
-        policyRef: { policyId: "test", bundleHash: canonicalDigest("policy") }
-      },
-      orderFp: canonicalDigest("signed-order-placeholder"),
-      signer: { keyId: "test", algorithm: "Ed25519", signature: "placeholder" }
-    } as OrchestratorRunRequest["signedWorkOrder"],
+      order: workOrder,
+      orderFp: canonicalDigest(workOrder),
+      keyId: "test",
+      signatureBase64: "placeholder"
+    },
     buildVector: measured.vector,
     moduleManifestFp: canonicalDigest("manifest")
   };
