@@ -8,6 +8,7 @@ import { ReleaseReadModel } from "./release-read-model.js";
 import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
+import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -24,6 +25,7 @@ export type ControlServerOptions = {
   chatDefaultModel?: string;
   chatFetchImpl?: typeof fetch;
   githubConnection?: GitHubConnectionPort;
+  githubRepositoryContext?: GitHubRepositoryContextPort;
   chatModelCatalog?: ChatModelCatalogPort;
 };
 
@@ -94,6 +96,17 @@ function sseWrite(response: ServerResponse, event: ChatEvent): void {
   response.write(`data: ${JSON.stringify(event)}\n\n`);
 }
 
+function repositoryAttachment(repository: string, commit: string, context: string) {
+  const data = Buffer.from(context, "utf8");
+  const safeRepo = repository.replace(/[^A-Za-z0-9._-]+/g, "-");
+  return {
+    name: `GitHub-${safeRepo}-${commit.slice(0, 12)}.txt`,
+    mimeType: "text/plain",
+    size: data.length,
+    dataUrl: `data:text/plain;base64,${data.toString("base64")}`
+  };
+}
+
 export function createControlServer(options: ControlServerOptions): Server {
   const stateDir = resolve(options.stateDir);
   const roots = controlRoots(stateDir);
@@ -101,6 +114,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   const providers = new ProviderReadModel(providerReceiptRoot(stateDir));
   const releases = new ReleaseReadModel(join(stateDir, "release"));
   const github = options.githubConnection ?? new GitHubConnectionService();
+  const githubRepositories = options.githubRepositoryContext ?? new GitHubRepositoryContextService();
   const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
@@ -152,11 +166,17 @@ export function createControlServer(options: ControlServerOptions): Server {
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
         if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+        const clientAttachments = payload.attachments ?? [];
+        const repoContext = await githubRepositories.fromMessage(payload.message);
+        if (repoContext && clientAttachments.length >= 5) throw new ChatServiceError("CHAT_REPOSITORY_CONTEXT_ATTACHMENT_LIMIT", 413);
+        const attachments = repoContext
+          ? [...clientAttachments, repositoryAttachment(repoContext.repository, repoContext.commit, repoContext.context)]
+          : clientAttachments;
         return sendJson(response, 202, await chat.startMessage(
           sessionId,
           payload.message,
           typeof payload.model === "string" ? payload.model : undefined,
-          payload.attachments
+          attachments
         ));
       }
 
@@ -325,7 +345,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       return sendText(response, 200, asset.type, body);
     } catch (error) {
-      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError) {
+      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError) {
         return sendJson(response, error.status, { error: error.code });
       }
       const message = error instanceof Error ? error.message : "CONTROL_SERVER_ERROR";
