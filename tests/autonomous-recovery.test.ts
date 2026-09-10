@@ -42,9 +42,15 @@ describe("autonomous recovery", () => {
     expect(decision.issueFp).toBe(issueFingerprint(issue));
   });
 
+  it("treats the same defect as the same defect even when another guardian detects it", () => {
+    const byOpposing: IssueIdentity = { ...issue, detectedBy: "Zespół przeciwny" };
+    expect(issueFingerprint(byOpposing)).toBe(issueFingerprint(issue));
+  });
+
   it("invokes Rewident only on second approach, guardian conflict and the same issue", () => {
     const fp = issueFingerprint(issue);
-    expect(decideRecovery({ approach: 2, opposing: 0, qc1: 1, issue, previousIssueFp: fp }).action).toBe("Rewident");
+    const byOpposing: IssueIdentity = { ...issue, detectedBy: "Zespół przeciwny" };
+    expect(decideRecovery({ approach: 2, opposing: 0, qc1: 1, issue: byOpposing, previousIssueFp: fp }).action).toBe("Rewident");
     expect(decideRecovery({ approach: 2, opposing: 1, qc1: 0, issue, previousIssueFp: fp }).action).toBe("Rewident");
   });
 
