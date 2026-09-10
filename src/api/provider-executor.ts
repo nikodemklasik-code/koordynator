@@ -51,6 +51,7 @@ export class ProviderExecutor {
       const meta = providerMetadata(provider);
       try {
         const result = await provider.execute<T>(request);
+        this.router.reportSuccess(provider.descriptor.providerId);
         const completedAt = this.clock.now();
         const base = {
           executionId: `${request.requestId}:${index}`,
@@ -81,6 +82,7 @@ export class ProviderExecutor {
       } catch (error) {
         const completedAt = this.clock.now();
         const failureCode = error instanceof Error ? error.message : "UNKNOWN_PROVIDER_ERROR";
+        this.router.reportFailure(provider.descriptor.providerId, failureCode);
         const result = failureCode.includes("TIMEOUT") ? "TIMEOUT" as const : failureCode.includes("BLOCK") ? "BLOCKED" as const : "FAIL" as const;
         const base = {
           executionId: `${request.requestId}:${index}`,
