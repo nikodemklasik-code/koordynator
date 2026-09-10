@@ -21,6 +21,7 @@ describe("Live Chat model catalog", () => {
       authorization = String((init?.headers as Record<string, string> | undefined)?.authorization ?? "");
       return new Response(JSON.stringify({
         data: [
+          { id: "auto/best-free" },
           { id: "openai/gpt-5.6-sol" },
           { id: "google/gemini-2.5-pro" },
           { id: "deepseek/deepseek-r1" },
@@ -38,12 +39,32 @@ describe("Live Chat model catalog", () => {
     });
 
     await expect(catalog.list()).resolves.toEqual({
-      models: ["openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
+      models: ["auto/best-free", "openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
       source: "OMNIROUTE",
       checkedAt: "2026-09-10T12:00:00.000Z"
     });
     expect(requestedUrl).toBe("http://127.0.0.1:20128/v1/models");
     expect(authorization).toBe("Bearer catalog-secret");
+  });
+
+  it("falls back from /v1/models to /api/v1/models when the first catalog path is absent", async () => {
+    const requested: string[] = [];
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      requested.push(url);
+      if (url.endsWith("/v1/models") && !url.endsWith("/api/v1/models")) return new Response("", { status: 404 });
+      return new Response(JSON.stringify({ models: [{ id: "auto/best-free" }, { id: "openai/gpt-5.6-sol" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }) as typeof fetch;
+    const catalog = new ChatModelCatalogService({ endpoint: "http://127.0.0.1:20128/v1", apiKey: "key", fetchImpl });
+    const result = await catalog.list();
+    expect(result.models).toEqual(["auto/best-free", "openai/gpt-5.6-sol"]);
+    expect(requested).toEqual([
+      "http://127.0.0.1:20128/v1/models",
+      "http://127.0.0.1:20128/api/v1/models"
+    ]);
   });
 
   it("fails closed when no server-side OmniRoute credential is available", async () => {
@@ -57,7 +78,7 @@ describe("Live Chat model catalog", () => {
     const modelCatalog: ChatModelCatalogPort = {
       async list() {
         return {
-          models: ["openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
+          models: ["auto/best-free", "openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
           source: "OMNIROUTE",
           checkedAt: "2026-09-10T12:00:00.000Z"
         };
@@ -78,19 +99,18 @@ describe("Live Chat model catalog", () => {
 
       const response = await fetch(`${base}/api/chat/models`);
       expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toEqual({
-        models: ["openai/gpt-5.6-sol", "google/gemini-2.5-pro", "anthropic/claude-opus-5"],
-        source: "OMNIROUTE",
-        checkedAt: "2026-09-10T12:00:00.000Z"
-      });
+      const payload = await response.json() as { models: string[] };
+      expect(payload.models[0]).toBe("auto/best-free");
 
       const loader = await fetch(`${base}/chat-models.js`).then((item) => item.text());
       expect(loader).toContain("/api/chat/models");
-      expect(loader.toLowerCase()).toContain("deepseek");
+      expect(loader).toContain("FREE ROUTE");
+      expect(loader).toContain("OMNIROUTE API");
       expect(loader).not.toContain("browser-must-not-see-this");
 
       const page = await fetch(`${base}/chat`).then((item) => item.text());
-      expect(page).toContain('src="/chat-models.js"');
+      expect(page).toContain('value="auto/best-free"');
+      expect(page).toContain("Live Chat uses OmniRoute, not the subscription CLI harness");
       expect(page).not.toContain("browser-must-not-see-this");
     } finally {
       server.close();
