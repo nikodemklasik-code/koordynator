@@ -4,9 +4,17 @@ const chatBillingBadge = document.getElementById("billingBadge");
 const chatSendButton = document.getElementById("sendButton");
 const chatMessageInput = document.getElementById("messageInput");
 const CHAT_MODEL_SESSION_KEY = "koordynator.liveChat.sessionId";
+const chatNativeFetch = window.fetch.bind(window);
 let catalogBilling = null;
 let catalogEntries = [];
 let billingPolicy = null;
+let resolveChatModelGate;
+let chatModelGateSettled = false;
+
+const chatModelGate = new Promise((resolve) => {
+  resolveChatModelGate = resolve;
+});
+window.koordynatorChatModelsReady = chatModelGate;
 
 const SOURCE_ORDER = {
   SUBSCRIPTION_HARNESS: 0,
@@ -18,6 +26,54 @@ const SOURCE_ORDER = {
 };
 
 const FAMILY_ORDER = ["OPENAI", "ANTHROPIC", "GOOGLE / GEMINI", "XAI / GROK", "GITHUB COPILOT"];
+
+function settleChatModelGate(ok) {
+  if (chatModelGateSettled) return;
+  chatModelGateSettled = true;
+  resolveChatModelGate?.(ok === true);
+}
+
+function requestPath(input) {
+  try {
+    const raw = typeof input === "string"
+      ? input
+      : (typeof Request !== "undefined" && input instanceof Request ? input.url : String(input));
+    return new URL(raw, window.location.href).pathname;
+  } catch {
+    return "";
+  }
+}
+
+window.fetch = async function koordynatorFetch(input, init) {
+  const method = String(
+    init?.method
+    || (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET")
+    || "GET"
+  ).toUpperCase();
+
+  if (method === "POST" && requestPath(input) === "/api/chat/sessions") {
+    const ready = await chatModelGate;
+    if (!ready || !chatModelSelect?.value) {
+      return new Response(JSON.stringify({ error: "CHAT_MODEL_CATALOG_UNAVAILABLE" }), {
+        status: 503,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (typeof init?.body === "string") {
+      try {
+        const payload = JSON.parse(init.body);
+        if (!payload.model) {
+          init = { ...init, body: JSON.stringify({ ...payload, model: chatModelSelect.value }) };
+        }
+      } catch {
+        // Preserve the original request body. The server will validate malformed JSON.
+      }
+    }
+  }
+
+  return chatNativeFetch(input, init);
+};
 
 function freeLike(modelId) {
   return /(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(modelId);
@@ -65,8 +121,8 @@ function routeReady() {
 
 function enforceRouteGuard() {
   const ready = routeReady();
-  if (chatSendButton && !ready) chatSendButton.disabled = true;
-  if (chatModelSelect && chatModelSelect.dataset.catalog !== "omniroute") chatModelSelect.disabled = true;
+  if (chatSendButton && !ready && !chatSendButton.disabled) chatSendButton.disabled = true;
+  if (chatModelSelect && chatModelSelect.dataset.catalog !== "omniroute" && !chatModelSelect.disabled) chatModelSelect.disabled = true;
 }
 
 if (chatSendButton) {
@@ -122,11 +178,12 @@ function safeCatalogModels(value) {
 
 function safeCatalogEntries(payload, models) {
   const byId = new Map();
+  const modelSet = new Set(models);
   if (Array.isArray(payload?.entries)) {
     for (const raw of payload.entries) {
       if (!raw || typeof raw !== "object" || typeof raw.id !== "string") continue;
       const id = raw.id.trim();
-      if (!models.includes(id)) continue;
+      if (!modelSet.has(id)) continue;
       const source = knownSource(raw.billingSource) ? raw.billingSource : sourceFor(id);
       byId.set(id, {
         id,
@@ -193,7 +250,7 @@ async function desiredSessionModel(models, fallback) {
   const sessionId = localStorage.getItem(CHAT_MODEL_SESSION_KEY);
   if (!sessionId) return fallback;
   try {
-    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, { headers: { accept: "application/json" } });
+    const response = await chatNativeFetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, { headers: { accept: "application/json" } });
     if (!response.ok) return fallback;
     const session = await response.json();
     return typeof session.model === "string" && models.includes(session.model) ? session.model : fallback;
@@ -282,7 +339,10 @@ function billingSummary() {
 }
 
 async function loadChatModels() {
-  if (!chatModelSelect) return;
+  if (!chatModelSelect) {
+    settleChatModelGate(false);
+    return false;
+  }
   chatModelSelect.dataset.catalog = "loading";
   chatModelSelect.dataset.billingAllowed = "false";
   chatModelSelect.disabled = true;
@@ -290,8 +350,8 @@ async function loadChatModels() {
   enforceRouteGuard();
   try {
     const [modelResponse, healthResponse] = await Promise.all([
-      fetch("/api/chat/models", { headers: { accept: "application/json" } }),
-      fetch("/api/health", { headers: { accept: "application/json" } })
+      chatNativeFetch("/api/chat/models", { headers: { accept: "application/json" } }),
+      chatNativeFetch("/api/health", { headers: { accept: "application/json" } })
     ]);
     if (!modelResponse.ok) throw new Error(`Model catalog HTTP ${modelResponse.status}`);
     const payload = await modelResponse.json();
@@ -318,8 +378,12 @@ async function loadChatModels() {
     const hidden = catalogEntries.length - usable.length;
     chatModelSelect.title = `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
     billingSummary();
+    settleChatModelGate(true);
+    return true;
   } catch (error) {
     showCatalogFailure(error instanceof Error ? error.message : "Model catalog unavailable");
+    settleChatModelGate(false);
+    return false;
   }
 }
 
