@@ -1,5 +1,6 @@
 const chatModelSelect = document.getElementById("modelSelect");
 const chatBillingNote = document.querySelector(".composer-note");
+const chatBillingBadge = document.getElementById("billingBadge");
 const CHAT_MODEL_SESSION_KEY = "koordynator.liveChat.sessionId";
 let catalogBilling = null;
 
@@ -9,14 +10,15 @@ function freeLike(modelId) {
 
 function sourceFor(modelId) {
   const explicit = catalogBilling?.modelSources?.[modelId];
-  if (["FREE_ROUTE", "PAID_API", "UNKNOWN"].includes(explicit)) return explicit;
-  return freeLike(modelId) ? "FREE_ROUTE" : "UNKNOWN";
+  if (["FREE_REQUESTED", "FREE_CONFIRMED", "PAID_API", "UNKNOWN"].includes(explicit)) return explicit;
+  return freeLike(modelId) ? "FREE_REQUESTED" : "UNKNOWN";
 }
 
 function sourceLabel(source) {
-  if (source === "FREE_ROUTE") return "FREE ROUTE";
-  if (source === "PAID_API") return "PAID API";
-  return "API COST UNKNOWN";
+  if (source === "FREE_CONFIRMED") return "FREE CONFIRMED";
+  if (source === "FREE_REQUESTED") return "FREE REQUESTED · UNCONFIRMED";
+  if (source === "PAID_API") return "PAID API · BLOCKED";
+  return "UNKNOWN BILLING · BLOCKED";
 }
 
 function readableModelLabel(modelId) {
@@ -57,13 +59,22 @@ function billingSummary() {
   const budgetText = budget && typeof budget.remaining === "number"
     ? ` OmniRoute budget remaining: ${budget.remaining}${typeof budget.limit === "number" ? ` / ${budget.limit}` : ""}.`
     : " OmniRoute budget counter unavailable.";
-  const sourceText = source === "FREE_ROUTE"
-    ? "FREE route requested."
-    : source === "PAID_API"
-      ? "PAID API route. This can consume paid API budget."
-      : "API billing cost is UNKNOWN. Do not treat it as free.";
-  chatBillingNote.textContent = `${sourceText}${budgetText} Subscription harness used by Live Chat: NO. Harness-backed work is reported separately in Provider execution receipts.`;
+  const sourceText = source === "FREE_CONFIRMED"
+    ? "FREE billing confirmed by upstream catalog/pricing evidence."
+    : source === "FREE_REQUESTED"
+      ? "FREE route requested, but billing is not independently confirmed. Strict policy blocks execution."
+      : source === "PAID_API"
+        ? "PAID API route detected. Strict policy blocks execution."
+        : "Billing source is UNKNOWN. Strict policy blocks execution.";
+  chatBillingNote.textContent = `${sourceText}${budgetText} Live Chat transport: OmniRoute API. Subscription harness used by Live Chat: NO. Harness-backed work is reported separately in Provider execution receipts.`;
   chatModelSelect.dataset.billingSource = source;
+  chatModelSelect.dataset.billingAllowed = source === "FREE_CONFIRMED" ? "true" : "false";
+  if (chatBillingBadge) {
+    chatBillingBadge.textContent = sourceLabel(source);
+    chatBillingBadge.className = `billing-badge ${source.toLowerCase()}`;
+    chatBillingBadge.title = sourceText;
+  }
+  window.dispatchEvent(new CustomEvent("koordynator:billing-change", { detail: { model, source, allowed: source === "FREE_CONFIRMED" } }));
 }
 
 async function desiredSessionModel(models, fallback) {
@@ -106,7 +117,7 @@ async function loadChatModels() {
     rebuildOptions(models);
     chatModelSelect.value = desired;
     chatModelSelect.dataset.catalog = "omniroute";
-    chatModelSelect.title = `${models.length} models loaded from OmniRoute. Subscription harness is not used by Live Chat.`;
+    chatModelSelect.title = `${models.length} models loaded from OmniRoute. Only FREE CONFIRMED routes execute under the default strict policy.`;
   } catch {
     catalogBilling = null;
     const models = [...chatModelSelect.options].map((option) => option.value);
@@ -114,7 +125,7 @@ async function loadChatModels() {
     rebuildOptions(models);
     chatModelSelect.value = desired;
     chatModelSelect.dataset.catalog = "fallback";
-    chatModelSelect.title = "Using fallback model list. Best free route is the safe default; named routes have unknown API billing until catalog telemetry is available.";
+    chatModelSelect.title = "Catalog telemetry is unavailable. Fallback routes are not billing-confirmed and strict policy blocks execution.";
   }
   billingSummary();
 }
