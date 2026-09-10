@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Live Chat · Koordynator Control</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/control-ui.css" />
+  <link rel="stylesheet" href="/chat.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-mark" aria-hidden="true">◇</div>
+        <div><div class="brand-title">KOORDYNATOR CONTROL</div><div class="brand-subtitle">AUTONOMOUS ORCHESTRATION</div></div>
+      </div>
+      <div class="building-block" aria-label="Current environment"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
+      <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
+    </header>
+
+    <aside class="sidebar" aria-label="Primary navigation">
+      <nav class="nav-list">
+        <a class="nav-item" href="/"><span>☷</span><span>Tasks</span></a>
+        <a class="nav-item active" href="/chat" aria-current="page"><span>◉</span><span>Live Chat</span></a>
+        <a class="nav-item" href="/providers"><span>⬡</span><span>Providers</span></a>
+        <a class="nav-item" href="/releases"><span>◫</span><span>Releases</span></a>
+      </nav>
+      <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">OmniRoute chat online</div></div>
+    </aside>
+
+    <main class="content chat-content">
+      <section class="chat-head">
+        <div class="chat-title-block">
+          <div class="chat-kicker">REAL-TIME AI</div>
+          <h1>Live Chat</h1>
+          <p>Persistent multi-turn conversation streamed directly through the local OmniRoute gateway.</p>
+        </div>
+        <div class="chat-head-actions">
+          <label class="model-picker">
+            <span>MODEL</span>
+            <select id="modelSelect" aria-label="AI model">
+              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol</option>
+              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5</option>
+              <option value="anthropic/claude-opus-5">Claude Opus 5</option>
+            </select>
+          </label>
+          <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
+        </div>
+      </section>
+
+      <section class="chat-frame" aria-label="Live conversation">
+        <div class="chat-connection-bar">
+          <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
+          <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
+        </div>
+
+        <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
+          <div class="chat-welcome" id="chatWelcome">
+            <div class="welcome-mark">◇</div>
+            <h2>Start a conversation</h2>
+            <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
+            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>OmniRoute only</span></div>
+          </div>
+        </div>
+
+        <div class="composer-wrap">
+          <div class="composer" id="composer">
+            <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message"></textarea>
+            <div class="composer-actions">
+              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</div>
+              <button class="stop-button hidden" id="stopButton" type="button">■ Stop</button>
+              <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
+            </div>
+          </div>
+          <div class="composer-note">Responses may contain mistakes. Execution remains governed by signed WorkOrders and is not available from chat.</div>
+        </div>
+      </section>
+
+      <footer class="statusbar chat-statusbar">
+        <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
+        <div class="runtime-meta"><span id="regionLabel">local</span> • <span id="zoneLabel">local</span> • <span class="connection-dot"></span> <span id="footerConnection">CONNECTING</span></div>
+      </footer>
+    </main>
+  </div>
+  <script src="/chat.js" defer></script>
+</body>
+</html>
