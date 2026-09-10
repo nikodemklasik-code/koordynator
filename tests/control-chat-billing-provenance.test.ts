@@ -47,7 +47,7 @@ async function waitForComplete(base: string, sessionId: string): Promise<Record<
   for (let attempt = 0; attempt < 80; attempt += 1) {
     const session = await fetch(`${base}/api/chat/sessions/${sessionId}`).then((response) => response.json()) as { messages?: Array<Record<string, unknown>> };
     const assistant = session.messages?.find((message) => message.role === "assistant");
-    if (assistant?.state === "complete") return assistant;
+    if (assistant?.state === "complete" && assistant.usageAudit === "PERSISTED") return assistant;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 15));
   }
   throw new Error("CHAT_BILLING_TEST_TIMEOUT");
