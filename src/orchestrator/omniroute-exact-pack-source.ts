@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
 import type { Digest, TaskId } from "../domain/ids.js";
 import type { CapabilityRequest, SecurityClass } from "../api/capability-api.js";
+import type {
+  OmniRouteModelSelection,
+  OmniRouteModelSelector
+} from "../api/omniroute-model-selector.js";
 import type { ProviderResult } from "../api/provider-contract.js";
 import type { ProviderExecutionReceipt } from "../api/provider-receipt.js";
 import type { ExactPackRequestContext, ExactPackSource } from "../engine/exact-pack-agent-materializer.js";
@@ -57,6 +61,7 @@ export type OmniRouteExactPackSourceOptions = {
   securityClass?: SecurityClass;
   defaultModel?: string;
   maxLatencyMs?: number;
+  modelSelector?: OmniRouteModelSelector;
 };
 
 export type OmniRoutePackCompositionRecord = {
@@ -67,6 +72,7 @@ export type OmniRoutePackCompositionRecord = {
   packFp: Digest;
   aiRoute: string;
   providerReceiptFps: Digest[];
+  modelSelection?: OmniRouteModelSelection;
 };
 
 type ChatCompletionBody = {
@@ -79,6 +85,11 @@ type ChatCompletionBody = {
 
 type ModelEnvelope = {
   files: Array<{ path: string; content: string }>;
+};
+
+type ResolvedModel = {
+  model: string;
+  selection?: OmniRouteModelSelection;
 };
 
 function bytesDigest(value: string): Digest {
@@ -169,11 +180,34 @@ function parseEnvelope(content: string): ModelEnvelope {
   return { files };
 }
 
-function modelFor(route: string, fallback: string): string {
-  const trimmed = route.trim();
-  const model = !trimmed || trimmed.toLowerCase() === "omniroute" ? fallback : trimmed;
+function assertModelAllowed(model: string): void {
   if (model.toLowerCase().includes("deepseek")) throw new Error("FORBIDDEN_MODEL_ROUTE");
-  return model;
+}
+
+async function resolveModel(
+  route: string,
+  fallback: string,
+  selector: OmniRouteModelSelector | undefined,
+  maxLatencyMs: number
+): Promise<ResolvedModel> {
+  const trimmed = route.trim();
+  if (trimmed && trimmed.toLowerCase() !== "omniroute") {
+    assertModelAllowed(trimmed);
+    return { model: trimmed };
+  }
+
+  if (selector === undefined) {
+    assertModelAllowed(fallback);
+    return { model: fallback };
+  }
+
+  const selection = await selector.select({
+    purpose: "EXACT_PACK",
+    maxLatencyMs,
+    fallbackModel: fallback
+  });
+  assertModelAllowed(selection.modelId);
+  return { model: selection.modelId, selection };
 }
 
 export class OmniRouteExactPackSource implements ExactPackSource {
@@ -192,7 +226,14 @@ export class OmniRouteExactPackSource implements ExactPackSource {
     const directive = this.options.directive(context);
     validateDirective(directive, context);
 
-    const model = modelFor(context.conditions.aiRoute, this.options.defaultModel ?? "auto/best-free");
+    const maxLatencyMs = this.options.maxLatencyMs ?? Math.max(1000, context.currentRequest.signedWorkOrder.order.budget.timeSec * 1000);
+    const resolvedModel = await resolveModel(
+      context.conditions.aiRoute,
+      this.options.defaultModel ?? "auto/best-free",
+      this.options.modelSelector,
+      maxLatencyMs
+    );
+    const model = resolvedModel.model;
     const correction = context.correction?.trim();
     const immutableSpec = {
       taskId: context.order.taskId,
@@ -245,7 +286,7 @@ export class OmniRouteExactPackSource implements ExactPackSource {
         allowPaidApiFallback: true,
         billingPolicy: "API_FIRST",
         maxCost: context.currentRequest.signedWorkOrder.order.budget.costLimit,
-        maxLatencyMs: this.options.maxLatencyMs ?? Math.max(1000, context.currentRequest.signedWorkOrder.order.budget.timeSec * 1000)
+        maxLatencyMs
       }
     };
 
@@ -281,7 +322,8 @@ export class OmniRouteExactPackSource implements ExactPackSource {
       outputFp,
       packFp: pack.packFp,
       aiRoute: model,
-      providerReceiptFps
+      providerReceiptFps,
+      ...(resolvedModel.selection === undefined ? {} : { modelSelection: resolvedModel.selection })
     });
     return pack;
   }
