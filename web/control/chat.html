@@ -21,7 +21,6 @@
       <div class="building-block" aria-label="Current environment"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
       <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
     </header>
-
     <aside class="sidebar" aria-label="Primary navigation">
       <nav class="nav-list">
         <a class="nav-item" href="/"><span>☷</span><span>Tasks</span></a>
@@ -31,7 +30,6 @@
       </nav>
       <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">OmniRoute executable routes</div></div>
     </aside>
-
     <main class="content chat-content">
       <section class="chat-head">
         <div class="chat-title-block">
@@ -53,7 +51,6 @@
           <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
         </div>
       </section>
-
       <section class="chat-frame" aria-label="Live conversation">
         <div class="chat-connection-bar">
           <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
@@ -62,13 +59,11 @@
             <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
           </div>
         </div>
-
         <div class="chat-usage-bar" aria-label="Billing and token provenance">
           <span class="billing-badge checking" id="billingBadge">ROUTE CHECKING</span>
           <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
           <span class="strict-policy">CATALOG: ALL OMNIROUTE MODELS</span>
         </div>
-
         <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
           <div class="chat-welcome" id="chatWelcome">
             <div class="welcome-mark">◇</div>
@@ -77,17 +72,9 @@
             <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files & images</span><span>Chat history</span><span>GitHub permission gate</span></div>
           </div>
         </div>
-
         <div class="composer-wrap">
           <div class="composer" id="composer">
-            <input
-              id="fileInput"
-              class="visually-hidden-file"
-              type="file"
-              multiple
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-              aria-label="Attach files"
-            />
+            <input id="fileInput" class="visually-hidden-file" type="file" multiple accept="*/*" aria-label="Attach files" />
             <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
             <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message"></textarea>
             <div class="composer-actions">
@@ -102,14 +89,12 @@
           <div class="composer-note">All OmniRoute catalog models are listed. Billing source is shown per route.</div>
         </div>
       </section>
-
       <footer class="statusbar chat-statusbar">
         <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
         <div class="runtime-meta"><span id="regionLabel">local</span> • <span id="zoneLabel">local</span> • <span class="connection-dot"></span> <span id="footerConnection">CONNECTING</span></div>
       </footer>
     </main>
   </div>
-
   <div class="history-backdrop hidden" id="historyBackdrop"></div>
   <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
     <div class="history-head">
@@ -123,7 +108,6 @@
     <div class="history-list" id="historyList" aria-live="polite"></div>
     <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
   </aside>
-
   <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
     <form method="dialog">
       <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
@@ -132,9 +116,9 @@
       <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve & connect</button></footer>
     </form>
   </dialog>
-
   <script src="/chat-models.js" defer></script>
   <script src="/chat.js" defer></script>
+  <script src="/chat-project.js" defer></script>
   <script src="/chat-history.js" defer></script>
   <script src="/chat-github.js" defer></script>
   <script src="/chat-usage.js" defer></script>
