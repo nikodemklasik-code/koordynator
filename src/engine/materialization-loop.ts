@@ -121,13 +121,17 @@ export class AutonomousMaterializationLoop<T, E = unknown> {
     if (!Number.isInteger(options.maxConditionChanges) || options.maxConditionChanges < 0) throw new Error("INVALID_CONDITION_CHANGE_BUDGET");
   }
 
-  async run(order: MaterializationOrder, initialConditions: ExecutionConditions): Promise<MaterializationLoopResult<T>> {
+  async run(
+    order: MaterializationOrder,
+    initialConditions: ExecutionConditions,
+    initialCorrection?: string
+  ): Promise<MaterializationLoopResult<T>> {
     validateMaterializationOrder(order);
     const immutableOrderFp = canonicalDigest(order);
     const trace: MaterializationTrace[] = [];
     let conditions = { ...initialConditions };
     let previousIssueFp: Digest | undefined;
-    let correction: string | undefined;
+    let correction = initialCorrection?.trim() || undefined;
     let corrections = 0;
     let conditionChanges = 0;
     let round = 0;

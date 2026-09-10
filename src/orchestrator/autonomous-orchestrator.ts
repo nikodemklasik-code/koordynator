@@ -25,7 +25,7 @@ function governanceProjection(order: WorkOrder): unknown {
     workspaceId: order.workspaceId,
     objective: order.objective,
     scope: order.scope,
-    requiredInputUris: order.requiredInputs.map((input) => input.uri),
+    requiredInputs: order.requiredInputs.map((input) => ({ ...input })),
     capabilities: order.capabilities,
     budget: order.budget,
     requiredGates: order.requiredGates,
@@ -38,6 +38,10 @@ function governanceProjection(order: WorkOrder): unknown {
     humanApprovalPolicy: order.humanApprovalPolicy,
     policyRef: order.policyRef
   };
+}
+
+export function autonomousGovernanceFingerprint(order: WorkOrder) {
+  return canonicalDigest(governanceProjection(order));
 }
 
 function sameOptional<T>(left: T | undefined, right: T | undefined): boolean {
@@ -56,7 +60,7 @@ export function assertAutonomousRetryInvariant(
   if (nextOrder.revision !== expectedRevision) {
     throw new Error(`AUTONOMOUS_RETRY_REVISION_INVALID:expected=${expectedRevision}:actual=${nextOrder.revision}`);
   }
-  if (canonicalDigest(governanceProjection(previousOrder)) !== canonicalDigest(governanceProjection(nextOrder))) {
+  if (autonomousGovernanceFingerprint(previousOrder) !== autonomousGovernanceFingerprint(nextOrder)) {
     throw new Error("AUTONOMOUS_RETRY_SCOPE_CHANGED");
   }
   if (previous.moduleManifestFp !== next.moduleManifestFp) {
