@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import { ChatService, type ChatEvent } from "../src/control/chat-service.js";
+import type { ChatModelCatalogPort } from "../src/control/chat-model-catalog.js";
 import { createControlServer } from "../src/control/server.js";
 
 const roots: string[] = [];
@@ -28,6 +29,24 @@ function streamingFetch(chunks = ["Hel", "lo"]): typeof fetch {
     });
     return new Response(body, { status: 200, headers: { "content-type": "text/event-stream", "x-request-id": "req-test-1" } });
   }) as typeof fetch;
+}
+
+function confirmedFreeCatalog(model = "openai/gpt-5.6-sol"): ChatModelCatalogPort {
+  return {
+    async list() {
+      return {
+        models: [model],
+        source: "OMNIROUTE",
+        checkedAt: "2026-09-10T15:00:00.000Z",
+        billing: {
+          liveChatTransport: "OMNIROUTE_API",
+          subscriptionHarnessUsed: false,
+          subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
+          modelSources: { [model]: "FREE_CONFIRMED" as const }
+        }
+      };
+    }
+  };
 }
 
 describe("Live Chat service", () => {
@@ -129,9 +148,15 @@ describe("Live Chat service", () => {
     const service = new ChatService({ stateDir: root, apiKey: "secret", fetchImpl });
     await expect(service.createSession("deepseek/anything")).rejects.toThrow("CHAT_MODEL_FORBIDDEN");
     const session = await service.createSession();
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done" || event.type === "stopped" || event.type === "error") resolvePromise();
+      });
+    });
     await service.startMessage(session.sessionId, "first");
     await expect(service.startMessage(session.sessionId, "second")).rejects.toThrow("CHAT_GENERATION_IN_PROGRESS");
     release();
+    await done;
     service.close();
   });
 });
@@ -144,7 +169,8 @@ describe("Live Chat HTTP boundary and UI", () => {
       stateDir: root,
       webRoot: resolve("web/control"),
       chatApiKey: "browser-must-never-see-this",
-      chatFetchImpl: streamingFetch()
+      chatFetchImpl: streamingFetch(),
+      chatModelCatalog: confirmedFreeCatalog()
     });
     server.listen(0, "127.0.0.1");
     await once(server, "listening");
@@ -163,6 +189,8 @@ describe("Live Chat HTTP boundary and UI", () => {
       expect(page).not.toContain("browser-must-never-see-this");
       expect(page.toLowerCase()).not.toContain("deepseek");
       expect(await fetch(`${base}/control-ui.css`).then((response) => response.status)).toBe(200);
+      expect(await fetch(`${base}/chat-usage.css`).then((response) => response.status)).toBe(200);
+      expect(await fetch(`${base}/chat-usage.js`).then((response) => response.status)).toBe(200);
 
       const created = await fetch(`${base}/api/chat/sessions`, {
         method: "POST",
@@ -177,6 +205,7 @@ describe("Live Chat HTTP boundary and UI", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           message: "",
+          model: "openai/gpt-5.6-sol",
           attachments: [{ name: "note.txt", mimeType: "text/plain", size: 1, dataUrl: "data:text/plain;base64,YQ==" }]
         })
       });

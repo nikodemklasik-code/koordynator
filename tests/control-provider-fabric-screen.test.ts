@@ -57,12 +57,19 @@ describe("Control Provider Fabric screen", () => {
       const cssResponse = await fetch(`${base}/providers.css`);
       expect(cssResponse.status).toBe(200);
       const css = await cssResponse.text();
-      expect(css).toContain("grid-template-rows:78px minmax(0,1fr) 62px");
-      expect(css).toMatch(/\.provider-content\s*\{[^}]*min-height:0[^}]*overflow:auto/s);
-      expect(css).toMatch(/\.provider-sidebar nav\s*\{[^}]*overflow-y:auto/s);
-      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow-x:auto/s);
-      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow-x:auto/s);
+      expect(css).toMatch(/body\s*\{[^}]*overflow-y:auto/s);
+      expect(css).toMatch(/\.provider-shell\s*\{[^}]*min-height:100vh/s);
+      expect(css).toMatch(/\.provider-content\s*\{[^}]*overflow:visible/s);
+      expect(css).toMatch(/\.provider-row\s*\{[^}]*min-width:0/s);
+      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow:visible/s);
+      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow:visible/s);
       expect(css).not.toContain("margin-top:-35vh");
+
+      const client = await fetch(`${base}/providers.js`).then((item) => item.text());
+      expect(client).toContain("SUBSCRIPTION-HARNESS");
+      expect(client).toContain("PAID-API");
+      expect(client).toContain("TOKEN COUNT UNREPORTED");
+      expect(client).toContain("PROVIDER REPORTED");
 
       const denied = await fetch(`${base}/api/providers`, { method: "POST" });
       expect(denied.status).toBe(405);

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api/provider-usage.js";
+import type { ChatBillingDecision } from "./chat-billing-policy.js";
+import { ChatUsageLedger, type ChatUsageSummary } from "./chat-usage-ledger.js";
 
 export type ChatRole = "user" | "assistant";
 export type ChatMessageState = "complete" | "streaming" | "stopped" | "error";
@@ -21,10 +24,14 @@ export type ChatMessage = {
   role: ChatRole;
   content: string;
   createdAt: string;
+  completedAt?: string;
   state: ChatMessageState;
   model?: string;
   providerRequestId?: string;
   attachments?: ChatAttachment[];
+  billing?: ChatBillingDecision;
+  usage?: ProviderReportedUsage;
+  usageAudit?: "PERSISTED" | "WRITE_FAILED";
 };
 
 export type ChatSession = {
@@ -173,6 +180,17 @@ function extractDelta(payload: unknown): string {
   return "";
 }
 
+function mergeUsage(current: ProviderReportedUsage | undefined, next: ProviderReportedUsage): ProviderReportedUsage {
+  return {
+    reportedBy: "PROVIDER",
+    ...((next.inputTokens ?? current?.inputTokens) === undefined ? {} : { inputTokens: next.inputTokens ?? current?.inputTokens }),
+    ...((next.outputTokens ?? current?.outputTokens) === undefined ? {} : { outputTokens: next.outputTokens ?? current?.outputTokens }),
+    ...((next.totalTokens ?? current?.totalTokens) === undefined ? {} : { totalTokens: next.totalTokens ?? current?.totalTokens }),
+    ...((next.cost ?? current?.cost) === undefined ? {} : { cost: next.cost ?? current?.cost }),
+    ...((next.currency ?? current?.currency) === undefined ? {} : { currency: next.currency ?? current?.currency })
+  };
+}
+
 export class ChatService {
   private readonly root: string;
   private readonly endpoint: string;
@@ -188,6 +206,7 @@ export class ChatService {
   private readonly maxAttachmentTotalBytes: number;
   private readonly maxHistoryAttachmentBytes: number;
   private readonly timeoutMs: number;
+  private readonly usageLedger: ChatUsageLedger;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
   private readonly active = new Map<string, ActiveGeneration>();
 
@@ -196,7 +215,7 @@ export class ChatService {
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
-    this.defaultModel = safeModel(options.defaultModel ?? "openai/gpt-5.6-sol");
+    this.defaultModel = safeModel(options.defaultModel ?? "auto/best-free");
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
@@ -206,6 +225,7 @@ export class ChatService {
     this.maxAttachmentTotalBytes = options.maxAttachmentTotalBytes ?? 20 * 1024 * 1024;
     this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 24 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 120_000;
+    this.usageLedger = new ChatUsageLedger(options.stateDir);
   }
 
   private credential(): string | undefined {
@@ -305,6 +325,10 @@ export class ChatService {
     }
   }
 
+  async usageSummary(windowHours = 24): Promise<ChatUsageSummary> {
+    return this.usageLedger.summary(windowHours);
+  }
+
   subscribe(sessionId: string, subscriber: Subscriber): () => void {
     if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
     const set = this.subscribers.get(sessionId) ?? new Set<Subscriber>();
@@ -358,12 +382,38 @@ export class ChatService {
     return selected.reverse().map((message) => this.upstreamMessage(message));
   }
 
+  private async recordUsage(assistant: ChatMessage): Promise<boolean> {
+    if (!assistant.model) return false;
+    try {
+      await this.usageLedger.append({
+        sessionId: assistant.sessionId,
+        messageId: assistant.id,
+        model: assistant.model,
+        source: assistant.billing?.source ?? "UNKNOWN",
+        transport: "OMNIROUTE_API",
+        subscriptionHarnessUsed: false,
+        billingDecision: assistant.billing?.decision ?? "DIRECT_SERVICE_NO_BILLING_DECISION",
+        startedAt: assistant.createdAt,
+        completedAt: assistant.completedAt ?? now(),
+        state: assistant.state === "streaming" ? "error" : assistant.state,
+        ...(assistant.providerRequestId === undefined ? {} : { providerRequestId: assistant.providerRequestId }),
+        ...(assistant.usage === undefined ? {} : { usage: assistant.usage })
+      });
+      assistant.usageAudit = "PERSISTED";
+      return true;
+    } catch {
+      assistant.usageAudit = "WRITE_FAILED";
+      return false;
+    }
+  }
+
   async startMessage(
     sessionId: string,
     messageText: string,
     requestedModel?: string,
-    rawAttachments?: unknown
-  ): Promise<{ accepted: true; messageId: string; model: string }> {
+    rawAttachments?: unknown,
+    billing?: ChatBillingDecision
+  ): Promise<{ accepted: true; messageId: string; model: string; billingSource: string }> {
     const text = messageText.trim();
     const attachments = this.normalizeAttachments(rawAttachments);
     if (!text && attachments.length === 0) throw new ChatServiceError("CHAT_MESSAGE_EMPTY", 400);
@@ -373,6 +423,12 @@ export class ChatService {
     if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
     const key = this.credential();
     if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+    if (billing?.allowed === false) throw new ChatServiceError("CHAT_BILLING_POLICY_DENIED", 403);
+    try {
+      await this.usageLedger.ensureWritable();
+    } catch {
+      throw new ChatServiceError("CHAT_USAGE_LEDGER_UNAVAILABLE", 503);
+    }
     const model = requestedModel === undefined ? session.model : safeModel(requestedModel);
     session.model = model;
 
@@ -385,7 +441,16 @@ export class ChatService {
       state: "complete",
       ...(attachments.length === 0 ? {} : { attachments })
     };
-    const assistant: ChatMessage = { id: randomUUID(), sessionId, role: "assistant", content: "", createdAt: now(), state: "streaming", model };
+    const assistant: ChatMessage = {
+      id: randomUUID(),
+      sessionId,
+      role: "assistant",
+      content: "",
+      createdAt: now(),
+      state: "streaming",
+      model,
+      ...(billing === undefined ? {} : { billing })
+    };
     session.messages.push(user, assistant);
     session.updatedAt = now();
     await this.persist(session);
@@ -398,7 +463,17 @@ export class ChatService {
       const current = this.active.get(sessionId);
       if (current?.messageId === assistant.id) this.active.delete(sessionId);
     });
-    return { accepted: true, messageId: assistant.id, model };
+    return { accepted: true, messageId: assistant.id, model, billingSource: billing?.source ?? "UNKNOWN" };
+  }
+
+  private async finalize(session: ChatSession, assistant: ChatMessage, state: "complete" | "stopped" | "error"): Promise<boolean> {
+    assistant.state = state;
+    assistant.completedAt = now();
+    session.updatedAt = assistant.completedAt;
+    await this.persist(session);
+    const audited = await this.recordUsage(assistant);
+    await this.persist(session);
+    return audited;
   }
 
   private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
@@ -408,7 +483,7 @@ export class ChatService {
       const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: session.model, messages: this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id)), stream: true }),
+        body: JSON.stringify({ model: session.model, messages: this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id)), stream: true, stream_options: { include_usage: true } }),
         signal: controller.signal
       });
       if (response.status === 401 || response.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
@@ -434,6 +509,8 @@ export class ChatService {
           if (!data || data === "[DONE]") continue;
           let parsed: unknown;
           try { parsed = JSON.parse(data); } catch { continue; }
+          const usage = extractProviderReportedUsage(parsed);
+          if (usage) assistant.usage = mergeUsage(assistant.usage, usage);
           const delta = extractDelta(parsed);
           if (!delta) continue;
           assistant.content += delta;
@@ -441,22 +518,24 @@ export class ChatService {
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         }
       }
-      assistant.state = "complete";
-      session.updatedAt = now();
-      await this.persist(session);
+      const audited = await this.finalize(session, assistant, "complete");
+      if (!audited) {
+        this.emit(sessionId, { type: "error", sessionId, code: "CHAT_USAGE_LEDGER_WRITE_FAILED", message: "CHAT_USAGE_LEDGER_WRITE_FAILED" });
+        return;
+      }
       this.emit(sessionId, { type: "assistant_done", message: assistant });
     } catch (error) {
       if (controller.signal.aborted) {
-        assistant.state = "stopped";
-        session.updatedAt = now();
-        await this.persist(session);
+        const audited = await this.finalize(session, assistant, "stopped");
+        if (!audited) {
+          this.emit(sessionId, { type: "error", sessionId, code: "CHAT_USAGE_LEDGER_WRITE_FAILED", message: "CHAT_USAGE_LEDGER_WRITE_FAILED" });
+          return;
+        }
         this.emit(sessionId, { type: "stopped", message: assistant });
         return;
       }
       const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_UNAVAILABLE";
-      assistant.state = "error";
-      session.updatedAt = now();
-      await this.persist(session);
+      await this.finalize(session, assistant, "error");
       this.emit(sessionId, { type: "error", sessionId, code, message: code });
     } finally {
       clearTimeout(timeout);

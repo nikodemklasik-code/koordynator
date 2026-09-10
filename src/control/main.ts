@@ -18,7 +18,7 @@ const server = createControlServer({
   ...(process.env.KOORDYNATOR_OPERATOR === undefined ? {} : { operator: process.env.KOORDYNATOR_OPERATOR }),
   ...(process.env.OMNIROUTE_ENDPOINT === undefined ? {} : { chatEndpoint: process.env.OMNIROUTE_ENDPOINT }),
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
-  chatDefaultModel: process.env.KOORDYNATOR_CHAT_MODEL ?? "openai/gpt-5.6-sol",
+  chatDefaultModel: process.env.KOORDYNATOR_CHAT_MODEL ?? "auto/best-free",
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   version: process.env.KOORDYNATOR_VERSION ?? "0.1.0"
 });

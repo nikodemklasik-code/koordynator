@@ -21,25 +21,52 @@ function healthClass(health) {
   return String(health).toLowerCase();
 }
 
+function usageSourceForBilling(value) {
+  const billing = String(value ?? "UNKNOWN").toUpperCase();
+  if (billing === "SUBSCRIPTION_INCLUDED" || billing === "SUBSCRIPTION_CREDITS") return "SUBSCRIPTION-HARNESS";
+  if (billing === "API_PAYG") return "PAID-API";
+  if (billing === "LOCAL") return "LOCAL";
+  if (billing === "ENTERPRISE_CREDITS") return "ENTERPRISE-CREDITS";
+  return "UNKNOWN";
+}
+
+function reportedTokenCount(receipt) {
+  const usage = receipt?.usage;
+  if (!usage || usage.reportedBy !== "PROVIDER") return null;
+  const explicit = Number(usage.totalTokens);
+  if (Number.isFinite(explicit) && explicit >= 0) return Math.trunc(explicit);
+  const input = Number(usage.inputTokens);
+  const output = Number(usage.outputTokens);
+  if (!Number.isFinite(input) && !Number.isFinite(output)) return null;
+  return Math.trunc((Number.isFinite(input) ? input : 0) + (Number.isFinite(output) ? output : 0));
+}
+
 function providerRow(provider) {
   const d = provider.descriptor;
+  const source = usageSourceForBilling(d.billingMode);
   return `<article class="provider-row" data-provider-id="${escapeHtml(provider.providerId)}">
-    <div class="provider-name"><strong>${escapeHtml(provider.providerId)}</strong><small>${escapeHtml(d.capabilities.join(", "))}</small></div>
-    <div class="provider-exe"><code>${escapeHtml(provider.executable)}</code></div>
-    <div><span class="health-badge ${healthClass(provider.health)}">● ${escapeHtml(provider.health)}</span></div>
-    <div class="provider-access"><code>${escapeHtml(d.accessMode)} / ${escapeHtml(d.billingMode ?? "UNKNOWN")}</code></div>
-    <div class="provider-actions"><button data-action="doctor" type="button">Doctor</button><button data-action="connect" type="button">Connect</button></div>
+    <div class="provider-name" data-label="PROVIDER"><strong>${escapeHtml(provider.providerId)}</strong><small>${escapeHtml(d.capabilities.join(", "))}</small></div>
+    <div class="provider-exe" data-label="EXECUTABLE"><code>${escapeHtml(provider.executable)}</code></div>
+    <div data-label="HEALTH"><span class="health-badge ${healthClass(provider.health)}">● ${escapeHtml(provider.health)}</span></div>
+    <div class="provider-access" data-label="SOURCE"><code>${escapeHtml(source)}</code><br><small>${escapeHtml(d.accessMode)} / ${escapeHtml(d.billingMode ?? "UNKNOWN")}</small></div>
+    <div class="provider-actions" data-label="ACTIONS"><button data-action="doctor" type="button">Doctor</button><button data-action="connect" type="button">Connect</button></div>
   </article>`;
 }
 
 function receiptRow(receipt) {
+  const source = usageSourceForBilling(receipt.billingPath);
+  const tokens = reportedTokenCount(receipt);
+  const tokenText = tokens === null ? "TOKEN COUNT UNREPORTED" : `${tokens.toLocaleString()} TOKENS · PROVIDER REPORTED`;
+  const cost = typeof receipt.usage?.cost === "number"
+    ? ` · COST ${receipt.usage.cost}${receipt.usage.currency ? ` ${String(receipt.usage.currency).toUpperCase()}` : ""}`
+    : "";
   return `<article class="receipt-row">
-    <div><strong>${escapeHtml(receipt.providerId)}</strong><br><code>${escapeHtml(receipt.capability)}</code></div>
-    <div>${escapeHtml(receipt.taskId)}</div>
-    <div><span class="result-${String(receipt.result).toLowerCase()}">${escapeHtml(receipt.result)}</span></div>
-    <div>${escapeHtml(receipt.accessMode)}</div>
-    <div>${escapeHtml(receipt.billingPath ?? "UNKNOWN")}</div>
-    <div><code title="${escapeHtml(receipt.receiptFp)}">${escapeHtml(shortDigest(receipt.receiptFp))}</code></div>
+    <div data-label="PROVIDER"><strong>${escapeHtml(receipt.providerId)}</strong><br><code>${escapeHtml(receipt.capability)}</code></div>
+    <div data-label="TASK">${escapeHtml(receipt.taskId)}</div>
+    <div data-label="RESULT"><span class="result-${String(receipt.result).toLowerCase()}">${escapeHtml(receipt.result)}</span></div>
+    <div data-label="ACCESS">${escapeHtml(receipt.accessMode)}</div>
+    <div data-label="SOURCE"><strong>${escapeHtml(source)}</strong><br><code>${escapeHtml(receipt.billingPath ?? "UNKNOWN")}</code><br><small>${escapeHtml(tokenText + cost)}</small></div>
+    <div data-label="RECEIPT"><code title="${escapeHtml(receipt.receiptFp)}">${escapeHtml(shortDigest(receipt.receiptFp))}</code></div>
   </article>`;
 }
 
@@ -84,10 +111,18 @@ async function runDoctor(providerId, button) {
 }
 
 function githubStateCopy(status) {
-  if (!status) return { badge: "CHECKING", detail: "Checking the local GitHub CLI connection.", action: "Connect GitHub", disabled: true };
+  if (!status) return { badge: "CHECKING", detail: "Checking local GitHub repository access.", action: "Connect GitHub", disabled: true };
+  if (status.state === "CONNECTED" && status.connectionMethod === "GIT_CREDENTIAL") {
+    return {
+      badge: "CONNECTED · GIT",
+      detail: `Repository access is already working through the local Git credential path${status.remote ? ` (${status.remote})` : ""}. GitHub CLI is not required for read-only repository access.`,
+      action: "Connected",
+      disabled: true
+    };
+  }
   if (status.state === "CONNECTED") {
     return {
-      badge: "CONNECTED",
+      badge: "CONNECTED · GH",
       detail: "GitHub CLI is authenticated for github.com. Existing authentication will be reused for repository operations.",
       action: "Connected",
       disabled: true
@@ -104,14 +139,14 @@ function githubStateCopy(status) {
   if (status.state === "UNAVAILABLE") {
     return {
       badge: "UNAVAILABLE",
-      detail: "GitHub CLI (gh) is not available on this machine. Install it before repository connection can be started.",
-      action: "GitHub CLI unavailable",
-      disabled: true
+      detail: "Neither a working Git credential path nor GitHub CLI authentication is available to Koordynator.",
+      action: "Show setup",
+      disabled: false
     };
   }
   return {
     badge: "DEGRADED",
-    detail: "GitHub CLI could not report a reliable authentication state. Refresh the check or reconnect.",
+    detail: "GitHub could not report a reliable repository access state. Refresh the check or reconnect.",
     action: "Reconnect",
     disabled: false
   };
@@ -143,7 +178,7 @@ function requestGitHubConsent() {
   if (githubConnecting) return;
   if (githubConnection?.state === "CONNECTED") return;
   if (githubConnection?.state === "UNAVAILABLE") {
-    openCommand("GitHub CLI unavailable", "Repository connection requires the official GitHub CLI on this machine.", "gh --version");
+    openCommand("GitHub setup", "Install the official GitHub CLI if the existing Git credential path cannot access the required repository.", "brew install gh && gh auth login --hostname github.com --git-protocol https --web");
     return;
   }
   $("githubConsentDialog").showModal();
@@ -203,7 +238,7 @@ $("providerRows").addEventListener("click", (event) => {
 });
 
 $("refreshProviders").addEventListener("click", () => loadProviders(true).catch((error) => openCommand("Provider refresh failed", error.message, "orchestrator provider doctor")));
-$("githubRefreshButton").addEventListener("click", () => loadGitHubConnection(true).catch((error) => openCommand("GitHub refresh failed", error.message, "gh auth status --hostname github.com")));
+$("githubRefreshButton").addEventListener("click", () => loadGitHubConnection(true).catch((error) => openCommand("GitHub refresh failed", error.message, "git ls-remote origin HEAD")));
 $("githubConnectButton").addEventListener("click", requestGitHubConsent);
 $("githubConsentApprove").addEventListener("click", () => void connectGitHub());
 $("copyCommand").addEventListener("click", async () => {

@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/control-ui.css" />
   <link rel="stylesheet" href="/chat.css" />
+  <link rel="stylesheet" href="/chat-usage.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -39,11 +40,12 @@
         </div>
         <div class="chat-head-actions">
           <label class="model-picker">
-            <span>MODEL</span>
+            <span>MODEL · OMNIROUTE</span>
             <select id="modelSelect" aria-label="AI model">
-              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol</option>
-              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5</option>
-              <option value="anthropic/claude-opus-5">Claude Opus 5</option>
+              <option value="auto/best-free">Best free route · FREE REQUESTED</option>
+              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol · billing unknown</option>
+              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5 · billing unknown</option>
+              <option value="anthropic/claude-opus-5">Claude Opus 5 · billing unknown</option>
             </select>
           </label>
           <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
@@ -58,6 +60,12 @@
             <button class="github-chat-button" id="githubChatButton" type="button" aria-label="GitHub repository connection"><span class="github-chat-dot checking" id="githubChatDot"></span><span id="githubChatLabel">GitHub checking…</span></button>
             <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
           </div>
+        </div>
+
+        <div class="chat-usage-bar" aria-label="Billing and token provenance">
+          <span class="billing-badge checking" id="billingBadge">BILLING CHECKING</span>
+          <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
+          <span class="strict-policy">STRICT: PAID + UNKNOWN + UNCONFIRMED FREE BLOCKED</span>
         </div>
 
         <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
@@ -90,7 +98,7 @@
           </div>
           <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
           <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
-          <div class="composer-note">Up to 5 attachments, 10 MB each / 20 MB total. Repository requests require explicit GitHub authorization when no authenticated session exists. Execution remains governed by signed WorkOrders and is not available from chat.</div>
+          <div class="composer-note">Strict billing provenance is enabled. Live Chat executes only routes confirmed free by upstream catalog/pricing evidence. Subscription-harness work is accounted separately in provider receipts. Token totals are provider-reported only; missing telemetry is shown as UNREPORTED.</div>
         </div>
       </section>
 
@@ -118,8 +126,8 @@
   <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
     <form method="dialog">
       <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
-      <p>This message appears to require a GitHub repository. Koordynator can start the official GitHub CLI browser sign-in and configure Git after your approval. It does not collect your GitHub password, browser cookies or token.</p>
-      <div class="github-chat-consent-points"><span>✓ GitHub controls which account and repository permissions you grant.</span><span>✓ No connection attempt starts before approval.</span><span>✓ Once authenticated, the existing GitHub session is reused.</span></div>
+      <p>This message appears to require a GitHub repository. Koordynator first reuses a working local Git credential path when one already exists. If GitHub CLI authentication is required, the official browser sign-in starts only after your approval. Koordynator does not collect your GitHub password, browser cookies or token.</p>
+      <div class="github-chat-consent-points"><span>✓ Existing local Git credentials are reused when repository access already works.</span><span>✓ No new GitHub CLI sign-in starts before approval.</span><span>✓ GitHub controls which account and repository permissions you grant.</span></div>
       <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button></footer>
     </form>
   </dialog>
@@ -128,5 +136,6 @@
   <script src="/chat.js" defer></script>
   <script src="/chat-history.js" defer></script>
   <script src="/chat-github.js" defer></script>
+  <script src="/chat-usage.js" defer></script>
 </body>
 </html>
