@@ -6,3 +6,7 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+.orchestrator/
+.local-keys/
+*.pem
+*.key
