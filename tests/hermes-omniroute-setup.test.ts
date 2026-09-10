@@ -45,13 +45,47 @@ describe("Hermes / OmniRoute operator setup", () => {
     }
   });
 
-  it.each(["cx/gpt-test", "cc/claude-test"])("probes subscription route %s without switching to a direct API", async model => {
+  it.each([
+    "cx/gpt-test",
+    "cc/claude-test",
+    "gh/copilot-test",
+    "gc/grok-test",
+    "gemini-cli/gemini-test",
+    "kr/kiro-test",
+    "if/qoder-test",
+    "qw/qwen-test"
+  ])("probes protected route %s without switching to a direct API", async model => {
     const mock = gateway([{ id: model }]);
     expect(await probeOmniRoute({ ...settings, model }, mock.fetchImpl)).toMatchObject({ inference: "PASS", toolCalling: "NOT_TESTED", model });
     const post = mock.calls.find(call => call.init?.method === "POST")!;
     expect(post.url).toBe(`${settings.endpoint}/chat/completions`);
     expect(JSON.parse(String(post.init?.body)).model).toBe(model);
     expect(post.init?.headers).toMatchObject({ authorization: `Bearer ${settings.apiKey}` });
+  });
+
+  it("exposes dedicated launch commands and environment slots for every protected provider family", async () => {
+    const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    expect(packageJson.scripts).toMatchObject({
+      "hermes:openai": expect.stringContaining("hermes openai"),
+      "hermes:anthropic": expect.stringContaining("hermes anthropic"),
+      "hermes:github": expect.stringContaining("hermes github"),
+      "hermes:grok": expect.stringContaining("hermes grok"),
+      "hermes:gemini": expect.stringContaining("hermes gemini"),
+      "hermes:kiro": expect.stringContaining("hermes kiro"),
+      "hermes:qoder": expect.stringContaining("hermes qoder"),
+      "hermes:qwen": expect.stringContaining("hermes qwen")
+    });
+    const envExample = await readFile(new URL("../.env.example", import.meta.url), "utf8");
+    for (const name of [
+      "KOORDYNATOR_OPENAI_MODEL",
+      "KOORDYNATOR_ANTHROPIC_MODEL",
+      "KOORDYNATOR_GITHUB_COPILOT_MODEL",
+      "KOORDYNATOR_GROK_MODEL",
+      "KOORDYNATOR_GEMINI_MODEL",
+      "KOORDYNATOR_KIRO_MODEL",
+      "KOORDYNATOR_QODER_MODEL",
+      "KOORDYNATOR_QWEN_MODEL"
+    ]) expect(envExample).toContain(`${name}=`);
   });
 
   it.each([
