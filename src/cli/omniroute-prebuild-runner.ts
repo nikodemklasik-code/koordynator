@@ -30,6 +30,7 @@ export type CliOmniRoutePrebuildConfig = {
 
 export type CliOmniRoutePrebuildRuntimeOptions = {
   fetchImpl?: typeof fetch;
+  initialCorrection?: string;
 };
 
 type ConflictEvidence = {
@@ -167,7 +168,10 @@ export function createCliOmniRoutePrebuildPipeline(
     dynamicModelSelection: true,
     initialConditions(_request: Readonly<OrchestratorRunRequest>) {
       return { agent: "Agent", aiRoute: "OmniRoute", generation: 0 };
-    }
+    },
+    ...(runtime.initialCorrection === undefined
+      ? {}
+      : { initialCorrection: () => runtime.initialCorrection })
   });
 }
 
