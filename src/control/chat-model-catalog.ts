@@ -1,4 +1,4 @@
-export type ChatModelBillingSource = "FREE_ROUTE" | "PAID_API" | "UNKNOWN";
+export type ChatModelBillingSource = "FREE_REQUESTED" | "FREE_CONFIRMED" | "PAID_API" | "UNKNOWN";
 
 export type ChatModelCatalog = {
   models: string[];
@@ -108,7 +108,7 @@ function walk(value: unknown, visit: (record: Record<string, unknown>) => void, 
 function numberValue(record: Record<string, unknown>, keys: string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) return value;
   }
   return undefined;
 }
@@ -132,21 +132,56 @@ function budgetFrom(payload: unknown): { exhausted: boolean; remaining?: number;
   };
 }
 
-function modelBillingSources(models: string[], pricing: unknown): Record<string, ChatModelBillingSource> {
-  const sources: Record<string, ChatModelBillingSource> = {};
-  for (const model of models) sources[model] = /(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(model) ? "FREE_ROUTE" : "UNKNOWN";
-  if (pricing === undefined) return sources;
-  const known = new Set(models);
-  walk(pricing, (record) => {
+function explicitBillingSignal(record: Record<string, unknown>): ChatModelBillingSource | undefined {
+  for (const key of ["billing", "billingTier", "tier", "priceTier", "costTier"]) {
+    const value = record[key];
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().toLowerCase();
+    if (["free", "no-cost", "no_cost", "zero-cost", "zero_cost"].includes(normalized)) return "FREE_CONFIRMED";
+    if (["paid", "payg", "api_payg", "metered"].includes(normalized)) return "PAID_API";
+  }
+  for (const key of ["free", "isFree", "is_free"]) {
+    if (record[key] === true) return "FREE_CONFIRMED";
+    if (record[key] === false) return "PAID_API";
+  }
+
+  const direct = numberValue(record, ["estimatedCost", "cost", "price", "costScore"]);
+  if (direct !== undefined) return direct === 0 ? "FREE_CONFIRMED" : "PAID_API";
+  const input = numberValue(record, ["inputCost", "inputPrice", "promptPrice", "input_cost", "input_price"]);
+  const output = numberValue(record, ["outputCost", "outputPrice", "completionPrice", "output_cost", "output_price"]);
+  if (input !== undefined && output !== undefined) return input + output === 0 ? "FREE_CONFIRMED" : "PAID_API";
+  if ((input ?? 0) > 0 || (output ?? 0) > 0) return "PAID_API";
+  return undefined;
+}
+
+function applyBillingEvidence(
+  sources: Record<string, ChatModelBillingSource>,
+  models: Set<string>,
+  payload: unknown
+): void {
+  if (payload === undefined) return;
+  walk(payload, (record) => {
     const id = modelId(record);
-    if (!id || !known.has(id)) return;
-    const direct = numberValue(record, ["estimatedCost", "cost", "price", "costScore"]);
-    const input = numberValue(record, ["inputCost", "inputPrice", "promptPrice"]);
-    const output = numberValue(record, ["outputCost", "outputPrice", "completionPrice"]);
-    const cost = direct ?? (input !== undefined || output !== undefined ? (input ?? 0) + (output ?? 0) : undefined);
-    if (cost === 0) sources[id] = "FREE_ROUTE";
-    else if (cost !== undefined && cost > 0) sources[id] = "PAID_API";
+    if (id && models.has(id)) {
+      const signal = explicitBillingSignal(record);
+      if (signal) sources[id] = signal;
+    }
+    for (const [key, nested] of Object.entries(record)) {
+      if (!models.has(key) || !isObject(nested)) continue;
+      const signal = explicitBillingSignal(nested);
+      if (signal) sources[key] = signal;
+    }
   });
+}
+
+function modelBillingSources(models: string[], catalog: unknown, pricing: unknown): Record<string, ChatModelBillingSource> {
+  const sources: Record<string, ChatModelBillingSource> = {};
+  for (const model of models) {
+    sources[model] = /(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(model) ? "FREE_REQUESTED" : "UNKNOWN";
+  }
+  const known = new Set(models);
+  applyBillingEvidence(sources, known, catalog);
+  applyBillingEvidence(sources, known, pricing);
   return sources;
 }
 
@@ -229,7 +264,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
         liveChatTransport: "OMNIROUTE_API",
         subscriptionHarnessUsed: false,
         subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
-        modelSources: modelBillingSources(models, pricing),
+        modelSources: modelBillingSources(models, payload, pricing),
         ...(budget === undefined ? {} : { budget })
       }
     };
