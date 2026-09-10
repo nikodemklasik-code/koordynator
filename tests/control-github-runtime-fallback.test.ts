@@ -13,6 +13,18 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
+async function waitForPersistedGeneration(base: string, sessionId: string): Promise<void> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const session = await fetch(`${base}/api/chat/sessions/${sessionId}`).then((response) => response.json()) as {
+      messages?: Array<{ role?: string; state?: string; usageAudit?: string }>;
+    };
+    const assistant = session.messages?.find((message) => message.role === "assistant");
+    if (assistant?.state === "complete" && assistant.usageAudit === "PERSISTED") return;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 15));
+  }
+  throw new Error("GITHUB_RUNTIME_PERSIST_TIMEOUT");
+}
+
 describe("GitHub runtime fallback", () => {
   it("uses an already working Git credential path when gh is not installed", async () => {
     const calls: Array<{ executable: string; args: string[] }> = [];
@@ -123,6 +135,7 @@ describe("GitHub runtime fallback", () => {
       expect(user.content[1]?.type).toBe("file");
       expect(user.content[1]?.file?.filename).toMatch(/^GitHub-nikodemklasik-code-Harmonia-VERA-1234567890ab\.txt$/);
       expect(Buffer.from(user.content[1].file.file_data, "base64").toString("utf8")).toContain("Cargo.toml");
+      await waitForPersistedGeneration(base, session.sessionId);
     } finally {
       server.close();
       if (server.listening) await once(server, "close");
