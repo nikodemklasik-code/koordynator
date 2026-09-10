@@ -21,7 +21,7 @@ node dist/cli/main.js version
 
 Po `npm link` dostępna jest komenda `orchestrator`.
 
-## Hermes + OmniRoute (OpenAI / Anthropic)
+## Hermes + OmniRoute (OpenAI / Anthropic + chronione OAuth)
 
 ```bash
 cp .env.example .env
@@ -39,9 +39,11 @@ Powstaje osobny profil `.orchestrator/hermes-omniroute/`; globalny profil Hermes
 z Nous Portal/OpenRouter pozostaje osobny. `.env` jest wczytywany automatycznie,
 a zmienne przekazane w procesie mają pierwszeństwo.
 
-Dla tras abonamentowych ustaw `KOORDYNATOR_OPENAI_MODEL` i
-`KOORDYNATOR_ANTHROPIC_MODEL` dokładnie według `subscriptionRoutes` w raporcie.
-Uruchom `npm run hermes:openai` albo `npm run hermes:anthropic`.
+`doctor:omniroute` pokazuje `subscriptionRoutes` dla OpenAI/Codex, Anthropic/Claude
+Code, GitHub Copilot i Grok oraz `oauthRoutes` dla Gemini CLI, Kiro, Qoder i Qwen.
+Przepisz dokładną trasę do odpowiadającej jej zmiennej z `.env.example`, a potem
+uruchom odpowiednio `npm run hermes:openai`, `hermes:anthropic`, `hermes:github`,
+`hermes:grok`, `hermes:gemini`, `hermes:kiro`, `hermes:qoder` albo `hermes:qwen`.
 Diagnostyka rozróżnia katalog, politykę kosztów i faktyczną odpowiedź modelu.
 Szczegóły konfiguracji, logowania i błędów: [Hermes i OmniRoute](docs/HERMES_OMNIROUTE.md).
 
