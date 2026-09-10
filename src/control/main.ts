@@ -19,6 +19,11 @@ const server = createControlServer({
   ...(process.env.OMNIROUTE_ENDPOINT === undefined ? {} : { chatEndpoint: process.env.OMNIROUTE_ENDPOINT }),
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: process.env.KOORDYNATOR_CHAT_MODEL ?? "auto/best-free",
+  chatBillingPolicy: {
+    allowFreeRequested: true,
+    allowPaidApi: true,
+    allowUnknown: true
+  },
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   version: process.env.KOORDYNATOR_VERSION ?? "0.1.0"
 });

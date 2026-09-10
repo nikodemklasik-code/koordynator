@@ -180,7 +180,7 @@ describe("Live Chat model catalog", () => {
 
       const page = await fetch(`${base}/chat`).then((item) => item.text());
       expect(page).toContain("Loading verified model routes");
-      expect(page).toContain("PAYG + UNKNOWN + UNCONFIRMED FREE HIDDEN");
+      expect(page).toContain("CATALOG: ALL OMNIROUTE MODELS");
       expect(page).not.toContain('value="openai/gpt-5.6-sol"');
       expect(page).not.toContain("browser-must-not-see-this");
     } finally {

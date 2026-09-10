@@ -47,11 +47,8 @@ function sourceLabel(source) {
   return "UNKNOWN BILLING";
 }
 
-function sourceAllowed(source) {
-  if (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" || source === "FREE_CONFIRMED") return true;
-  if (source === "FREE_REQUESTED") return billingPolicy?.unconfirmedFreeAllowedByDefault === true;
-  if (source === "PAID_API") return billingPolicy?.paidApiAllowedByDefault === true && catalogBilling?.budget?.exhausted !== true;
-  return billingPolicy?.unknownBillingAllowedByDefault === true;
+function sourceAllowed(_source) {
+  return true;
 }
 
 function routeReady() {
@@ -65,8 +62,8 @@ function routeReady() {
 
 function enforceRouteGuard() {
   const ready = routeReady();
-  if (chatSendButton && !ready) chatSendButton.disabled = true;
-  if (chatModelSelect && chatModelSelect.dataset.catalog !== "omniroute") chatModelSelect.disabled = true;
+  if (chatSendButton && !ready && !chatSendButton.disabled) chatSendButton.disabled = true;
+  if (chatModelSelect && chatModelSelect.dataset.catalog !== "omniroute" && !chatModelSelect.disabled) chatModelSelect.disabled = true;
 }
 
 if (chatSendButton) {
@@ -102,6 +99,7 @@ function inferFamily(modelId) {
   if (/kimi/.test(value)) return "MOONSHOT / KIMI";
   if (/minimax/.test(value)) return "MINIMAX";
   if (/glm/.test(value)) return "GLM";
+  if (/(?:^|\/)(?:auto|dva)\//.test(`/${value}`)) return "OMNIROUTE";
   return "OTHER";
 }
 
@@ -302,21 +300,20 @@ async function loadChatModels() {
     catalogBilling = payload.billing && typeof payload.billing === "object" ? payload.billing : null;
     catalogEntries = safeCatalogEntries(payload, models);
 
-    const usable = catalogEntries.filter((entry) => sourceAllowed(entry.billingSource));
-    if (!usable.length) throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
+    const listed = catalogEntries;
+    if (!listed.length) throw new Error("OmniRoute returned no chat-capable models");
 
-    const usableIds = usable.map((entry) => entry.id);
-    const preferred = usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
-      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
-      || usable.find((entry) => entry.billingSource === "FREE_CONFIRMED")?.id
-      || (usableIds.includes(previous) ? previous : usableIds[0]);
-    const desired = await desiredSessionModel(usableIds, preferred);
-    rebuildOptions(usable);
-    chatModelSelect.value = usableIds.includes(desired) ? desired : preferred;
+    const listedIds = listed.map((entry) => entry.id);
+    const preferred = listed.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
+      || listed.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+      || listed.find((entry) => entry.billingSource === "FREE_CONFIRMED")?.id
+      || (listedIds.includes(previous) ? previous : listedIds[0]);
+    const desired = await desiredSessionModel(listedIds, preferred);
+    rebuildOptions(listed);
+    chatModelSelect.value = listedIds.includes(desired) ? desired : preferred;
     chatModelSelect.dataset.catalog = "omniroute";
     chatModelSelect.disabled = false;
-    const hidden = catalogEntries.length - usable.length;
-    chatModelSelect.title = `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
+    chatModelSelect.title = `${listed.length} OmniRoute models loaded.`;
     billingSummary();
   } catch (error) {
     showCatalogFailure(error instanceof Error ? error.message : "Model catalog unavailable");
