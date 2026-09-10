@@ -1,18 +1,21 @@
 const chatModelSelect = document.getElementById("modelSelect");
 const CHAT_MODEL_SESSION_KEY = "koordynator.liveChat.sessionId";
 
+function routeKind(modelId) {
+  return /(?:^|[\/:._-])(?:best-)?free(?:$|[\/:._-])/i.test(modelId) ? "FREE ROUTE" : "OMNIROUTE API";
+}
+
 function readableModelLabel(modelId) {
   const known = {
-    "openai/gpt-5.6-sol": "GPT-5.6 Sol",
-    "anthropic/claude-sonnet-5": "Claude Sonnet 5",
-    "anthropic/claude-opus-5": "Claude Opus 5"
+    "auto/best-free": "Best free route · FREE ROUTE",
+    "openai/gpt-5.6-sol": "GPT-5.6 Sol · OMNIROUTE API",
+    "anthropic/claude-sonnet-5": "Claude Sonnet 5 · OMNIROUTE API",
+    "anthropic/claude-opus-5": "Claude Opus 5 · OMNIROUTE API"
   };
   if (known[modelId]) return known[modelId];
   const slash = modelId.indexOf("/");
-  if (slash < 0) return modelId;
-  const provider = modelId.slice(0, slash);
-  const model = modelId.slice(slash + 1);
-  return `${model} · ${provider}`;
+  const label = slash < 0 ? modelId : `${modelId.slice(slash + 1)} · ${modelId.slice(0, slash)}`;
+  return `${label} · ${routeKind(modelId)}`;
 }
 
 function safeCatalogModels(value) {
@@ -53,21 +56,22 @@ async function loadChatModels() {
     const models = safeCatalogModels(payload.models);
     if (!models.length) throw new Error("CHAT_MODEL_CATALOG_EMPTY");
 
-    const desired = await desiredSessionModel(models, models.includes(fallback) ? fallback : models[0]);
+    const preferred = models.includes("auto/best-free") ? "auto/best-free" : (models.includes(fallback) ? fallback : models[0]);
+    const desired = await desiredSessionModel(models, preferred);
     chatModelSelect.textContent = "";
     for (const modelId of models) {
       const option = document.createElement("option");
       option.value = modelId;
       option.textContent = readableModelLabel(modelId);
-      option.title = modelId;
+      option.title = `${modelId} · ${routeKind(modelId)}`;
       chatModelSelect.appendChild(option);
     }
     chatModelSelect.value = desired;
     chatModelSelect.dataset.catalog = "omniroute";
-    chatModelSelect.title = `${models.length} models loaded from OmniRoute`;
+    chatModelSelect.title = `${models.length} models loaded from OmniRoute. Named model routes are not subscription-harness proof.`;
   } catch {
     chatModelSelect.dataset.catalog = "fallback";
-    chatModelSelect.title = "Using fallback model list because the OmniRoute catalog is unavailable";
+    chatModelSelect.title = "Using fallback model list because the OmniRoute catalog is unavailable. Best free route is the safe default.";
   }
 }
 
