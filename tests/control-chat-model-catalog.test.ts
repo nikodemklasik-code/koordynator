@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 describe("Live Chat model catalog", () => {
-  it("loads the OmniRoute catalog and reports billing provenance without calling subscription harnesses", async () => {
+  it("separates requested free routing from confirmed free billing and paid API evidence", async () => {
     const requested: string[] = [];
     let authorization = "";
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -55,15 +55,28 @@ describe("Live Chat model catalog", () => {
       subscriptionHarnessUsed: false,
       subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
       modelSources: {
-        "auto/best-free": "FREE_ROUTE",
+        "auto/best-free": "FREE_REQUESTED",
         "openai/gpt-5.6-sol": "PAID_API",
-        "google/gemini-2.5-pro": "FREE_ROUTE",
+        "google/gemini-2.5-pro": "FREE_CONFIRMED",
         "anthropic/claude-opus-5": "UNKNOWN"
       },
       budget: { exhausted: false, remaining: 8, limit: 10, used: 2 }
     });
     expect(requested[0]).toBe("http://127.0.0.1:20128/v1/models");
     expect(authorization).toBe("Bearer catalog-secret");
+  });
+
+  it("accepts explicit free evidence from the model catalog itself", async () => {
+    const fetchImpl = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "auto/best-free", free: true }] }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response("", { status: 404 });
+    }) as typeof fetch;
+    const catalog = new ChatModelCatalogService({ endpoint: "http://127.0.0.1:20128/v1", apiKey: "key", fetchImpl });
+    const result = await catalog.list();
+    expect(result.billing?.modelSources["auto/best-free"]).toBe("FREE_CONFIRMED");
   });
 
   it("falls back from /v1/models to /api/v1/models when the first catalog path is absent", async () => {
@@ -78,6 +91,7 @@ describe("Live Chat model catalog", () => {
     const catalog = new ChatModelCatalogService({ endpoint: "http://127.0.0.1:20128/v1", apiKey: "key", fetchImpl });
     const result = await catalog.list();
     expect(result.models).toEqual(["auto/best-free", "openai/gpt-5.6-sol"]);
+    expect(result.billing?.modelSources["auto/best-free"]).toBe("FREE_REQUESTED");
     expect(requested.filter((url) => url.endsWith("/models") && !url.includes("pricing"))).toEqual([
       "http://127.0.0.1:20128/v1/models",
       "http://127.0.0.1:20128/api/v1/models"
@@ -89,7 +103,7 @@ describe("Live Chat model catalog", () => {
     await expect(catalog.list()).rejects.toThrow("CHAT_MODEL_CATALOG_AUTH_REQUIRED");
   });
 
-  it("serves the dynamic catalog and browser loader without exposing credentials", async () => {
+  it("serves the dynamic catalog and browser provenance loader without exposing credentials", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-models-"));
     roots.push(root);
     const modelCatalog: ChatModelCatalogPort = {
@@ -102,7 +116,7 @@ describe("Live Chat model catalog", () => {
             liveChatTransport: "OMNIROUTE_API",
             subscriptionHarnessUsed: false,
             subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
-            modelSources: { "auto/best-free": "FREE_ROUTE", "openai/gpt-5.6-sol": "UNKNOWN", "google/gemini-2.5-pro": "UNKNOWN", "anthropic/claude-opus-5": "UNKNOWN" }
+            modelSources: { "auto/best-free": "FREE_CONFIRMED", "openai/gpt-5.6-sol": "PAID_API", "google/gemini-2.5-pro": "UNKNOWN", "anthropic/claude-opus-5": "UNKNOWN" }
           }
         };
       }
@@ -128,13 +142,14 @@ describe("Live Chat model catalog", () => {
 
       const loader = await fetch(`${base}/chat-models.js`).then((item) => item.text());
       expect(loader).toContain("/api/chat/models");
-      expect(loader).toContain("FREE ROUTE");
-      expect(loader).toContain("OMNIROUTE API");
+      expect(loader).toContain("FREE CONFIRMED");
+      expect(loader).toContain("Subscription harness used by Live Chat: NO");
       expect(loader).not.toContain("browser-must-not-see-this");
 
       const page = await fetch(`${base}/chat`).then((item) => item.text());
       expect(page).toContain('value="auto/best-free"');
-      expect(page).toContain("Live Chat uses OmniRoute, not the subscription CLI harness");
+      expect(page).toContain("STRICT: PAID + UNKNOWN + UNCONFIRMED FREE BLOCKED");
+      expect(page).toContain('src="/chat-usage.js"');
       expect(page).not.toContain("browser-must-not-see-this");
     } finally {
       server.close();
