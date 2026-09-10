@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { CapabilityRequest } from "../src/api/capability-api.js";
-import type { OmniRouteModelSelector } from "../src/api/omniroute-model-selector.js";
+import type {
+  OmniRouteModelSelectionRequest,
+  OmniRouteModelSelector
+} from "../src/api/omniroute-model-selector.js";
 import { canonicalDigest } from "../src/crypto/canonical-digest.js";
 import type { Digest } from "../src/domain/ids.js";
 import type { MaterializationOrder } from "../src/engine/autonomous-recovery.js";
@@ -76,7 +79,7 @@ describe("OmniRoute exact-pack dynamic model binding", () => {
     let selected = 0;
     let captured: CapabilityRequest | undefined;
     const selector: OmniRouteModelSelector = {
-      async select(request) {
+      async select(request: Readonly<OmniRouteModelSelectionRequest>) {
         selected += 1;
         expect(request).toMatchObject({ purpose: "EXACT_PACK", maxLatencyMs: 60000 });
         return {
