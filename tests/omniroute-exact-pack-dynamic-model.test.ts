@@ -61,7 +61,7 @@ function directive() {
 
 function executor(capture: (request: CapabilityRequest) => void): PackAiExecutor {
   return {
-    async execute<T>(request) {
+    async execute<T>(request: CapabilityRequest) {
       capture(request);
       return {
         result: {
