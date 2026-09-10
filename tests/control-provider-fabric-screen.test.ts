@@ -61,8 +61,8 @@ describe("Control Provider Fabric screen", () => {
       expect(css).toMatch(/\.provider-shell\s*\{[^}]*min-height:100vh/s);
       expect(css).toMatch(/\.provider-content\s*\{[^}]*overflow:visible/s);
       expect(css).toMatch(/\.provider-row\s*\{[^}]*min-width:0/s);
-      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow-x:visible/s);
-      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow-x:visible/s);
+      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow:visible/s);
+      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow:visible/s);
       expect(css).not.toContain("margin-top:-35vh");
 
       const client = await fetch(`${base}/providers.js`).then((item) => item.text());
