@@ -145,7 +145,7 @@ function explicitBillingSignal(record: Record<string, unknown>): ChatModelBillin
     if (record[key] === false) return "PAID_API";
   }
 
-  const direct = numberValue(record, ["estimatedCost", "cost", "price", "costScore"]);
+  const direct = numberValue(record, ["estimatedCost", "cost", "price"]);
   if (direct !== undefined) return direct === 0 ? "FREE_CONFIRMED" : "PAID_API";
   const input = numberValue(record, ["inputCost", "inputPrice", "promptPrice", "input_cost", "input_price"]);
   const output = numberValue(record, ["outputCost", "outputPrice", "completionPrice", "output_cost", "output_price"]);
