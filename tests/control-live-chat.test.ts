@@ -148,9 +148,15 @@ describe("Live Chat service", () => {
     const service = new ChatService({ stateDir: root, apiKey: "secret", fetchImpl });
     await expect(service.createSession("deepseek/anything")).rejects.toThrow("CHAT_MODEL_FORBIDDEN");
     const session = await service.createSession();
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done" || event.type === "stopped" || event.type === "error") resolvePromise();
+      });
+    });
     await service.startMessage(session.sessionId, "first");
     await expect(service.startMessage(session.sessionId, "second")).rejects.toThrow("CHAT_GENERATION_IN_PROGRESS");
     release();
+    await done;
     service.close();
   });
 });
