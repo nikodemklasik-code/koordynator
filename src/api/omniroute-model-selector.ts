@@ -91,7 +91,7 @@ function scoreModel(model: OmniRouteModelRuntimeTelemetry, purpose: OmniRouteMod
   const latency = latencyAdjustment(model.latencyMs);
   const cost = costAdjustment(model.estimatedCost);
   return {
-    score: fidelity + latency + cost,
+    score: (fidelity * 100) + latency + cost,
     reasons: [
       `fidelity=${fidelity}`,
       ...(model.latencyMs === undefined ? ["latency=unknown"] : [`latencyMs=${model.latencyMs}`, `latencyScore=${latency}`]),
