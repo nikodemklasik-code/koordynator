@@ -100,21 +100,51 @@ function scoreModel(model: OmniRouteModelRuntimeTelemetry, purpose: OmniRouteMod
   };
 }
 
+function hasExecutionEvidence(snapshot: OmniRouteRuntimeSnapshot): boolean {
+  return snapshot.sources.tokenHealth.available || snapshot.sources.rateLimits.available;
+}
+
+function exactFallback(
+  snapshot: OmniRouteRuntimeSnapshot,
+  request: Readonly<OmniRouteModelSelectionRequest>
+): { model: OmniRouteModelRuntimeTelemetry; score: number; reasons: string[] } {
+  const fallbackModel = request.fallbackModel?.trim();
+  if (!fallbackModel) throw new Error("OMNIROUTE_RUNTIME_EXECUTION_EVIDENCE_UNAVAILABLE");
+  if (isForbiddenModel(fallbackModel)) throw new Error("FORBIDDEN_MODEL_ROUTE");
+
+  const fallback = snapshot.models.find((model) => model.modelId === fallbackModel);
+  if (fallback === undefined) throw new Error("OMNIROUTE_RUNTIME_FALLBACK_NOT_IN_CATALOG");
+  if (!allowedByRuntime(fallback, snapshot, request.maxLatencyMs)) throw new Error("OMNIROUTE_RUNTIME_FALLBACK_NOT_ELIGIBLE");
+
+  const scored = scoreModel(fallback, request.purpose);
+  return {
+    model: fallback,
+    score: scored.score,
+    reasons: [...scored.reasons, "selection=trusted-fallback-no-execution-telemetry"]
+  };
+}
+
 export class DeterministicOmniRouteModelSelector implements OmniRouteModelSelector {
   constructor(private readonly telemetry: Pick<OmniRouteRuntimeTelemetry, "snapshot">) {}
 
   async select(request: Readonly<OmniRouteModelSelectionRequest>): Promise<OmniRouteModelSelection> {
     const snapshot = await this.telemetry.snapshot();
-    const candidates = snapshot.models
-      .filter((model) => allowedByRuntime(model, snapshot, request.maxLatencyMs))
-      .map((model) => ({ model, ...scoreModel(model, request.purpose) }))
-      .sort((a, b) => b.score - a.score || a.model.modelId.localeCompare(b.model.modelId));
 
-    let chosen = candidates[0];
-    if (chosen === undefined && request.fallbackModel !== undefined && !isForbiddenModel(request.fallbackModel)) {
-      const fallback = snapshot.models.find((model) => model.modelId === request.fallbackModel);
-      if (fallback !== undefined && allowedByRuntime(fallback, snapshot, request.maxLatencyMs)) {
-        chosen = { model: fallback, ...scoreModel(fallback, request.purpose) };
+    let chosen: { model: OmniRouteModelRuntimeTelemetry; score: number; reasons: string[] } | undefined;
+    if (!hasExecutionEvidence(snapshot)) {
+      chosen = exactFallback(snapshot, request);
+    } else {
+      const candidates = snapshot.models
+        .filter((model) => allowedByRuntime(model, snapshot, request.maxLatencyMs))
+        .map((model) => ({ model, ...scoreModel(model, request.purpose) }))
+        .sort((a, b) => b.score - a.score || a.model.modelId.localeCompare(b.model.modelId));
+
+      chosen = candidates[0];
+      if (chosen === undefined && request.fallbackModel !== undefined && !isForbiddenModel(request.fallbackModel)) {
+        const fallback = snapshot.models.find((model) => model.modelId === request.fallbackModel);
+        if (fallback !== undefined && allowedByRuntime(fallback, snapshot, request.maxLatencyMs)) {
+          chosen = { model: fallback, ...scoreModel(fallback, request.purpose) };
+        }
       }
     }
 

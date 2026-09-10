@@ -25,6 +25,22 @@ function snapshot(models: OmniRouteRuntimeSnapshot["models"], exhausted = false)
   };
 }
 
+function catalogOnly(models: OmniRouteRuntimeSnapshot["models"]): OmniRouteRuntimeSnapshot {
+  return {
+    takenAt: "2026-09-10T10:16:00.000Z",
+    models,
+    budget: { exhausted: false },
+    sources: {
+      models: { available: true, status: 200 },
+      tokenHealth: { available: false, status: 403 },
+      rateLimits: { available: false, status: 403 },
+      budget: { available: false, status: 403 },
+      latency: { available: false, status: 403 },
+      pricing: { available: false, status: 403 }
+    }
+  };
+}
+
 describe("OmniRoute deterministic model selector", () => {
   it("prefers instruction-fidelity for exact packs while using live latency and cost as secondary signals", async () => {
     const selector = new DeterministicOmniRouteModelSelector(source(snapshot([
@@ -77,5 +93,32 @@ describe("OmniRoute deterministic model selector", () => {
     ], true)));
 
     await expect(selector.select({ purpose: "EXACT_PACK" })).rejects.toThrow("OMNIROUTE_RUNTIME_BUDGET_EXHAUSTED");
+  });
+
+  it("does not treat catalog visibility as execution proof when management telemetry is forbidden", async () => {
+    const selector = new DeterministicOmniRouteModelSelector(source(catalogOnly([
+      { modelId: "opencode/gpt-5.6-sol" },
+      { modelId: "openai/gpt-5.6-sol" },
+      { modelId: "anthropic/claude-sonnet-5" }
+    ])));
+
+    const selected = await selector.select({
+      purpose: "EXACT_PACK",
+      maxLatencyMs: 120000,
+      fallbackModel: "openai/gpt-5.6-sol"
+    });
+
+    expect(selected.modelId).toBe("openai/gpt-5.6-sol");
+    expect(selected.reasons).toContain("selection=trusted-fallback-no-execution-telemetry");
+  });
+
+  it("fails closed instead of inventing availability from the catalog when no trusted fallback is supplied", async () => {
+    const selector = new DeterministicOmniRouteModelSelector(source(catalogOnly([
+      { modelId: "opencode/gpt-5.6-sol" },
+      { modelId: "anthropic/claude-sonnet-5" }
+    ])));
+
+    await expect(selector.select({ purpose: "EXACT_PACK" }))
+      .rejects.toThrow("OMNIROUTE_RUNTIME_EXECUTION_EVIDENCE_UNAVAILABLE");
   });
 });
