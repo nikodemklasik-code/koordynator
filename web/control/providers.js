@@ -30,6 +30,17 @@ function usageSourceForBilling(value) {
   return "UNKNOWN";
 }
 
+function reportedTokenCount(receipt) {
+  const usage = receipt?.usage;
+  if (!usage || usage.reportedBy !== "PROVIDER") return null;
+  const explicit = Number(usage.totalTokens);
+  if (Number.isFinite(explicit) && explicit >= 0) return Math.trunc(explicit);
+  const input = Number(usage.inputTokens);
+  const output = Number(usage.outputTokens);
+  if (!Number.isFinite(input) && !Number.isFinite(output)) return null;
+  return Math.trunc((Number.isFinite(input) ? input : 0) + (Number.isFinite(output) ? output : 0));
+}
+
 function providerRow(provider) {
   const d = provider.descriptor;
   const source = usageSourceForBilling(d.billingMode);
@@ -44,12 +55,17 @@ function providerRow(provider) {
 
 function receiptRow(receipt) {
   const source = usageSourceForBilling(receipt.billingPath);
+  const tokens = reportedTokenCount(receipt);
+  const tokenText = tokens === null ? "TOKEN COUNT UNREPORTED" : `${tokens.toLocaleString()} TOKENS · PROVIDER REPORTED`;
+  const cost = typeof receipt.usage?.cost === "number"
+    ? ` · COST ${receipt.usage.cost}${receipt.usage.currency ? ` ${String(receipt.usage.currency).toUpperCase()}` : ""}`
+    : "";
   return `<article class="receipt-row">
     <div data-label="PROVIDER"><strong>${escapeHtml(receipt.providerId)}</strong><br><code>${escapeHtml(receipt.capability)}</code></div>
     <div data-label="TASK">${escapeHtml(receipt.taskId)}</div>
     <div data-label="RESULT"><span class="result-${String(receipt.result).toLowerCase()}">${escapeHtml(receipt.result)}</span></div>
     <div data-label="ACCESS">${escapeHtml(receipt.accessMode)}</div>
-    <div data-label="SOURCE"><strong>${escapeHtml(source)}</strong><br><code>${escapeHtml(receipt.billingPath ?? "UNKNOWN")}</code></div>
+    <div data-label="SOURCE"><strong>${escapeHtml(source)}</strong><br><code>${escapeHtml(receipt.billingPath ?? "UNKNOWN")}</code><br><small>${escapeHtml(tokenText + cost)}</small></div>
     <div data-label="RECEIPT"><code title="${escapeHtml(receipt.receiptFp)}">${escapeHtml(shortDigest(receipt.receiptFp))}</code></div>
   </article>`;
 }
