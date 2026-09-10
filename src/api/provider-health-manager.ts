@@ -39,10 +39,14 @@ export class ProviderHealthManager {
     const id = provider.descriptor.providerId;
     const now = this.clock();
     const current = this.state.get(id);
-    if (current?.cooldownUntil !== undefined && current.cooldownUntil > now) {
-      return current.health === "RATE_LIMITED" ? "RATE_LIMITED" : "UNAVAILABLE";
+    const hasCooldown = current?.cooldownUntil !== undefined;
+    const cooldownActive = hasCooldown && current.cooldownUntil! > now;
+    const cooldownExpired = hasCooldown && current.cooldownUntil! <= now;
+
+    if (cooldownActive) {
+      return current!.health === "RATE_LIMITED" ? "RATE_LIMITED" : "UNAVAILABLE";
     }
-    if (current?.health !== undefined && current.expiresAt > now) return current.health;
+    if (!cooldownExpired && current?.health !== undefined && current.expiresAt > now) return current.health;
 
     const health = await provider.health();
     this.state.set(id, {
