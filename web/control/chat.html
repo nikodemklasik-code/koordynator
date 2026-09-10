@@ -28,7 +28,7 @@
         <a class="nav-item" href="/providers"><span>⬡</span><span>Providers</span></a>
         <a class="nav-item" href="/releases"><span>◫</span><span>Releases</span></a>
       </nav>
-      <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">OmniRoute chat online</div></div>
+      <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">OmniRoute executable routes</div></div>
     </aside>
 
     <main class="content chat-content">
@@ -36,16 +36,13 @@
         <div class="chat-title-block">
           <div class="chat-kicker">REAL-TIME AI</div>
           <h1>Live Chat</h1>
-          <p>Persistent multi-turn conversation streamed directly through the local OmniRoute gateway.</p>
+          <p>Persistent multi-turn conversation through executable OmniRoute API, OAuth and subscription-harness routes.</p>
         </div>
         <div class="chat-head-actions">
           <label class="model-picker">
-            <span>MODEL · OMNIROUTE</span>
-            <select id="modelSelect" aria-label="AI model">
-              <option value="auto/best-free">Best free route · FREE REQUESTED</option>
-              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol · billing unknown</option>
-              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5 · billing unknown</option>
-              <option value="anthropic/claude-opus-5">Claude Opus 5 · billing unknown</option>
+            <span>MODEL · EXECUTABLE ROUTES</span>
+            <select id="modelSelect" aria-label="AI model" disabled>
+              <option value="" selected>Loading verified model routes…</option>
             </select>
           </label>
           <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
@@ -63,9 +60,9 @@
         </div>
 
         <div class="chat-usage-bar" aria-label="Billing and token provenance">
-          <span class="billing-badge checking" id="billingBadge">BILLING CHECKING</span>
+          <span class="billing-badge checking" id="billingBadge">ROUTE CHECKING</span>
           <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
-          <span class="strict-policy">STRICT: PAID + UNKNOWN + UNCONFIRMED FREE BLOCKED</span>
+          <span class="strict-policy">STRICT: PAYG + UNKNOWN + UNCONFIRMED FREE HIDDEN</span>
         </div>
 
         <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
@@ -98,7 +95,7 @@
           </div>
           <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
           <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
-          <div class="composer-note">Strict billing provenance is enabled. Live Chat executes only routes confirmed free by upstream catalog/pricing evidence. Subscription-harness work is accounted separately in provider receipts. Token totals are provider-reported only; missing telemetry is shown as UNREPORTED.</div>
+          <div class="composer-note">Loading route provenance. Models that cannot execute under the active billing policy are not shown.</div>
         </div>
       </section>
 
