@@ -2,6 +2,10 @@
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
 import { VERSION } from "../version.js";
+import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
+
+loadLocalConfig();
+const route = omniRouteSettings();
 
 function port(): number {
   const value = Number(process.env.KOORDYNATOR_CONTROL_PORT ?? "8787");
@@ -21,11 +25,11 @@ const server = createControlServer({
   ...(process.env.KOORDYNATOR_REGION === undefined ? {} : { region: process.env.KOORDYNATOR_REGION }),
   ...(process.env.KOORDYNATOR_ZONE === undefined ? {} : { zone: process.env.KOORDYNATOR_ZONE }),
   ...(process.env.KOORDYNATOR_OPERATOR === undefined ? {} : { operator: process.env.KOORDYNATOR_OPERATOR }),
-  ...(process.env.OMNIROUTE_ENDPOINT === undefined ? {} : { chatEndpoint: process.env.OMNIROUTE_ENDPOINT }),
+  chatEndpoint: route.endpoint,
   ...(controlToken === undefined ? {} : { controlToken }),
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
-  chatDefaultModel: process.env.KOORDYNATOR_CHAT_MODEL ?? "auto/best-free",
+  chatDefaultModel: route.model,
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   version: process.env.KOORDYNATOR_VERSION ?? VERSION
 });

@@ -7,7 +7,7 @@
     "orchestrator": "dist/cli/main.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -21,7 +21,12 @@
     "live:cli-prebuild": "npm run build && node scripts/live-cli-prebuild-smoke.mjs",
     "live:autonomous-run": "npm run build && node scripts/live-cli-autonomous-smoke.mjs",
     "live:chat": "npm run build && node scripts/live-chat-smoke.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden && npm run provider-golden"
+    "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden && npm run provider-golden",
+    "start": "npm run build && npm run control",
+    "doctor:omniroute": "npm run build && node dist/runtime/main.js doctor",
+    "hermes": "npm run build && node dist/runtime/main.js hermes",
+    "hermes:openai": "npm run build && node dist/runtime/main.js hermes openai",
+    "hermes:anthropic": "npm run build && node dist/runtime/main.js hermes anthropic"
   },
   "devDependencies": {
     "@types/node": "22.10.0",

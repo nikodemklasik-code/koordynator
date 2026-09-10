@@ -4,7 +4,12 @@ import { join, resolve } from "node:path";
 import { once } from "node:events";
 import { createControlServer } from "../dist/control/server.js";
 
-if (!process.env.OMNIROUTE_API_KEY?.trim()) {
+import { loadLocalConfig, omniRouteSettings } from "../dist/runtime/local-config.js";
+
+loadLocalConfig();
+const route = omniRouteSettings();
+
+if (!route.apiKey) {
   console.error("OMNIROUTE_KEY = BRAK");
   process.exit(10);
 }
@@ -14,8 +19,8 @@ const server = createControlServer({
   stateDir: root,
   webRoot: resolve("web/control"),
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
-  chatEndpoint: process.env.OMNIROUTE_ENDPOINT ?? "http://127.0.0.1:20128/v1",
-  chatDefaultModel: process.env.KOORDYNATOR_CHAT_MODEL ?? "openai/gpt-5.6-sol"
+  chatEndpoint: route.endpoint,
+  chatDefaultModel: route.model
 });
 
 try {
@@ -28,7 +33,7 @@ try {
   const created = await fetch(`${base}/api/chat/sessions`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ model: process.env.KOORDYNATOR_CHAT_MODEL ?? "openai/gpt-5.6-sol" })
+    body: JSON.stringify({ model: route.model })
   });
   if (created.status !== 201) throw new Error(`LIVE_CHAT_SESSION_HTTP_${created.status}`);
   const session = await created.json();
@@ -75,7 +80,7 @@ try {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       message: "Reply with exactly this text and nothing else: KOORDYNATOR LIVE CHAT OK",
-      model: process.env.KOORDYNATOR_CHAT_MODEL ?? "openai/gpt-5.6-sol"
+      model: route.model
     })
   });
   if (sent.status !== 202) throw new Error(`LIVE_CHAT_MESSAGE_HTTP_${sent.status}`);

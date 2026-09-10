@@ -4,7 +4,7 @@ Deterministyczny Orchestrator budowy, walidacji i wydawania aplikacji. AI/provid
 
 ## Wymagania
 
-- Node.js 20+
+- Node.js 20.19+ (dla OmniRoute sprawdź także wymagania jego wersji)
 - `npm ci`
 - dla najmocniejszej izolacji buildu: Docker albo Podman i obraz przypięty przez `@sha256:...`
 - dla providerów abonamentowych: oficjalny CLI danego dostawcy i oficjalna sesja logowania
@@ -20,6 +20,30 @@ node dist/cli/main.js version
 ```
 
 Po `npm link` dostępna jest komenda `orchestrator`.
+
+## Hermes + OmniRoute (OpenAI / Anthropic)
+
+```bash
+cp .env.example .env
+chmod 600 .env
+# Wpisz w .env OMNIROUTE_API_KEY z lokalnego OmniRoute.
+npm run doctor:omniroute
+# Wybierz dokładny model/trase z raportu i ustaw KOORDYNATOR_CHAT_MODEL w .env.
+npm run doctor:omniroute -- --probe
+npm start
+```
+
+Panel Koordynatora: http://127.0.0.1:8787. W drugim terminalu `npm run hermes`
+uruchamia zainstalowany Hermes Agent przez ten sam gateway, z providerem `custom`.
+Powstaje osobny profil `.orchestrator/hermes-omniroute/`; globalny profil Hermesa
+z Nous Portal/OpenRouter pozostaje osobny. `.env` jest wczytywany automatycznie,
+a zmienne przekazane w procesie mają pierwszeństwo.
+
+Dla tras abonamentowych ustaw `KOORDYNATOR_OPENAI_MODEL` i
+`KOORDYNATOR_ANTHROPIC_MODEL` dokładnie według `subscriptionRoutes` w raporcie.
+Uruchom `npm run hermes:openai` albo `npm run hermes:anthropic`.
+Diagnostyka rozróżnia katalog, politykę kosztów i faktyczną odpowiedź modelu.
+Szczegóły konfiguracji, logowania i błędów: [Hermes i OmniRoute](docs/HERMES_OMNIROUTE.md).
 
 ## Kanoniczny przebieg
 
