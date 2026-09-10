@@ -60,6 +60,16 @@ function transport(value: unknown): ChatModelRouteTransport {
   return value === "OMNIROUTE_OAUTH" ? "OMNIROUTE_OAUTH" : "OMNIROUTE_API";
 }
 
+function normalizeRecordRoute(record: ChatUsageRecord): ChatUsageRecord {
+  if (record.source === "SUBSCRIPTION_HARNESS") {
+    return { ...record, transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: true };
+  }
+  if (record.source === "FREE_OAUTH") {
+    return { ...record, transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: false };
+  }
+  return { ...record, transport: "OMNIROUTE_API", subscriptionHarnessUsed: false };
+}
+
 function safeRecord(value: unknown): ChatUsageRecord | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
@@ -67,7 +77,7 @@ function safeRecord(value: unknown): ChatUsageRecord | null {
   if (typeof item.startedAt !== "string" || typeof item.completedAt !== "string") return null;
   if (item.state !== "complete" && item.state !== "stopped" && item.state !== "error") return null;
   const usage = typeof item.usage === "object" && item.usage !== null ? item.usage as ProviderReportedUsage : undefined;
-  return {
+  const parsed: ChatUsageRecord = {
     sessionId: item.sessionId,
     messageId: item.messageId,
     model: item.model,
@@ -81,6 +91,7 @@ function safeRecord(value: unknown): ChatUsageRecord | null {
     ...(typeof item.providerRequestId === "string" ? { providerRequestId: item.providerRequestId } : {}),
     ...(usage === undefined ? {} : { usage })
   };
+  return normalizeRecordRoute(parsed);
 }
 
 function add(bucket: ChatUsageBucket, record: ChatUsageRecord): void {
@@ -113,7 +124,8 @@ export class ChatUsageLedger {
 
   async append(record: ChatUsageRecord): Promise<void> {
     await this.ensureWritable();
-    await appendFile(this.path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
+    const normalized = normalizeRecordRoute(record);
+    await appendFile(this.path, `${JSON.stringify(normalized)}\n`, { encoding: "utf8", mode: 0o600 });
   }
 
   async records(): Promise<ChatUsageRecord[]> {
