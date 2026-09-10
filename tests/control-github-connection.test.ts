@@ -133,6 +133,13 @@ describe("GitHub repository connection HTTP boundary", () => {
       expect(chatPage).toContain('id="githubChatButton"');
       expect(chatPage).toContain('id="githubChatConsentApprove"');
       expect(chatPage).toContain('/chat-github.js');
+
+      const chatGitHubClient = await fetch(`${base}/chat-github.js`);
+      expect(chatGitHubClient.status).toBe(200);
+      const chatGitHubSource = await chatGitHubClient.text();
+      expect(chatGitHubSource).toContain("/api/integrations/github/connect");
+      expect(chatGitHubSource).toContain("approved: true");
+      expect(chatGitHubSource).toContain("isRepositoryIntent");
     } finally {
       server.close();
       if (server.listening) await once(server, "close");
