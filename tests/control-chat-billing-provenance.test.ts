@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import { evaluateChatBilling } from "../src/control/chat-billing-policy.js";
-import type { ChatModelBillingSource, ChatModelCatalog, ChatModelCatalogPort } from "../src/control/chat-model-catalog.js";
+import type { ChatModelBillingSource, ChatModelCatalog, ChatModelCatalogPort, ChatModelRouteTransport } from "../src/control/chat-model-catalog.js";
 import { createControlServer } from "../src/control/server.js";
 
 const roots: string[] = [];
@@ -14,15 +14,20 @@ afterEach(async () => {
 });
 
 function catalogWith(source: ChatModelBillingSource, model = "auto/best-free"): ChatModelCatalog {
+  const transport: ChatModelRouteTransport = source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" ? "OMNIROUTE_OAUTH" : "OMNIROUTE_API";
+  const subscriptionHarnessUsed = source === "SUBSCRIPTION_HARNESS";
   return {
     models: [model],
     source: "OMNIROUTE",
     checkedAt: "2026-09-10T15:00:00.000Z",
     billing: {
       liveChatTransport: "OMNIROUTE_API",
-      subscriptionHarnessUsed: false,
-      subscriptionHarnessPath: "NOT_WIRED_TO_LIVE_CHAT",
-      modelSources: { [model]: source }
+      subscriptionHarnessUsed,
+      subscriptionHarnessPath: subscriptionHarnessUsed ? "OMNIROUTE_OAUTH_MODEL_ROUTES" : "NOT_AVAILABLE",
+      modelSources: { [model]: source },
+      modelRoutes: {
+        [model]: { provider: "test", family: "TEST", transport, subscriptionHarnessUsed, billingSource: source }
+      }
     }
   };
 }
@@ -54,8 +59,10 @@ async function waitForComplete(base: string, sessionId: string): Promise<Record<
 }
 
 describe("Live Chat strict billing provenance", () => {
-  it("allows only confirmed-free billing by default", () => {
-    expect(evaluateChatBilling("m", catalogWith("FREE_CONFIRMED", "m")).allowed).toBe(true);
+  it("allows verified free, free OAuth and subscription harness routes by default", () => {
+    expect(evaluateChatBilling("m", catalogWith("FREE_CONFIRMED", "m")).decision).toBe("ALLOW_FREE_CONFIRMED");
+    expect(evaluateChatBilling("m", catalogWith("FREE_OAUTH", "m"))).toMatchObject({ allowed: true, decision: "ALLOW_FREE_OAUTH", transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: false });
+    expect(evaluateChatBilling("m", catalogWith("SUBSCRIPTION_HARNESS", "m"))).toMatchObject({ allowed: true, decision: "ALLOW_SUBSCRIPTION_HARNESS", transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: true });
     expect(evaluateChatBilling("m", catalogWith("FREE_REQUESTED", "m")).decision).toBe("BLOCK_FREE_UNCONFIRMED");
     expect(evaluateChatBilling("m", catalogWith("PAID_API", "m")).decision).toBe("BLOCK_PAID_API");
     expect(evaluateChatBilling("m", catalogWith("UNKNOWN", "m")).decision).toBe("BLOCK_UNKNOWN");
@@ -111,7 +118,7 @@ describe("Live Chat strict billing provenance", () => {
 
       const assistant = await waitForComplete(base, session.sessionId);
       expect(assistant.providerRequestId).toBe("req-billing-1");
-      expect(assistant.billing).toMatchObject({ source: "FREE_CONFIRMED", allowed: true, decision: "ALLOW_FREE_CONFIRMED" });
+      expect(assistant.billing).toMatchObject({ source: "FREE_CONFIRMED", allowed: true, decision: "ALLOW_FREE_CONFIRMED", transport: "OMNIROUTE_API", subscriptionHarnessUsed: false });
       expect(assistant.usage).toEqual({ reportedBy: "PROVIDER", inputTokens: 12, outputTokens: 7, totalTokens: 19 });
       expect(assistant.usageAudit).toBe("PERSISTED");
 
@@ -123,6 +130,7 @@ describe("Live Chat strict billing provenance", () => {
       expect(summary.tokenTelemetryReported).toBe(1);
       expect(summary.totalTokens).toBe(19);
       expect(summary.bySource.FREE_CONFIRMED).toMatchObject({ requests: 1, totalTokens: 19 });
+      expect(summary.bySource.SUBSCRIPTION_HARNESS).toMatchObject({ requests: 0, totalTokens: 0 });
     } finally {
       server.close();
       if (server.listening) await once(server, "close");

@@ -1,15 +1,15 @@
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { ProviderReportedUsage } from "../api/provider-usage.js";
-import type { ChatModelBillingSource } from "./chat-model-catalog.js";
+import type { ChatModelBillingSource, ChatModelRouteTransport } from "./chat-model-catalog.js";
 
 export type ChatUsageRecord = {
   sessionId: string;
   messageId: string;
   model: string;
   source: ChatModelBillingSource;
-  transport: "OMNIROUTE_API";
-  subscriptionHarnessUsed: false;
+  transport: ChatModelRouteTransport;
+  subscriptionHarnessUsed: boolean;
   billingDecision: string;
   startedAt: string;
   completedAt: string;
@@ -47,7 +47,27 @@ function emptyBucket(): ChatUsageBucket {
 }
 
 function source(value: unknown): ChatModelBillingSource {
-  return value === "FREE_REQUESTED" || value === "FREE_CONFIRMED" || value === "PAID_API" ? value : "UNKNOWN";
+  return value === "FREE_REQUESTED"
+    || value === "FREE_CONFIRMED"
+    || value === "FREE_OAUTH"
+    || value === "SUBSCRIPTION_HARNESS"
+    || value === "PAID_API"
+    ? value
+    : "UNKNOWN";
+}
+
+function transport(value: unknown): ChatModelRouteTransport {
+  return value === "OMNIROUTE_OAUTH" ? "OMNIROUTE_OAUTH" : "OMNIROUTE_API";
+}
+
+function normalizeRecordRoute(record: ChatUsageRecord): ChatUsageRecord {
+  if (record.source === "SUBSCRIPTION_HARNESS") {
+    return { ...record, transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: true };
+  }
+  if (record.source === "FREE_OAUTH") {
+    return { ...record, transport: "OMNIROUTE_OAUTH", subscriptionHarnessUsed: false };
+  }
+  return { ...record, transport: "OMNIROUTE_API", subscriptionHarnessUsed: false };
 }
 
 function safeRecord(value: unknown): ChatUsageRecord | null {
@@ -57,13 +77,13 @@ function safeRecord(value: unknown): ChatUsageRecord | null {
   if (typeof item.startedAt !== "string" || typeof item.completedAt !== "string") return null;
   if (item.state !== "complete" && item.state !== "stopped" && item.state !== "error") return null;
   const usage = typeof item.usage === "object" && item.usage !== null ? item.usage as ProviderReportedUsage : undefined;
-  return {
+  const parsed: ChatUsageRecord = {
     sessionId: item.sessionId,
     messageId: item.messageId,
     model: item.model,
     source: source(item.source),
-    transport: "OMNIROUTE_API",
-    subscriptionHarnessUsed: false,
+    transport: transport(item.transport),
+    subscriptionHarnessUsed: item.subscriptionHarnessUsed === true,
     billingDecision: typeof item.billingDecision === "string" ? item.billingDecision : "UNKNOWN",
     startedAt: item.startedAt,
     completedAt: item.completedAt,
@@ -71,6 +91,7 @@ function safeRecord(value: unknown): ChatUsageRecord | null {
     ...(typeof item.providerRequestId === "string" ? { providerRequestId: item.providerRequestId } : {}),
     ...(usage === undefined ? {} : { usage })
   };
+  return normalizeRecordRoute(parsed);
 }
 
 function add(bucket: ChatUsageBucket, record: ChatUsageRecord): void {
@@ -103,7 +124,8 @@ export class ChatUsageLedger {
 
   async append(record: ChatUsageRecord): Promise<void> {
     await this.ensureWritable();
-    await appendFile(this.path, `${JSON.stringify(record)}\n`, { encoding: "utf8", mode: 0o600 });
+    const normalized = normalizeRecordRoute(record);
+    await appendFile(this.path, `${JSON.stringify(normalized)}\n`, { encoding: "utf8", mode: 0o600 });
   }
 
   async records(): Promise<ChatUsageRecord[]> {
@@ -134,6 +156,8 @@ export class ChatUsageLedger {
     const bySource: ChatUsageSummary["bySource"] = {
       FREE_REQUESTED: emptyBucket(),
       FREE_CONFIRMED: emptyBucket(),
+      FREE_OAUTH: emptyBucket(),
+      SUBSCRIPTION_HARNESS: emptyBucket(),
       PAID_API: emptyBucket(),
       UNKNOWN: emptyBucket()
     };

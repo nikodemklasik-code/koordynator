@@ -34,6 +34,10 @@ function providerReceiptUsage(receipts) {
   return { harnessTokens, paidTokens, harnessRequests, paidRequests, unreported };
 }
 
+function bucket(chat, source) {
+  return chat.bySource?.[source] || {};
+}
+
 async function loadUsage24h() {
   if (!usage24h) return;
   try {
@@ -46,21 +50,27 @@ async function loadUsage24h() {
     const providerPayload = await providerResponse.json();
     const provider = providerReceiptUsage(providerPayload.receipts);
 
-    const free = chat.bySource?.FREE_CONFIRMED || {};
-    const requested = chat.bySource?.FREE_REQUESTED || {};
-    const chatPaid = chat.bySource?.PAID_API || {};
-    const unknown = chat.bySource?.UNKNOWN || {};
-    const freeTokens = Number(free.totalTokens || 0);
+    const confirmedFree = bucket(chat, "FREE_CONFIRMED");
+    const freeOauth = bucket(chat, "FREE_OAUTH");
+    const liveHarness = bucket(chat, "SUBSCRIPTION_HARNESS");
+    const requested = bucket(chat, "FREE_REQUESTED");
+    const chatPaid = bucket(chat, "PAID_API");
+    const unknown = bucket(chat, "UNKNOWN");
+
+    const freeTokens = Number(confirmedFree.totalTokens || 0) + Number(freeOauth.totalTokens || 0);
+    const harnessTokens = Number(liveHarness.totalTokens || 0) + provider.harnessTokens;
     const paidTokens = Number(chatPaid.totalTokens || 0) + provider.paidTokens;
     const unknownRequests = Number(unknown.requests || 0) + Number(requested.requests || 0);
     const unreported = Number(chat.tokenTelemetryUnreported || 0) + provider.unreported;
 
-    usage24h.textContent = `24H · FREE ${compactNumber(freeTokens)} · HARNESS ${compactNumber(provider.harnessTokens)} · PAID ${compactNumber(paidTokens)} · UNKNOWN ${unknownRequests} · UNREPORTED ${unreported}`;
+    usage24h.textContent = `24H · FREE/OAUTH ${compactNumber(freeTokens)} · SUBSCRIPTION ${compactNumber(harnessTokens)} · PAYG ${compactNumber(paidTokens)} · UNKNOWN ${unknownRequests} · UNREPORTED ${unreported}`;
     usage24h.className = `usage-24h ${paidTokens > 0 || unknownRequests > 0 ? "attention" : "clean"}`;
     usage24h.title = [
-      `Confirmed free Live Chat: ${free.requests || 0} requests / ${freeTokens} reported tokens`,
-      `Subscription harness: ${provider.harnessRequests} requests / ${provider.harnessTokens} reported tokens`,
-      `Paid API: ${Number(chatPaid.requests || 0) + provider.paidRequests} requests / ${paidTokens} reported tokens`,
+      `Confirmed free API: ${confirmedFree.requests || 0} requests / ${confirmedFree.totalTokens || 0} reported tokens`,
+      `Free OAuth: ${freeOauth.requests || 0} requests / ${freeOauth.totalTokens || 0} reported tokens`,
+      `Live Chat subscription harness: ${liveHarness.requests || 0} requests / ${liveHarness.totalTokens || 0} reported tokens`,
+      `Other provider subscription receipts: ${provider.harnessRequests} requests / ${provider.harnessTokens} reported tokens`,
+      `PAYG API: ${Number(chatPaid.requests || 0) + provider.paidRequests} requests / ${paidTokens} reported tokens`,
       `Unconfirmed or unknown billing: ${unknownRequests} requests`,
       `Requests without provider token telemetry: ${unreported}`,
       "Token totals include only provider-reported usage. No estimates are presented as facts."

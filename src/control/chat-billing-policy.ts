@@ -1,4 +1,4 @@
-import type { ChatModelBillingSource, ChatModelCatalog } from "./chat-model-catalog.js";
+import type { ChatModelBillingSource, ChatModelCatalog, ChatModelRouteTransport } from "./chat-model-catalog.js";
 
 export type ChatBillingPolicyOptions = {
   allowFreeRequested?: boolean;
@@ -9,11 +9,13 @@ export type ChatBillingPolicyOptions = {
 export type ChatBillingDecision = {
   model: string;
   source: ChatModelBillingSource;
-  transport: "OMNIROUTE_API";
-  subscriptionHarnessUsed: false;
+  transport: ChatModelRouteTransport;
+  subscriptionHarnessUsed: boolean;
   allowed: boolean;
   decision:
     | "ALLOW_FREE_CONFIRMED"
+    | "ALLOW_FREE_OAUTH"
+    | "ALLOW_SUBSCRIPTION_HARNESS"
     | "ALLOW_FREE_REQUESTED_OVERRIDE"
     | "ALLOW_PAID_API_OVERRIDE"
     | "ALLOW_UNKNOWN_OVERRIDE"
@@ -30,14 +32,24 @@ export function evaluateChatBilling(
   options: ChatBillingPolicyOptions = {}
 ): ChatBillingDecision {
   const source = catalog.billing?.modelSources[model] ?? "UNKNOWN";
+  const route = catalog.billing?.modelRoutes?.[model];
+  const transport: ChatModelRouteTransport = route?.transport
+    ?? (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" ? "OMNIROUTE_OAUTH" : "OMNIROUTE_API");
+  const subscriptionHarnessUsed = route?.subscriptionHarnessUsed ?? source === "SUBSCRIPTION_HARNESS";
   const base = {
     model,
     source,
-    transport: "OMNIROUTE_API" as const,
-    subscriptionHarnessUsed: false as const,
+    transport,
+    subscriptionHarnessUsed,
     checkedAt: catalog.checkedAt
   };
 
+  if (source === "SUBSCRIPTION_HARNESS") {
+    return { ...base, allowed: true, decision: "ALLOW_SUBSCRIPTION_HARNESS" };
+  }
+  if (source === "FREE_OAUTH") {
+    return { ...base, allowed: true, decision: "ALLOW_FREE_OAUTH" };
+  }
   if (source === "FREE_CONFIRMED") {
     return { ...base, allowed: true, decision: "ALLOW_FREE_CONFIRMED" };
   }

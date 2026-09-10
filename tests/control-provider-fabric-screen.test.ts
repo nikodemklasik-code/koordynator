@@ -8,7 +8,7 @@ import { createControlServer } from "../src/control/server.js";
 const knownHealth = new Set(["HEALTHY", "DEGRADED", "RATE_LIMITED", "UNAVAILABLE", "AUTH_REQUIRED", "BLOCKED", "QUARANTINED"]);
 
 describe("Control Provider Fabric screen", () => {
-  it("projects official providers, live doctor status and safe connect commands", async () => {
+  it("projects official providers, live doctor status and a vertically scrollable no-horizontal-overflow UI", async () => {
     const root = await mkdtemp(join(tmpdir(), "control-providers-"));
     const server = createControlServer({ stateDir: root, webRoot: join(process.cwd(), "web", "control"), environment: "TEST", version: "0.2.0" });
     try {
@@ -57,13 +57,20 @@ describe("Control Provider Fabric screen", () => {
       const cssResponse = await fetch(`${base}/providers.css`);
       expect(cssResponse.status).toBe(200);
       const css = await cssResponse.text();
-      expect(css).toMatch(/body\s*\{[^}]*overflow-y:auto/s);
-      expect(css).toMatch(/\.provider-shell\s*\{[^}]*min-height:100vh/s);
-      expect(css).toMatch(/\.provider-content\s*\{[^}]*overflow:visible/s);
-      expect(css).toMatch(/\.provider-row\s*\{[^}]*min-width:0/s);
-      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow:visible/s);
-      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow:visible/s);
+      expect(css).toMatch(/body\s*\{[^}]*overflow:hidden/s);
+      expect(css).toMatch(/\.provider-shell\s*\{[^}]*height:100vh[^}]*overflow:hidden/s);
+      expect(css).toMatch(/\.provider-main\s*\{[^}]*min-height:0[^}]*height:100vh[^}]*overflow:hidden/s);
+      expect(css).toMatch(/\.provider-content\s*\{[^}]*min-height:0[^}]*overflow-y:auto[^}]*overflow-x:hidden/s);
+      expect(css).toMatch(/\.provider-sidebar nav\s*\{[^}]*overflow-y:auto[^}]*overflow-x:hidden/s);
+      expect(css).toMatch(/\.provider-rows\s*\{[^}]*overflow:hidden/s);
+      expect(css).toMatch(/\.receipt-rows\s*\{[^}]*overflow:hidden/s);
+      expect(css).toMatch(/\.provider-actions button\s*\{[^}]*white-space:normal/s);
+      expect(css).toContain("@container (max-width:900px)");
       expect(css).not.toContain("margin-top:-35vh");
+
+      const globalCss = await fetch(`${base}/control-ui.css`).then((item) => item.text());
+      expect(globalCss).toMatch(/\.provider-content\{[^}]*overflow-y:auto!important[^}]*overflow-x:hidden!important/s);
+      expect(globalCss).toContain("@media(max-width:1600px)");
 
       const client = await fetch(`${base}/providers.js`).then((item) => item.text());
       expect(client).toContain("SUBSCRIPTION-HARNESS");
