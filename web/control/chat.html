@@ -39,11 +39,12 @@
         </div>
         <div class="chat-head-actions">
           <label class="model-picker">
-            <span>MODEL</span>
+            <span>MODEL · OMNIROUTE</span>
             <select id="modelSelect" aria-label="AI model">
-              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol</option>
-              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5</option>
-              <option value="anthropic/claude-opus-5">Claude Opus 5</option>
+              <option value="auto/best-free">Best free route · OmniRoute</option>
+              <option value="openai/gpt-5.6-sol">GPT-5.6 Sol · API route</option>
+              <option value="anthropic/claude-sonnet-5">Claude Sonnet 5 · API route</option>
+              <option value="anthropic/claude-opus-5">Claude Opus 5 · API route</option>
             </select>
           </label>
           <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
@@ -90,7 +91,7 @@
           </div>
           <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
           <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
-          <div class="composer-note">Up to 5 attachments, 10 MB each / 20 MB total. Repository requests require explicit GitHub authorization when no authenticated session exists. Execution remains governed by signed WorkOrders and is not available from chat.</div>
+          <div class="composer-note">Live Chat uses OmniRoute, not the subscription CLI harness. “Best free route” requests the free pool; named GPT/Claude routes must not be assumed subscription-backed. Provider tasks separately expose SUBSCRIPTION-HARNESS vs PAID-API in receipts.</div>
         </div>
       </section>
 
@@ -118,8 +119,8 @@
   <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
     <form method="dialog">
       <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
-      <p>This message appears to require a GitHub repository. Koordynator can start the official GitHub CLI browser sign-in and configure Git after your approval. It does not collect your GitHub password, browser cookies or token.</p>
-      <div class="github-chat-consent-points"><span>✓ GitHub controls which account and repository permissions you grant.</span><span>✓ No connection attempt starts before approval.</span><span>✓ Once authenticated, the existing GitHub session is reused.</span></div>
+      <p>This message appears to require a GitHub repository. Koordynator first reuses a working local Git credential path when one already exists. If GitHub CLI authentication is required, the official browser sign-in starts only after your approval. Koordynator does not collect your GitHub password, browser cookies or token.</p>
+      <div class="github-chat-consent-points"><span>✓ Existing local Git credentials are reused when repository access already works.</span><span>✓ No new GitHub CLI sign-in starts before approval.</span><span>✓ GitHub controls which account and repository permissions you grant.</span></div>
       <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button></footer>
     </form>
   </dialog>
