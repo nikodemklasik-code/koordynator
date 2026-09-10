@@ -12,7 +12,7 @@
 <body>
   <div class="provider-shell">
     <aside class="provider-sidebar" aria-label="Primary navigation">
-      <div class="provider-brand"><span aria-hidden="true">◇</span><div><strong>Koordynator Control</strong><small>AUTONOMOUS ORCHESTRATION</small></div></div>
+      <div class="provider-brand"><span aria-hidden="true">◇</span><div><strong>KOORDYNATOR CONTROL</strong><small>AUTONOMOUS ORCHESTRATION</small></div></div>
       <nav>
         <a href="/">☷ <span>Tasks</span></a>
         <a class="active" href="/providers" aria-current="page">⬡ <span>Providers</span></a>
@@ -23,8 +23,8 @@
     <main class="provider-main">
       <header class="provider-topbar"><div><span class="cube">⬡</span><strong>Providers</strong></div><div class="mode">Execution fabric <strong>Live status</strong></div></header>
       <section class="provider-content">
-        <div class="provider-list-card"><div class="card-head"><div><h1>AVAILABLE PROVIDERS</h1><p>Health, access and executable paths reported by the provider fabric.</p></div><button id="refreshProviders" type="button">↻ Refresh</button></div><div class="provider-table-head"><span>PROVIDER</span><span>EXECUTABLE</span><span>HEALTH</span><span>ACCESS</span><span>ACTIONS</span></div><div id="providerRows" class="provider-rows"><div class="loading-line">Checking providers…</div></div></div>
-        <aside id="fabric" class="fabric-card"><h2>FABRIC RULES</h2><div class="fabric-rule"><strong>Canonical Capability API</strong><p>Modules request capabilities. They do not import provider SDKs.</p></div><div class="fabric-rule"><strong>Builder and reviewer can be separated</strong><p>Diversity is enforced by routing policy, not improvised in the UI.</p></div><div class="fabric-rule"><strong>Failover requires idempotency</strong><p>Uncertain workspace mutations are never blindly retried on another provider.</p></div><div class="fabric-rule safe"><strong>No password or cookie capture</strong><p>Connection actions use supported provider authentication flows.</p></div></aside>
+        <div class="provider-list-card"><div class="card-head"><div><h1>OFFICIAL CLI PROVIDERS</h1><p>Health, access and executable paths reported by the provider fabric.</p></div><button id="refreshProviders" type="button">↻ Refresh</button></div><div class="provider-table-head"><span>PROVIDER</span><span>EXECUTABLE</span><span>HEALTH</span><span>ACCESS</span><span>ACTIONS</span></div><div id="providerRows" class="provider-rows"><div class="loading-line">Checking providers…</div></div></div>
+        <aside id="fabric" class="fabric-card"><h2>FABRIC ARCHITECTURE</h2><div class="fabric-rule"><strong>Canonical Capability API</strong><p>Modules request capabilities. They do not import provider SDKs.</p></div><div class="fabric-rule"><strong>Builder and reviewer can be separated</strong><p>Diversity is enforced by routing policy, not improvised in the UI.</p></div><div class="fabric-rule"><strong>Failover requires idempotency</strong><p>Uncertain workspace mutations are never blindly retried on another provider.</p></div><div class="fabric-rule safe"><strong>No password or cookie capture</strong><p>Connection actions use supported provider authentication flows.</p></div></aside>
         <section id="receipts" class="receipts-card"><div class="card-head"><div><h2>PROVIDER EXECUTION RECEIPTS</h2><p>Persisted execution evidence from <code>.orchestrator/provider-receipts</code>.</p></div></div><div id="receiptRows" class="receipt-rows"><div class="empty-receipts">No persisted provider receipts.</div></div></section>
       </section>
       <footer class="provider-footer"><div>KOORDYNATOR CONTROL <span id="versionLabel">v0.1.0</span></div><div><span class="health-dot"></span> Connected to fabric</div></footer>
