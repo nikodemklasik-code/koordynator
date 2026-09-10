@@ -261,7 +261,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/providers": { name: "providers.html", type: "text/html; charset=utf-8" },
         "/releases": { name: "releases.html", type: "text/html; charset=utf-8" },
         "/styles.css": { name: "styles.css", type: "text/css; charset=utf-8" },
-        "/control-polish.css": { name: "control-polish.css", type: "text/css; charset=utf-8" },
+        "/control-ui.css": { name: "control-ui.css", type: "text/css; charset=utf-8" },
         "/chat.css": { name: "chat.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
