@@ -46,6 +46,7 @@
               <option value="anthropic/claude-opus-5">Claude Opus 5</option>
             </select>
           </label>
+          <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
           <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
         </div>
       </section>
@@ -61,7 +62,7 @@
             <div class="welcome-mark">◇</div>
             <h2>Start a conversation</h2>
             <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
-            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files & images</span><span>OmniRoute only</span></div>
+            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files & images</span><span>Chat history</span><span>OmniRoute only</span></div>
           </div>
         </div>
 
@@ -95,6 +96,21 @@
       </footer>
     </main>
   </div>
+
+  <div class="history-backdrop hidden" id="historyBackdrop"></div>
+  <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
+    <div class="history-head">
+      <div><div class="chat-kicker">PERSISTENT SESSIONS</div><h2 id="historyTitle">Chat history</h2></div>
+      <button class="history-close" id="historyCloseButton" type="button" aria-label="Close chat history">×</button>
+    </div>
+    <div class="history-toolbar">
+      <button class="secondary-button history-new-button" id="historyNewChatButton" type="button">＋ New chat</button>
+      <button class="history-refresh" id="historyRefreshButton" type="button" aria-label="Refresh chat history" title="Refresh">↻</button>
+    </div>
+    <div class="history-list" id="historyList" aria-live="polite"></div>
+    <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
+  </aside>
+
   <script src="/chat.js" defer></script>
 </body>
 </html>
