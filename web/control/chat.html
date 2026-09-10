@@ -61,20 +61,31 @@
             <div class="welcome-mark">◇</div>
             <h2>Start a conversation</h2>
             <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
-            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>OmniRoute only</span></div>
+            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files & images</span><span>OmniRoute only</span></div>
           </div>
         </div>
 
         <div class="composer-wrap">
           <div class="composer" id="composer">
+            <input
+              id="fileInput"
+              class="visually-hidden-file"
+              type="file"
+              multiple
+              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              aria-label="Attach files"
+            />
+            <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
             <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message"></textarea>
             <div class="composer-actions">
-              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line</div>
+              <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
+              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line <span>·</span> drag, drop or paste files</div>
               <button class="stop-button hidden" id="stopButton" type="button">■ Stop</button>
               <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
             </div>
           </div>
-          <div class="composer-note">Responses may contain mistakes. Execution remains governed by signed WorkOrders and is not available from chat.</div>
+          <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
+          <div class="composer-note">Up to 5 attachments, 10 MB each / 20 MB total. Responses may contain mistakes. Execution remains governed by signed WorkOrders and is not available from chat.</div>
         </div>
       </section>
 
