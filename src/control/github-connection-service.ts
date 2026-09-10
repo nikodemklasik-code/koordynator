@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 
 export type GitHubConnectionState = "CONNECTED" | "AUTH_REQUIRED" | "UNAVAILABLE" | "DEGRADED";
+export type GitHubConnectionMethod = "GH_CLI" | "GIT_CREDENTIAL" | "NONE";
 
 export type GitHubConnectionStatus = {
   provider: "github";
@@ -10,6 +11,9 @@ export type GitHubConnectionStatus = {
   authenticated: boolean;
   gitConfigured: boolean;
   checkedAt: string;
+  connectionMethod?: GitHubConnectionMethod;
+  repositoryAccess?: boolean;
+  remote?: string;
 };
 
 export type GitHubCommandResult = {
@@ -32,9 +36,10 @@ export class GitHubConnectionError extends Error {
 
 function minimalEnv(): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
-  for (const key of ["PATH", "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "BROWSER", "TERM", "GH_CONFIG_DIR"]) {
+  for (const key of ["PATH", "HOME", "USERPROFILE", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "BROWSER", "TERM", "GH_CONFIG_DIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"]) {
     if (process.env[key] !== undefined) env[key] = process.env[key];
   }
+  env.GIT_TERMINAL_PROMPT = "0";
   return env;
 }
 
@@ -89,6 +94,13 @@ function defaultRunner(executable: string, args: string[], options: { interactiv
   });
 }
 
+function isGitHubRemote(value: string): boolean {
+  const remote = value.trim();
+  return /^https?:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/i.test(remote)
+    || /^git@github\.com:[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/i.test(remote)
+    || /^ssh:\/\/git@github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/i.test(remote);
+}
+
 export interface GitHubConnectionPort {
   status(force?: boolean): Promise<GitHubConnectionStatus>;
   connect(approved: boolean): Promise<GitHubConnectionStatus>;
@@ -103,8 +115,12 @@ export class GitHubConnectionService implements GitHubConnectionPort {
     private readonly cacheTtlMs = 10_000
   ) {}
 
-  private async command(args: string[], interactive = false, timeoutMs = 10_000): Promise<GitHubCommandResult> {
-    return this.runner("gh", args, { interactive, timeoutMs });
+  private async command(executable: string, args: string[], interactive = false, timeoutMs = 10_000): Promise<GitHubCommandResult> {
+    return this.runner(executable, args, { interactive, timeoutMs });
+  }
+
+  private async gh(args: string[], interactive = false, timeoutMs = 10_000): Promise<GitHubCommandResult> {
+    return this.command("gh", args, interactive, timeoutMs);
   }
 
   private remember(value: GitHubConnectionStatus): GitHubConnectionStatus {
@@ -112,38 +128,61 @@ export class GitHubConnectionService implements GitHubConnectionPort {
     return value;
   }
 
+  private async gitCredentialStatus(checkedAt: string): Promise<GitHubConnectionStatus | null> {
+    try {
+      const version = await this.command("git", ["--version"]);
+      if (version.code !== 0) return null;
+      const remoteResult = await this.command("git", ["config", "--get", "remote.origin.url"]);
+      const remote = remoteResult.stdout.trim();
+      if (remoteResult.code !== 0 || !isGitHubRemote(remote)) return null;
+      const probe = await this.command("git", ["ls-remote", "--exit-code", "origin", "HEAD"], false, 15_000);
+      if (probe.code !== 0) return null;
+      return {
+        provider: "github",
+        hostname: "github.com",
+        state: "CONNECTED",
+        cliAvailable: false,
+        authenticated: false,
+        gitConfigured: true,
+        checkedAt,
+        connectionMethod: "GIT_CREDENTIAL",
+        repositoryAccess: true,
+        remote
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async status(force = false): Promise<GitHubConnectionStatus> {
     const nowMs = Date.now();
     if (!force && this.cached && this.cached.expiresAt > nowMs) return this.cached.value;
     const checkedAt = new Date().toISOString();
 
-    let version: GitHubCommandResult;
+    let version: GitHubCommandResult | null = null;
     try {
-      version = await this.command(["--version"]);
+      version = await this.gh(["--version"]);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        const gitFallback = await this.gitCredentialStatus(checkedAt);
+        if (gitFallback) return this.remember(gitFallback);
         return this.remember({
           provider: "github",
           hostname: "github.com",
-          state: "UNAVAILABLE",
+          state: "DEGRADED",
           cliAvailable: false,
           authenticated: false,
           gitConfigured: false,
-          checkedAt
+          checkedAt,
+          connectionMethod: "NONE",
+          repositoryAccess: false
         });
       }
-      return this.remember({
-        provider: "github",
-        hostname: "github.com",
-        state: "DEGRADED",
-        cliAvailable: false,
-        authenticated: false,
-        gitConfigured: false,
-        checkedAt
-      });
     }
 
-    if (version.code !== 0) {
+    if (!version || version.code !== 0) {
+      const gitFallback = await this.gitCredentialStatus(checkedAt);
+      if (gitFallback) return this.remember(gitFallback);
       return this.remember({
         provider: "github",
         hostname: "github.com",
@@ -151,14 +190,18 @@ export class GitHubConnectionService implements GitHubConnectionPort {
         cliAvailable: false,
         authenticated: false,
         gitConfigured: false,
-        checkedAt
+        checkedAt,
+        connectionMethod: "NONE",
+        repositoryAccess: false
       });
     }
 
     let auth: GitHubCommandResult;
     try {
-      auth = await this.command(["auth", "status", "--hostname", "github.com"]);
+      auth = await this.gh(["auth", "status", "--hostname", "github.com"]);
     } catch {
+      const gitFallback = await this.gitCredentialStatus(checkedAt);
+      if (gitFallback) return this.remember({ ...gitFallback, cliAvailable: true });
       return this.remember({
         provider: "github",
         hostname: "github.com",
@@ -166,11 +209,17 @@ export class GitHubConnectionService implements GitHubConnectionPort {
         cliAvailable: true,
         authenticated: false,
         gitConfigured: false,
-        checkedAt
+        checkedAt,
+        connectionMethod: "NONE",
+        repositoryAccess: false
       });
     }
 
     const authenticated = auth.code === 0;
+    if (!authenticated) {
+      const gitFallback = await this.gitCredentialStatus(checkedAt);
+      if (gitFallback) return this.remember({ ...gitFallback, cliAvailable: true });
+    }
     return this.remember({
       provider: "github",
       hostname: "github.com",
@@ -178,16 +227,19 @@ export class GitHubConnectionService implements GitHubConnectionPort {
       cliAvailable: true,
       authenticated,
       gitConfigured: authenticated,
-      checkedAt
+      checkedAt,
+      connectionMethod: authenticated ? "GH_CLI" : "NONE",
+      repositoryAccess: authenticated
     });
   }
 
   private async connectApproved(): Promise<GitHubConnectionStatus> {
     const before = await this.status(true);
+    if (before.state === "CONNECTED" && before.repositoryAccess !== false) return before;
     if (!before.cliAvailable) throw new GitHubConnectionError("GITHUB_CLI_UNAVAILABLE", 503);
 
     if (!before.authenticated) {
-      const login = await this.command([
+      const login = await this.gh([
         "auth",
         "login",
         "--hostname",
@@ -200,13 +252,13 @@ export class GitHubConnectionService implements GitHubConnectionPort {
       if (login.code !== 0) throw new GitHubConnectionError("GITHUB_AUTH_FAILED", 502);
     }
 
-    const setup = await this.command(["auth", "setup-git", "--hostname", "github.com"], false, 20_000);
+    const setup = await this.gh(["auth", "setup-git", "--hostname", "github.com"], false, 20_000);
     if (setup.code !== 0) throw new GitHubConnectionError("GITHUB_GIT_SETUP_FAILED", 502);
 
     this.cached = null;
     const after = await this.status(true);
     if (!after.authenticated) throw new GitHubConnectionError("GITHUB_AUTH_FAILED", 502);
-    return this.remember({ ...after, gitConfigured: true, state: "CONNECTED" });
+    return this.remember({ ...after, gitConfigured: true, state: "CONNECTED", connectionMethod: "GH_CLI", repositoryAccess: true });
   }
 
   async connect(approved: boolean): Promise<GitHubConnectionStatus> {
