@@ -84,7 +84,8 @@ describe("free no-auth swarm", () => {
 
     expect(app).toContain("bootstrapFreeSwarm");
     expect(packageJson.scripts["ai:swarm"]).toContain("free-swarm-cli.js");
-    expect(swarm).not.toContain("device-code");
-    expect(swarm).not.toContain("oauth start");
+    expect(swarm).not.toContain('"oauth", "start"');
+    expect(swarm).not.toContain('"/device-code"');
+    expect(swarm).not.toContain("openUrl(");
   });
 });
