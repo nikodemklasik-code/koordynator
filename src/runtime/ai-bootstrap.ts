@@ -1,8 +1,9 @@
 import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
-import { homedir, platform, userInfo } from "node:os";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { resolveOmniRouteApiKey } from "./local-config.js";
 
 export type AiBootstrapRow = {
   key: string;
@@ -91,12 +92,7 @@ function command(name: string, args: string[]): { status: number; stdout: string
 }
 
 export function gatewayKey(): string {
-  const fromEnv = process.env.OMNIROUTE_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-  if (platform() !== "darwin") return "";
-  const account = process.env.USER?.trim() || userInfo().username;
-  const result = command("security", ["find-generic-password", "-a", account, "-s", "hermes-omniroute-api-key", "-w"]);
-  return result.status === 0 ? result.stdout.trim() : "";
+  return resolveOmniRouteApiKey(process.env);
 }
 
 async function serverUp(root: string): Promise<boolean> {

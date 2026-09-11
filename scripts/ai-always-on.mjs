@@ -126,7 +126,8 @@ const {
 } = await import(pathToFileURL(resolve(root, "dist/runtime/hermes-launch.js")).href);
 const {
   mergeEnvText,
-  selectChatModels
+  selectChatModels,
+  bootstrapAi
 } = await import(pathToFileURL(resolve(root, "dist/runtime/ai-bootstrap.js")).href);
 
 loadLocalConfig();
@@ -147,15 +148,30 @@ const familyKeys = [
   "KOORDYNATOR_CLINE_MODEL",
   "KOORDYNATOR_OPENAI_MODEL"
 ];
-const family = Object.fromEntries(
+let family = Object.fromEntries(
   familyKeys
     .map(key => [key, process.env[key]?.trim() || ""])
     .filter(([, value]) => value.length > 0)
 );
-const selected = selectChatModels(family);
+let selected = selectChatModels(family);
+
+// No interactive OAuth by default. If .env has no family slots yet, discover
+// already-connected OmniRoute sessions using the Keychain gateway key.
+if (!selected.primary && !wantLogin) {
+  console.log("\n==> Discover active OmniRoute routes (no login)");
+  await bootstrapAi();
+  loadLocalConfig();
+  family = Object.fromEntries(
+    familyKeys
+      .map(key => [key, process.env[key]?.trim() || ""])
+      .filter(([, value]) => value.length > 0)
+  );
+  selected = selectChatModels(family);
+}
+
 if (!selected.primary) {
-  console.error("No active model routes in .env yet.");
-  console.error("Run once with login for missing providers:");
+  console.error("No active OmniRoute model routes yet.");
+  console.error("Connect a provider in OmniRoute, or run once:");
   console.error("  npm run ai:always-on -- --login");
   process.exit(1);
 }
