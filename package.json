@@ -24,6 +24,7 @@
     "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden && npm run provider-golden",
     "start": "npm run build && npm run control",
     "doctor:omniroute": "npm run build && node dist/runtime/main.js doctor",
+    "ai:bootstrap": "npm run build && node dist/runtime/main.js bootstrap",
     "hermes": "npm run build && node dist/runtime/main.js hermes",
     "hermes:openai": "npm run build && node dist/runtime/main.js hermes openai",
     "hermes:anthropic": "npm run build && node dist/runtime/main.js hermes anthropic",
@@ -32,7 +33,13 @@
     "hermes:gemini": "npm run build && node dist/runtime/main.js hermes gemini",
     "hermes:kiro": "npm run build && node dist/runtime/main.js hermes kiro",
     "hermes:qoder": "npm run build && node dist/runtime/main.js hermes qoder",
-    "hermes:qwen": "npm run build && node dist/runtime/main.js hermes qwen"
+    "hermes:qwen": "npm run build && node dist/runtime/main.js hermes qwen",
+    "hermes:kimi": "npm run build && node dist/runtime/main.js hermes kimi",
+    "hermes:cursor": "npm run build && node dist/runtime/main.js hermes cursor",
+    "hermes:kilocode": "npm run build && node dist/runtime/main.js hermes kilocode",
+    "hermes:cline": "npm run build && node dist/runtime/main.js hermes cline",
+    "hermes:amazonq": "npm run build && node dist/runtime/main.js hermes amazonq",
+    "hermes:antigravity": "npm run build && node dist/runtime/main.js hermes antigravity"
   },
   "devDependencies": {
     "@types/node": "22.10.0",
