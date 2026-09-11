@@ -122,7 +122,7 @@ describe("Live Chat service", () => {
     service.close();
   });
 
-it("forwards images and documents as multimodal chat content and persists attachment metadata", async () => {
+  it("forwards detected images and extracted document text and persists attachment metadata", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-attachments-"));
     roots.push(root);
     let upstreamPayload: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -139,28 +139,27 @@ it("forwards images and documents as multimodal chat content and persists attach
     });
 
     await service.startMessage(session.sessionId, "Review these", undefined, [
-      { name: "photo.png", mimeType: "image/png", size: 1, dataUrl: "data:image/png;base64,YQ==" },
+      { name: "photo.png", mimeType: "image/png", size: 8, dataUrl: "data:image/png;base64,iVBORw0KGgo=" },
       { name: "brief.pdf", mimeType: "application/pdf", size: 1, dataUrl: "data:application/pdf;base64,Yg==" }
     ]);
     await done;
 
     const user = (upstreamPayload?.messages || []).find((message) => message.role === "user");
     expect(user?.role).toBe("user");
-    expect(Array.isArray(user?.content)).toBe(true);
-    const parts = user?.content as Array<Record<string, unknown>>;
-    expect(parts[0]).toEqual({ type: "text", text: "Review these" });
-    expect(parts.some((part) => part.type === "image_url")).toBe(true);
-    expect(parts.some((part) => part.type === "file")).toBe(false);
-    expect(JSON.stringify(parts)).toContain("brief.pdf");
+    expect(user?.content).toEqual([
+      { type: "text", text: "Review these" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,iVBORw0KGgo=" } },
+      { type: "text", text: "[Attachment: brief.pdf; EXTRACTED]\nb" }
+    ]);
     const restored = await service.getSession(session.sessionId);
     expect(restored?.messages[0]?.attachments?.map((attachment) => [attachment.name, attachment.mimeType, attachment.size])).toEqual([
-      ["photo.png", "image/png", 1],
-      ["brief.pdf", "application/pdf", 1]
+      ["photo.png", "image/png", 8],
+      ["brief.pdf", "text/plain", 1]
     ]);
     service.close();
   });
 
-  it("rejects unsupported and oversized attachments before contacting the model", async () => {
+  it("rejects invalid MIME metadata and oversized attachments before contacting the model", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-attachments-"));
     roots.push(root);
     let calls = 0;
@@ -172,8 +171,8 @@ it("forwards images and documents as multimodal chat content and persists attach
     const session = await service.createSession();
 
     await expect(service.startMessage(session.sessionId, "", undefined, [
-      { name: "script.sh", mimeType: "application/x-sh", size: 1, dataUrl: "data:application/x-sh;base64,YQ==" }
-    ])).rejects.toThrow("CHAT_ATTACHMENT_TYPE_UNSUPPORTED");
+      { name: "script.sh", mimeType: "invalid", size: 1, dataUrl: "data:application/x-sh;base64,YQ==" }
+    ])).rejects.toThrow("CHAT_ATTACHMENTS_INVALID");
     await expect(service.startMessage(session.sessionId, "", undefined, [
       { name: "photo.png", mimeType: "image/png", size: 2, dataUrl: "data:image/png;base64,YWI=" }
     ])).rejects.toThrow("CHAT_ATTACHMENT_TOO_LARGE");

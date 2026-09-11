@@ -1,3 +1,4 @@
+import { createRepositoryExecutor } from "./hermes-repository-runner.js";
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
@@ -28,6 +29,7 @@ export type ControlServerOptions = {
   controlToken?: string;
   chatAllowGithubContext?: boolean;
   chatAllowWorkspaceContext?: boolean;
+  chatAllowRepositoryExecution?: boolean;
   chatEndpoint?: string;
   chatApiKey?: string;
   chatApiKeyEnv?: string;
@@ -185,6 +187,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
   const chat = new ChatService({
     stateDir,
+    ...(options.chatAllowRepositoryExecution ? { repositoryExecutor: createRepositoryExecutor(stateDir) } : {}),
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
@@ -245,8 +248,9 @@ export function createControlServer(options: ControlServerOptions): Server {
         if (billingError) throw new ChatServiceError(billingError, 403);
 
         const clientAttachments = payload.attachments ?? [];
-        let repoContext = wantsGithubContext(options) ? await githubRepositories.fromMessage(payload.message) : null;
-        if (!repoContext && wantsWorkspaceContext(options)) {
+        const isRepoTask = /^\s*\/repo(?:\s|$)/.test(payload.message);
+        let repoContext = !isRepoTask && wantsGithubContext(options) ? await githubRepositories.fromMessage(payload.message) : null;
+        if (!repoContext && !isRepoTask && wantsWorkspaceContext(options)) {
           repoContext = await workspaceRepositories.fromMessage(payload.message);
         }
         if (repoContext && clientAttachments.length >= 5) throw new ChatServiceError("CHAT_REPOSITORY_CONTEXT_ATTACHMENT_LIMIT", 413);

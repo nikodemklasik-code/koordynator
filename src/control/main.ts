@@ -30,6 +30,7 @@ const server = createControlServer({
   ...(controlToken === undefined ? {} : { controlToken }),
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT !== "0",
   chatAllowWorkspaceContext: process.env.KOORDYNATOR_CHAT_WORKSPACE_CONTEXT !== "0",
+  chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",

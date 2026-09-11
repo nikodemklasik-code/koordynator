@@ -42,6 +42,7 @@ const MIME_BY_EXTENSION = {
   jpeg: "image/jpeg",
   webp: "image/webp",
   gif: "image/gif",
+  zip: "application/zip",
   pdf: "application/pdf",
   txt: "text/plain",
   md: "text/markdown",
@@ -164,27 +165,7 @@ function resolvedMime(file) {
   const byExt = MIME_BY_EXTENSION[fileExtension(file.name)];
   if (byExt) return byExt;
   if (TEXTUAL_EXTENSIONS.has(fileExtension(file.name)) || TEXTUAL_EXTENSIONS.has(file.name.toLowerCase())) return "text/plain";
-  return declared;
-}
-
-function isTextualFile(file, mimeType) {
-  if (mimeType.startsWith("text/") || mimeType === "application/json" || mimeType === "application/xml") return true;
-  const ext = fileExtension(file.name);
-  return TEXTUAL_EXTENSIONS.has(ext) || TEXTUAL_EXTENSIONS.has(file.name.toLowerCase());
-}
-
-function readAsText(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("ATTACHMENT_READ_FAILED"));
-    reader.onerror = () => reject(reader.error || new Error("ATTACHMENT_READ_FAILED"));
-    reader.readAsText(file);
-  });
-}
-
-function textToDataUrl(text) {
-  const base64 = btoa(unescape(encodeURIComponent(text)));
-  return `data:text/plain;base64,${base64}`;
+  return declared || "application/octet-stream";
 }
 
 function extractGithubUrls(text) {
@@ -278,11 +259,6 @@ async function addFiles(fileList) {
   }
   let nextTotal = totalPendingBytes();
   for (const file of files) {
-    const mimeType = resolvedMime(file);
-    if (!ALLOWED_MIME_TYPES.has(mimeType) && !isTextualFile(file, mimeType)) {
-      showAttachmentError(`Unsupported file type: ${file.name}`);
-      return;
-    }
     if (file.size > MAX_ATTACHMENT_BYTES) {
       showAttachmentError(`${file.name} is larger than 10 MB.`);
       return;
@@ -300,27 +276,15 @@ async function addFiles(fileList) {
   try {
     for (const file of files) {
       const mimeType = resolvedMime(file);
-      if (isTextualFile(file, mimeType)) {
-        const text = await readAsText(file);
-        const clipped = text.length > 200_000 ? `${text.slice(0, 200_000)}\n\n[truncated]` : text;
-        const dataUrl = textToDataUrl(clipped);
-        state.pendingAttachments.push({
-          clientId: createClientId(),
-          name: file.name,
-          mimeType: "text/plain",
-          size: new TextEncoder().encode(clipped).length,
-          dataUrl
-        });
-      } else {
-        const dataUrl = await readAsDataUrl(file);
-        state.pendingAttachments.push({
-          clientId: createClientId(),
-          name: file.name,
-          mimeType,
-          size: file.size,
-          dataUrl
-        });
-      }
+      const rawDataUrl = await readAsDataUrl(file);
+      const dataUrl = `data:${mimeType};base64,${rawDataUrl.split(",")[1]}`;
+      state.pendingAttachments.push({
+        clientId: createClientId(),
+        name: file.name,
+        mimeType,
+        size: file.size,
+        dataUrl
+      });
     }
     renderPendingAttachments();
   } catch {
@@ -515,6 +479,8 @@ function renderMessageAttachments(container, attachments = []) {
     const label = document.createElement("span");
     label.className = "message-attachment-name";
     label.textContent = `${attachment.name || "attachment"} · ${formatBytes(Number(attachment.size) || 0)}`;
+    const status = { EXTRACTED: "tekst odczytany", VISION_REQUIRED: "wymaga odczytu obrazu/OCR", UNSUPPORTED: "format nieodczytany" }[attachment.extractionStatus];
+    if (status) label.textContent += ` · ${status}`;
     label.title = attachment.name || "attachment";
     item.appendChild(label);
     wrap.appendChild(item);
@@ -620,6 +586,14 @@ function applyEvent(event) {
 
 function humanError(code) {
   const known = {
+    REPO_EXECUTION_DISABLED: "Uruchom serwer z KOORDYNATOR_CHAT_REPO_EXECUTION=1",
+    REPO_TASK_INVALID_USE_REPO_URL_TASK: "Użyj: /repo https://github.com/owner/repo zadanie",
+    REPO_EXECUTABLE_UNAVAILABLE: "Nie znaleziono git, gh lub hermes w środowisku serwera",
+    REPO_COMMAND_FAILED: "Polecenie wykonawcy nie powiodło się. Sprawdź logowanie gh i instalację Hermesa.",
+    CHAT_ATTACHMENT_PARSE_FAILED: "Nie udało się odczytać pliku. Może być uszkodzony lub zaszyfrowany.",
+    CHAT_ATTACHMENT_PARSE_TIMEOUT: "Odczyt pliku przekroczył limit czasu",
+    CHAT_ARCHIVE_LIMIT: "ZIP przekracza limit rozpakowanych danych lub liczby plików",
+    CHAT_ARCHIVE_PATH_UNSAFE: "ZIP zawiera nieprawidłowe ścieżki",
     CHAT_AUTH_REQUIRED: "OmniRoute authorization unavailable",
     CHAT_RATE_LIMITED: "Rate limited — try another model or wait for quota reset",
     CHAT_TIMEOUT: "Request timed out",
