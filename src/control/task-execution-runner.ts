@@ -6,6 +6,8 @@ import { FileStateStore } from "../store/file-state-store.js";
 import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
 import { controlRoots } from "./task-read-model.js";
 import { runCommand } from "./hermes-repository-runner.js";
+import { WriteLeaseRegistry } from "../domain/write-lease.js";
+import { evaluateTestReceipt } from "../domain/independent-test-receipt.js";
 
 export type AgentContext = {
   taskId: TaskId;
@@ -20,6 +22,8 @@ export type AgentContext = {
 export type AgentResult = { summary: string };
 export type TaskAgent = (context: AgentContext) => Promise<AgentResult>;
 
+export type IndependentVerifier = () => Promise<{ command: string; exitCode: number; status: "PASS" | "FAIL" | "NOT_RUN" }>;
+
 export type TaskRunResult = {
   taskId: TaskId;
   state: "BUILD_READY";
@@ -28,6 +32,8 @@ export type TaskRunResult = {
   commit?: string;
   pushed: false;
   summary: string;
+  testVerdict: "PASS" | "FAIL" | "BLOCKED";
+  writeLeaseId?: string;
 };
 
 export type TaskPushResult = { taskId: TaskId; branch: string; pushed: true; remote: string };
@@ -43,6 +49,9 @@ export type TaskExecutionRunnerOptions = {
   stateDir: string;
   projectRoot: string;
   agent: TaskAgent;
+  leases?: WriteLeaseRegistry;
+  repository?: string;
+  verifier?: IndependentVerifier;
 };
 
 function agentPrompt(context: Omit<AgentContext, "prompt">): string {
@@ -91,17 +100,32 @@ export class TaskExecutionRunner {
     const order = signed?.order;
     const branch = `koordynator/task-${taskId.toLowerCase()}-${randomUUID().slice(0, 8)}`;
     const baseBranch = (await this.git(["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+    const allowedPaths = order?.scope.allowedPaths ?? ["**"];
+    let leaseId: string | undefined;
 
     await this.states.save({ ...current, state: "BUILDING", changedAt: new Date().toISOString() });
     await this.git(["switch", "-c", branch]);
 
     try {
+      if (this.options.leases) {
+        const lease = this.options.leases.grant({
+          taskId,
+          revision: current.revision,
+          owner: "opencode",
+          stage: "CODE",
+          repository: this.options.repository ?? "local",
+          branch,
+          paths: allowedPaths,
+          ttlMs: 30 * 60_000
+        });
+        leaseId = lease.leaseId;
+      }
       const context: Omit<AgentContext, "prompt"> = {
         taskId,
         branch,
         cwd: resolve(this.options.projectRoot),
         objective: order?.objective ?? "Zadanie orkiestracji",
-        allowedPaths: order?.scope.allowedPaths ?? ["**"],
+        allowedPaths,
         acceptanceCriteria: order?.acceptanceCriteria ?? []
       };
       const result = await this.options.agent({ ...context, prompt: agentPrompt(context) });
@@ -114,6 +138,12 @@ export class TaskExecutionRunner {
         commit = (await this.git(["rev-parse", "HEAD"])).trim();
       }
 
+      const testClaim = this.options.verifier
+        ? { verifier: "independent" as const, ...(await this.options.verifier()) }
+        : { source: "SEE_AGENT_REPORT" as const };
+      const testVerdict = evaluateTestReceipt(testClaim).verdict;
+      if (testVerdict === "FAIL") throw new TaskExecutionError("INDEPENDENT_TESTS_FAILED", 409);
+
       // Leave the working tree where the operator left it; the work lives on the branch.
       await this.git(["switch", baseBranch]);
       await this.states.save({ ...current, state: "BUILD_READY", reasonCode: "BUILD", changedAt: new Date().toISOString() });
@@ -122,7 +152,8 @@ export class TaskExecutionRunner {
         taskId, state: "BUILD_READY", branch,
         committed: Boolean(commit),
         ...(commit === undefined ? {} : { commit }),
-        pushed: false, summary: result.summary
+        pushed: false, summary: result.summary, testVerdict,
+        ...(leaseId === undefined ? {} : { writeLeaseId: leaseId })
       };
       await mkdir(this.runRoot, { recursive: true, mode: 0o700 });
       await writeFile(join(this.runRoot, `${taskId}.json`), `${JSON.stringify(receipt, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -135,6 +166,8 @@ export class TaskExecutionRunner {
       const reason = error instanceof Error ? error.message : "AGENT_FAILED";
       await this.states.save({ ...current, state: "FAILED", reasonCode: reason.slice(0, 80), changedAt: new Date().toISOString() });
       throw error;
+    } finally {
+      if (leaseId && this.options.leases) this.options.leases.release(leaseId);
     }
   }
 

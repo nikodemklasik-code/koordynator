@@ -39,7 +39,7 @@ const server = createControlServer({
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
-  chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean),
+  chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "gc/grok-4.6,cx/gpt-5.5,cx/gpt-5.6-sol").split(",").map((model) => model.trim()).filter(Boolean),
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   ...(signing === null ? {} : {
     materialisationPrivateKeyPem: signing.privateKeyPem,

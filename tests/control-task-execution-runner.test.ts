@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { describe, expect, it, afterEach } from "vitest";
 import { FileStateStore } from "../src/store/file-state-store.js";
 import { TaskExecutionRunner } from "../src/control/task-execution-runner.js";
+import { WriteLeaseRegistry } from "../src/domain/write-lease.js";
 import type { TaskId, WorkspaceId } from "../src/domain/ids.js";
 
 const roots: string[] = [];
@@ -154,5 +155,47 @@ describe("Task execution runner (local, no GitHub)", () => {
     expect(prompt).toContain(TASK);
     expect(prompt).toMatch(/do not push|nie pushuj/i);
     expect(prompt).toMatch(/do not merge|nie scalaj/i);
+  });
+
+  it("holds a write lease during the agent and records an independent test receipt", async () => {
+    const { repo, state } = await fixture();
+    const leases = new WriteLeaseRegistry();
+    let held = false;
+    const runner = new TaskExecutionRunner({
+      stateDir: state,
+      projectRoot: repo,
+      leases,
+      repository: "nikodemklasik-code/koordynator",
+      verifier: async () => ({ command: "npx vitest run", exitCode: 0, status: "PASS" as const }),
+      agent: async (context) => {
+        expect(() => leases.grant({
+          taskId: "TASK-OVERLAP",
+          revision: 1,
+          owner: "other",
+          stage: "CODE",
+          repository: "nikodemklasik-code/koordynator",
+          branch: context.branch,
+          paths: ["feature.txt"],
+          ttlMs: 60_000
+        })).toThrow(/WRITE_LEASE_CONFLICT/);
+        held = true;
+        await writeFile(join(repo, "feature.txt"), "ok\n");
+        return { summary: "ok" };
+      }
+    });
+    const first = await runner.run(TASK);
+    expect(held).toBe(true);
+    expect(first.testVerdict).toBe("PASS");
+    expect(first.writeLeaseId).toMatch(/^LEASE-/);
+    expect(leases.grant({
+      taskId: "TASK-AFTER",
+      revision: 1,
+      owner: "next",
+      stage: "CODE",
+      repository: "nikodemklasik-code/koordynator",
+      branch: first.branch,
+      paths: ["feature.txt"],
+      ttlMs: 60_000
+    }).owner).toBe("next");
   });
 });

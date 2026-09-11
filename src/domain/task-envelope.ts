@@ -49,6 +49,7 @@ export function assertRelativePath(path: string, code = "TASK_ENVELOPE_PATH_INVA
   if (typeof path !== "string" || !path.trim()) throw new Error(code);
   const trimmed = path.trim();
   if (trimmed.startsWith("/") || trimmed.includes("\\") || trimmed.includes("\0")) throw new Error(code);
+  if (trimmed === "*" || trimmed === "**") return "*";
   const parts = trimmed.split("/");
   if (parts.some((part) => part === ".." || part === ".")) throw new Error(code);
   return trimmed.replace(/\/+$/, "") || trimmed;

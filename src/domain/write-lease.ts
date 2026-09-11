@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { assertRelativePath } from "./task-envelope.js";
 import type { TaskId } from "./ids.js";
 
-export type WriteLeaseStage = "UI_BUILD" | "UI_REPAIR" | "CODE_REVIEW" | "BROWSER_TEST" | "UI_VALIDATION";
+export type WriteLeaseStage = "UI_BUILD" | "UI_REPAIR" | "CODE" | "CODE_REVIEW" | "BROWSER_TEST" | "UI_VALIDATION";
 
-const WRITE_STAGES = new Set<WriteLeaseStage>(["UI_BUILD", "UI_REPAIR"]);
+const WRITE_STAGES = new Set<WriteLeaseStage>(["UI_BUILD", "UI_REPAIR", "CODE"]);
 
 export type WriteLeaseRequest = {
   taskId: TaskId | string;
@@ -38,6 +38,7 @@ function normalizePaths(paths: string[]): string[] {
 }
 
 export function pathsOverlap(left: string[], right: string[]): boolean {
+  if (left.includes("*") || right.includes("*")) return true;
   for (const a of left) {
     for (const b of right) {
       if (a === b || b.startsWith(`${a}/`) || a.startsWith(`${b}/`)) return true;
