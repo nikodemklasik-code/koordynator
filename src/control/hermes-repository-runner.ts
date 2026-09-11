@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { prepareHermes } from "../runtime/hermes-launch.js";
+import { evaluateTestReceipt } from "../domain/independent-test-receipt.js";
 
 export function repositoryTask(text: string): { repository: string; task: string } | null {
   if (!/^\/repo(?:\s|$)/.test(text.trim())) return null;
@@ -97,7 +98,13 @@ export function createRepositoryExecutor(stateDir: string): RepositoryExecutor {
       { ...launch.env, GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1" }, run.signal);
     if (!output.trim()) throw new Error("HERMES_EMPTY_RESULT");
     const clean = output.split(run.apiKey).join("[REDACTED]").replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, "[REDACTED]");
-    await writeFile(join(job, "receipt.json"), JSON.stringify({ repository: request.repository, branch, base: head, model: run.model, completedAt: new Date().toISOString(), status: "PROCESS_COMPLETED", tests: "SEE_AGENT_REPORT" }), { mode: 0o600 });
+    const tests = "SEE_AGENT_REPORT";
+    const testReceipt = evaluateTestReceipt({ source: tests });
+    await writeFile(join(job, "receipt.json"), JSON.stringify({
+      repository: request.repository, branch, base: head, model: run.model,
+      completedAt: new Date().toISOString(), status: "PROCESS_COMPLETED", tests,
+      testVerdict: testReceipt.verdict
+    }), { mode: 0o600 });
     run.emit(`\n${clean}\nProces Hermesa zakończony. Wyniki testów i PR: patrz raport agenta powyżej.\n`);
   };
 }

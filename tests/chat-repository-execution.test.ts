@@ -58,8 +58,9 @@ if(command==='git') {
 else {
   const config=JSON.parse(readFileSync(process.env.HERMES_HOME+'/config.yaml','utf8'));
   if(config.model.default!=='cx/test' || config.model.base_url!=='http://127.0.0.1:20128/v1') process.exit(2);
+  if(config.model.api_key || config.model.key_env!=='OPENAI_API_KEY') process.exit(4);
   if(!args.includes('-q') || !args.includes('--quiet')) process.exit(3);
-  process.stdout.write('Agent fixture completed '+config.model.api_key);
+  process.stdout.write('Agent fixture completed '+process.env.OPENAI_API_KEY);
 }
 `;
     try {
@@ -71,7 +72,10 @@ else {
       expect(chunks.join("")).not.toContain("fixture-sensitive-key");
       const jobs = await readdir(join(root,"repository-jobs"));
       const job = join(root,"repository-jobs",jobs[0]!);
-      expect(JSON.parse(await readFile(join(job,"receipt.json"),"utf8")).status).toBe("PROCESS_COMPLETED");
+      const receipt = JSON.parse(await readFile(join(job,"receipt.json"),"utf8"));
+      expect(receipt.status).toBe("PROCESS_COMPLETED");
+      expect(receipt.tests).toBe("SEE_AGENT_REPORT");
+      expect(receipt.testVerdict).toBe("BLOCKED");
       expect(await readFile(join(job,"attachments","0-input.txt"),"utf8")).toBe("hi");
       expect(process.cwd()).toBe(originalCwd);
     } finally { process.env.PATH=previousPath; await rm(root,{recursive:true,force:true}); }
