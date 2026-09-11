@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import { describe, expect, it } from "vitest";
 
 describe("Control frontend runtime truth", () => {
+  it("parses the runtime health browser script", async () => {
+    const source = await readFile(new URL("../web/control/chat-usage.js", import.meta.url), "utf8");
+    expect(() => new vm.Script(source, { filename: "chat-usage.js" })).not.toThrow();
+  });
+
   it("reconciles the model picker against live OmniRoute health instead of trusting stale catalog/session state", async () => {
     const source = await readFile(new URL("../web/control/chat-usage.js", import.meta.url), "utf8");
 
