@@ -9,8 +9,24 @@ import { createControlServer } from "../src/control/server.js";
 
 const roots: string[] = [];
 
+// The control server can still be flushing session files when the test ends; a single rm
+// then loses the race with ENOTEMPTY/EBUSY. Retry briefly instead of failing the suite.
+async function removeRoot(root: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOTEMPTY" && code !== "EBUSY") throw error;
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 25 * (attempt + 1)));
+    }
+  }
+  await rm(root, { recursive: true, force: true });
+}
+
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(roots.splice(0).map((root) => removeRoot(root)));
 });
 
 function catalogWith(source: ChatModelBillingSource, model = "auto/best-free"): ChatModelCatalog {
@@ -114,9 +130,11 @@ describe("Live Chat strict billing provenance", () => {
       expect(accepted.status).toBe(202);
       const acceptedPayload = await accepted.json() as { billingSource: string };
       expect(acceptedPayload.billingSource).toBe("FREE_CONFIRMED");
-      expect(counter.calls).toBe(1);
 
+      // 202 is returned before the upstream call is issued (generation is fire-and-forget),
+      // so the upstream call count is only meaningful once generation has completed.
       const assistant = await waitForComplete(base, session.sessionId);
+      expect(counter.calls).toBe(1);
       expect(assistant.providerRequestId).toBe("req-billing-1");
       expect(assistant.billing).toMatchObject({ source: "FREE_CONFIRMED", allowed: true, decision: "ALLOW_FREE_CONFIRMED", transport: "OMNIROUTE_API", subscriptionHarnessUsed: false });
       expect(assistant.usage).toEqual({ reportedBy: "PROVIDER", inputTokens: 12, outputTokens: 7, totalTokens: 19 });

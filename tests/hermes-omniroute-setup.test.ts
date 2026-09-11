@@ -108,10 +108,17 @@ describe("Hermes / OmniRoute operator setup", () => {
   it("creates endpoint-bound Hermes config, keeps secrets out of argv and rejects profile symlinks", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-"));
     try {
-      const launch = await prepareHermes(settings, root);
+      // prepareHermes reads the real process.env by default, so an operator shell with
+      // KOORDYNATOR_FALLBACK_MODELS set would leak fallbacks into this assertion.
+      const launch = await prepareHermes(settings, root, {
+        ...process.env,
+        KOORDYNATOR_FALLBACK_MODELS: ""
+      } as NodeJS.ProcessEnv);
       const path = join(launch.env.HERMES_HOME, "config.yaml");
       const config = JSON.parse(await readFile(path, "utf8"));
       expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions", api_key: settings.apiKey });
+      expect(config.approvals).toEqual({ mode: "smart" });
+      expect(config.disabled_toolsets).toEqual(["terminal"]);
       expect(config.fallback_providers).toBeUndefined();
       expect((await stat(path)).mode & 0o777).toBe(0o600);
       expect(launch.args).toEqual(["chat", "--provider", "custom", "--model", settings.model]);
