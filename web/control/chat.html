@@ -50,6 +50,7 @@
             <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
             <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
             <button class="secondary-button chat-action-button" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
+            <button class="secondary-button chat-action-button" id="muteHermesButton" type="button" title="Schowaj lub pokaż terminal Hermesa">Wycisz terminal</button>
             <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
             <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
             <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
@@ -57,6 +58,7 @@
         </div>
       </section>
 
+      <section class="chat-workspace" id="chatWorkspace">
       <section class="chat-frame" id="chatFrame" aria-label="Live conversation">
         <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
         <div class="chat-connection-bar">
@@ -106,6 +108,22 @@
           <div class="stage-zero-notice hidden" id="stageZeroNotice" role="status" aria-live="polite"></div>
           <div class="composer-note">Loading route provenance. Models that cannot execute under the active billing policy are not shown.</div>
         </div>
+      </section>
+      <aside class="hermes-pane" id="hermesPane" aria-label="Hermes terminal">
+        <div class="hermes-pane-head">
+          <div>
+            <div class="chat-kicker">HERMES PTY</div>
+            <strong id="hermesPaneTitle">Terminal</strong>
+          </div>
+          <div class="hermes-pane-actions">
+            <span class="hermes-state" id="hermesState">OFF</span>
+            <button class="secondary-button chat-action-button" id="startHermesButton" type="button">Start Hermes</button>
+            <button class="secondary-button chat-action-button" id="stopHermesButton" type="button">Stop</button>
+          </div>
+        </div>
+        <pre class="hermes-term" id="hermesTerm" tabindex="0" aria-label="Hermes terminal output"></pre>
+        <p class="hermes-hint" id="hermesHint">Grant terminal on Providers, then Start. Click the pane and type — this is a real PTY, not Live Chat.</p>
+      </aside>
       </section>
 
       <footer class="statusbar chat-statusbar">

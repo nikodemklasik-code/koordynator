@@ -7,6 +7,9 @@ const state = {
   connected: false,
   preparingAttachments: false,
   stageZeroRunning: false,
+  hermesMuted: false,
+  hermesSessionId: null,
+  hermesSource: null,
   pendingAttachments: [],
   messages: new Map()
 };
@@ -115,6 +118,14 @@ const exportPdfButton = $("exportPdfButton");
 const exportZipButton = $("exportZipButton");
 const stageZeroButton = $("stageZeroButton");
 const stageZeroNotice = $("stageZeroNotice");
+const muteHermesButton = $("muteHermesButton");
+const startHermesButton = $("startHermesButton");
+const stopHermesButton = $("stopHermesButton");
+const hermesPane = $("hermesPane");
+const hermesTerm = $("hermesTerm");
+const hermesState = $("hermesState");
+const hermesHint = $("hermesHint");
+const MUTE_KEY = "koordynator.liveChat.hermesMuted";
 let dragDepth = 0;
 
 function nearBottom() {
@@ -959,6 +970,104 @@ async function runStageZero() {
   }
 }
 
+function setHermesState(label) {
+  if (hermesState) hermesState.textContent = label;
+}
+
+function applyHermesMute() {
+  document.body.classList.toggle("chat-hermes-muted", state.hermesMuted);
+  if (muteHermesButton) muteHermesButton.textContent = state.hermesMuted ? "Pokaż terminal" : "Wycisz terminal";
+}
+
+function toggleHermesMute() {
+  state.hermesMuted = !state.hermesMuted;
+  try { localStorage.setItem(MUTE_KEY, state.hermesMuted ? "1" : "0"); } catch { /* private mode */ }
+  applyHermesMute();
+}
+
+function appendHermesOutput(text) {
+  if (!hermesTerm || !text) return;
+  hermesTerm.textContent += text;
+  if (hermesTerm.textContent.length > 200_000) hermesTerm.textContent = hermesTerm.textContent.slice(-160_000);
+  hermesTerm.scrollTop = hermesTerm.scrollHeight;
+}
+
+function hermesKeyData(event) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return "";
+  if (event.key === "Enter") return "\r";
+  if (event.key === "Backspace") return "\u007f";
+  if (event.key === "Tab") return "\t";
+  if (event.key === "Escape") return "\u001b";
+  if (event.key.length === 1) return event.key;
+  return "";
+}
+
+async function sendHermesInput(data) {
+  if (!state.hermesSessionId || !data) return;
+  await fetch(`/api/hermes/pty/${encodeURIComponent(state.hermesSessionId)}/input`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ data })
+  });
+}
+
+function connectHermesEvents(sessionId) {
+  state.hermesSource?.close();
+  const source = new EventSource(`/api/hermes/pty/${encodeURIComponent(sessionId)}/events`);
+  state.hermesSource = source;
+  source.onmessage = (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      if (payload.type === "out") appendHermesOutput(payload.text);
+      if (payload.type === "exit") {
+        setHermesState("OFF");
+        state.hermesSessionId = null;
+        if (hermesHint) hermesHint.textContent = `Hermes ended (${payload.code}). Start again to attach a new PTY.`;
+      }
+    } catch { /* ignore */ }
+  };
+  source.onerror = () => setHermesState(state.hermesSessionId ? "LIVE" : "OFF");
+}
+
+async function startHermesPty() {
+  setHermesState("STARTING");
+  if (hermesHint) hermesHint.textContent = "Starting Hermes PTY…";
+  try {
+    const cols = Math.max(40, Math.floor((hermesTerm?.clientWidth || 480) / 8));
+    const rows = Math.max(12, Math.floor((hermesTerm?.clientHeight || 240) / 16));
+    const response = await fetch("/api/hermes/pty", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ cols, rows })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+    state.hermesSessionId = payload.sessionId;
+    if (hermesTerm) hermesTerm.textContent = "";
+    connectHermesEvents(payload.sessionId);
+    setHermesState("LIVE");
+    if (hermesHint) hermesHint.textContent = "Click the terminal and type. This is Hermes, not Live Chat.";
+    hermesTerm?.focus();
+  } catch (error) {
+    setHermesState("OFF");
+    if (hermesHint) hermesHint.textContent = error instanceof Error ? error.message : "HERMES_PTY_FAILED";
+  }
+}
+
+async function stopHermesPty() {
+  const sessionId = state.hermesSessionId;
+  if (!sessionId) return;
+  await fetch(`/api/hermes/pty/${encodeURIComponent(sessionId)}/stop`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}"
+  }).catch(() => {});
+  state.hermesSource?.close();
+  state.hermesSource = null;
+  state.hermesSessionId = null;
+  setHermesState("OFF");
+}
+
 function exportConversation(kind) {
   if (!state.messages.size) {
     setStatus("error", "Nothing to export yet");
@@ -1132,10 +1241,22 @@ stopButton.addEventListener("click", () => void stopGeneration());
 newChatButton.addEventListener("click", () => void newConversation());
 popoutChatButton?.addEventListener("click", () => openPopoutChat());
 stageZeroButton?.addEventListener("click", () => void runStageZero());
+muteHermesButton?.addEventListener("click", () => toggleHermesMute());
+startHermesButton?.addEventListener("click", () => void startHermesPty());
+stopHermesButton?.addEventListener("click", () => void stopHermesPty());
+hermesTerm?.addEventListener("keydown", (event) => {
+  if (!state.hermesSessionId) return;
+  event.preventDefault();
+  const data = hermesKeyData(event);
+  if (data) void sendHermesInput(data);
+});
+window.addEventListener("beforeunload", () => { state.source?.close(); state.hermesSource?.close(); });
 exportMdButton?.addEventListener("click", () => exportConversation("md"));
 exportPdfButton?.addEventListener("click", () => exportConversation("pdf"));
 exportZipButton?.addEventListener("click", () => exportConversation("zip"));
-window.addEventListener("beforeunload", () => state.source?.close());
+
+try { state.hermesMuted = localStorage.getItem(MUTE_KEY) === "1"; } catch { state.hermesMuted = false; }
+applyHermesMute();
 
 Promise.all([loadHealth(), restoreSession()]).catch((error) => {
   state.generating = false;
