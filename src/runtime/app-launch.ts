@@ -52,7 +52,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  const explicitPort = process.env.KOORDYNATOR_CONTROL_PORT !== undefined;
+  // 8787 is the documented/default port and appears in .env.example, so merely
+  // loading KOORDYNATOR_CONTROL_PORT=8787 must not disable automatic fallback.
+  // Only a non-default configured value is treated as an operator-pinned port.
+  const explicitPort = process.env.KOORDYNATOR_CONTROL_PORT !== undefined && preferredPort !== 8787;
   const port = await chooseControlPort(host, preferredPort, explicitPort);
   const url = browserUrl(host, port);
   if (port !== preferredPort) {
