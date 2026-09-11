@@ -126,6 +126,8 @@ const hermesTerm = $("hermesTerm");
 const hermesState = $("hermesState");
 const hermesHint = $("hermesHint");
 const MUTE_KEY = "koordynator.liveChat.hermesMuted";
+let hermesXterm = null;
+let hermesFit = null;
 let dragDepth = 0;
 
 function nearBottom() {
@@ -977,6 +979,11 @@ function setHermesState(label) {
 function applyHermesMute() {
   document.body.classList.toggle("chat-hermes-muted", state.hermesMuted);
   if (muteHermesButton) muteHermesButton.textContent = state.hermesMuted ? "Pokaż terminal" : "Wycisz terminal";
+  if (!state.hermesMuted) {
+    requestAnimationFrame(() => {
+      try { hermesFit?.fit(); } catch { /* ignore */ }
+    });
+  }
 }
 
 function toggleHermesMute() {
@@ -985,21 +992,41 @@ function toggleHermesMute() {
   applyHermesMute();
 }
 
-function appendHermesOutput(text) {
-  if (!hermesTerm || !text) return;
-  hermesTerm.textContent += text;
-  if (hermesTerm.textContent.length > 200_000) hermesTerm.textContent = hermesTerm.textContent.slice(-160_000);
-  hermesTerm.scrollTop = hermesTerm.scrollHeight;
+function hermesFitAddon() {
+  const exported = typeof FitAddon === "undefined" ? null : FitAddon;
+  if (!exported) return null;
+  const Ctor = exported.FitAddon || exported;
+  try { return new Ctor(); } catch { return null; }
 }
 
-function hermesKeyData(event) {
-  if (event.ctrlKey || event.metaKey || event.altKey) return "";
-  if (event.key === "Enter") return "\r";
-  if (event.key === "Backspace") return "\u007f";
-  if (event.key === "Tab") return "\t";
-  if (event.key === "Escape") return "\u001b";
-  if (event.key.length === 1) return event.key;
-  return "";
+function ensureHermesTerminal() {
+  if (hermesXterm) return hermesXterm;
+  if (!hermesTerm || typeof Terminal !== "function") return null;
+  hermesXterm = new Terminal({
+    convertEol: true,
+    cursorBlink: true,
+    disableStdin: false,
+    fontSize: 12,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+    theme: { background: "#070b0e", foreground: "#d7e8f4", cursor: "#8ac5ff" }
+  });
+  hermesFit = hermesFitAddon();
+  if (hermesFit) hermesXterm.loadAddon(hermesFit);
+  hermesXterm.open(hermesTerm);
+  hermesXterm.onData((data) => { void sendHermesInput(data); });
+  try { hermesFit?.fit(); } catch { /* not yet measured */ }
+  return hermesXterm;
+}
+
+function appendHermesOutput(text) {
+  if (!text) return;
+  const term = ensureHermesTerminal();
+  if (term) {
+    term.write(text);
+    return;
+  }
+  if (!hermesTerm) return;
+  hermesTerm.textContent += text;
 }
 
 async function sendHermesInput(data) {
@@ -1029,12 +1056,23 @@ function connectHermesEvents(sessionId) {
   source.onerror = () => setHermesState(state.hermesSessionId ? "LIVE" : "OFF");
 }
 
+function hermesDimensions() {
+  const term = ensureHermesTerminal();
+  try { hermesFit?.fit(); } catch { /* ignore */ }
+  if (term?.cols && term?.rows) return { cols: term.cols, rows: term.rows };
+  return {
+    cols: Math.max(40, Math.floor((hermesTerm?.clientWidth || 480) / 8)),
+    rows: Math.max(12, Math.floor((hermesTerm?.clientHeight || 240) / 16))
+  };
+}
+
 async function startHermesPty() {
   setHermesState("STARTING");
   if (hermesHint) hermesHint.textContent = "Starting Hermes PTY…";
   try {
-    const cols = Math.max(40, Math.floor((hermesTerm?.clientWidth || 480) / 8));
-    const rows = Math.max(12, Math.floor((hermesTerm?.clientHeight || 240) / 16));
+    const term = ensureHermesTerminal();
+    term?.reset();
+    const { cols, rows } = hermesDimensions();
     const response = await fetch("/api/hermes/pty", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -1043,11 +1081,10 @@ async function startHermesPty() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
     state.hermesSessionId = payload.sessionId;
-    if (hermesTerm) hermesTerm.textContent = "";
     connectHermesEvents(payload.sessionId);
     setHermesState("LIVE");
     if (hermesHint) hermesHint.textContent = "Click the terminal and type. This is Hermes, not Live Chat.";
-    hermesTerm?.focus();
+    term?.focus();
   } catch (error) {
     setHermesState("OFF");
     if (hermesHint) hermesHint.textContent = error instanceof Error ? error.message : "HERMES_PTY_FAILED";
@@ -1244,11 +1281,14 @@ stageZeroButton?.addEventListener("click", () => void runStageZero());
 muteHermesButton?.addEventListener("click", () => toggleHermesMute());
 startHermesButton?.addEventListener("click", () => void startHermesPty());
 stopHermesButton?.addEventListener("click", () => void stopHermesPty());
-hermesTerm?.addEventListener("keydown", (event) => {
+window.addEventListener("resize", () => {
   if (!state.hermesSessionId) return;
-  event.preventDefault();
-  const data = hermesKeyData(event);
-  if (data) void sendHermesInput(data);
+  const { cols, rows } = hermesDimensions();
+  void fetch(`/api/hermes/pty/${encodeURIComponent(state.hermesSessionId)}/resize`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cols, rows })
+  });
 });
 window.addEventListener("beforeunload", () => { state.source?.close(); state.hermesSource?.close(); });
 exportMdButton?.addEventListener("click", () => exportConversation("md"));

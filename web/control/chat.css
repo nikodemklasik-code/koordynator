@@ -17,7 +17,8 @@
 .hermes-pane-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;border-bottom:1px solid #23303a}
 .hermes-pane-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .hermes-state{font-size:10px;letter-spacing:.08em;color:#7f93a6}
-.hermes-term{margin:0;padding:10px 12px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#d7e8f4;background:#070b0e}
+.hermes-term{margin:0;min-height:0;overflow:hidden;background:#070b0e}
+.hermes-term .xterm{height:100%;padding:8px}
 .hermes-hint{margin:0;padding:8px 12px;border-top:1px solid #23303a;color:#7f93a6;font-size:10px;line-height:1.35}
 .chat-hermes-muted .chat-workspace{grid-template-columns:minmax(0,1fr)}
 .chat-hermes-muted .hermes-pane{display:none}
