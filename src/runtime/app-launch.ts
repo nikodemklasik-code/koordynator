@@ -4,6 +4,7 @@ import { platform } from "node:os";
 import { resolve } from "node:path";
 import { bootstrapAi } from "./ai-bootstrap.js";
 import { loadLocalConfig } from "./local-config.js";
+import { chooseControlPort, isKoordynatorControl } from "./control-instance.js";
 
 function browserUrl(host: string, port: number): string {
   const safeHost = host === "0.0.0.0"
@@ -39,14 +40,30 @@ function controlPort(): number {
 async function main(): Promise<void> {
   loadLocalConfig();
 
+  const host = process.env.KOORDYNATOR_CONTROL_HOST ?? "127.0.0.1";
+  const preferredPort = controlPort();
+  const preferredUrl = browserUrl(host, preferredPort);
+
+  // Fast path: if Koordynator is already running, reuse it instead of probing AI
+  // and then crashing with EADDRINUSE.
+  if (await isKoordynatorControl(preferredUrl)) {
+    console.log(`KOORDYNATOR_CONTROL_REUSE ${preferredUrl}`);
+    openUrl(preferredUrl);
+    return;
+  }
+
+  const explicitPort = process.env.KOORDYNATOR_CONTROL_PORT !== undefined;
+  const port = await chooseControlPort(host, preferredPort, explicitPort);
+  const url = browserUrl(host, port);
+  if (port !== preferredPort) {
+    process.env.KOORDYNATOR_CONTROL_PORT = String(port);
+    console.log(`KOORDYNATOR_CONTROL_PORT_BUSY ${preferredPort}; using ${port}`);
+  }
+
   // Reuse only already-persisted OmniRoute sessions. This never starts OAuth.
   await bootstrapAi();
 
-  const host = process.env.KOORDYNATOR_CONTROL_HOST ?? "127.0.0.1";
-  const port = controlPort();
-  const url = browserUrl(host, port);
   const controlEntry = resolve("dist", "control", "main.js");
-
   const child = spawn(process.execPath, [controlEntry], {
     cwd: process.cwd(),
     env: process.env,
