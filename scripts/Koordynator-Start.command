@@ -1,3 +1,4 @@
 #!/bin/zsh
-cd "$(dirname "$0")/.." || exit 1
+cd "/Users/nikodem/koordynator" || exit 1
+git pull --ff-only origin main >/dev/null 2>&1 || true
 npm run start:all
