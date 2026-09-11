@@ -7,15 +7,18 @@ import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.
 import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 import { ReleaseReadModel } from "./release-read-model.js";
 import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
+import { loadChatProjectContext } from "./chat-project-context.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
+import { WorkspaceRepositoryContextService, type WorkspaceRepositoryContextPort } from "./workspace-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
 import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
   stateDir: string;
   webRoot?: string;
+  projectRoot?: string;
   environment?: string;
   region?: string;
   zone?: string;
@@ -24,6 +27,7 @@ export type ControlServerOptions = {
   version?: string;
   controlToken?: string;
   chatAllowGithubContext?: boolean;
+  chatAllowWorkspaceContext?: boolean;
   chatEndpoint?: string;
   chatApiKey?: string;
   chatApiKeyEnv?: string;
@@ -32,6 +36,7 @@ export type ControlServerOptions = {
   chatBillingPolicy?: ChatBillingPolicyOptions;
   githubConnection?: GitHubConnectionPort;
   githubRepositoryContext?: GitHubRepositoryContextPort;
+  workspaceRepositoryContext?: WorkspaceRepositoryContextPort;
   chatModelCatalog?: ChatModelCatalogPort;
 };
 
@@ -146,7 +151,7 @@ function repositoryAttachment(repository: string, commit: string, context: strin
   const data = Buffer.from(context, "utf8");
   const safeRepo = repository.replace(/[^A-Za-z0-9._-]+/g, "-");
   return {
-    name: `GitHub-${safeRepo}-${commit.slice(0, 12)}.txt`,
+    name: `Repo-${safeRepo}-${commit.slice(0, 12)}.txt`,
     mimeType: "text/plain",
     size: data.length,
     dataUrl: `data:text/plain;base64,${data.toString("base64")}`
@@ -157,14 +162,20 @@ function wantsGithubContext(options: ControlServerOptions): boolean {
   return options.chatAllowGithubContext === true;
 }
 
+function wantsWorkspaceContext(options: ControlServerOptions): boolean {
+  return options.chatAllowWorkspaceContext !== false;
+}
+
 export function createControlServer(options: ControlServerOptions): Server {
   const stateDir = resolve(options.stateDir);
+  const projectRoot = resolve(options.projectRoot ?? process.cwd());
   const roots = controlRoots(stateDir);
   const tasks = new TaskReadModel(roots.stateRoot, roots.workOrderRoot, roots.executionRoot);
   const providers = new ProviderReadModel(providerReceiptRoot(stateDir));
   const releases = new ReleaseReadModel(join(stateDir, "release"));
   const github = options.githubConnection ?? new GitHubConnectionService();
   const githubRepositories = options.githubRepositoryContext ?? new GitHubRepositoryContextService();
+  const workspaceRepositories = options.workspaceRepositoryContext ?? new WorkspaceRepositoryContextService(projectRoot);
   const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
@@ -178,7 +189,8 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
     ...(options.chatDefaultModel === undefined ? {} : { defaultModel: options.chatDefaultModel }),
-    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
+    projectContextProvider: () => loadChatProjectContext(projectRoot)
   });
 
   const server = createServer(async (request, response) => {
@@ -233,7 +245,10 @@ export function createControlServer(options: ControlServerOptions): Server {
         if (billingError) throw new ChatServiceError(billingError, 403);
 
         const clientAttachments = payload.attachments ?? [];
-        const repoContext = wantsGithubContext(options) ? await githubRepositories.fromMessage(payload.message) : null;
+        let repoContext = wantsGithubContext(options) ? await githubRepositories.fromMessage(payload.message) : null;
+        if (!repoContext && wantsWorkspaceContext(options)) {
+          repoContext = await workspaceRepositories.fromMessage(payload.message);
+        }
         if (repoContext && clientAttachments.length >= 5) throw new ChatServiceError("CHAT_REPOSITORY_CONTEXT_ATTACHMENT_LIMIT", 413);
         const attachments = repoContext
           ? [...clientAttachments, repositoryAttachment(repoContext.repository, repoContext.commit, repoContext.context)]

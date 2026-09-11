@@ -16,25 +16,47 @@ async function privateFile(path: string, content: string): Promise<void> {
   finally { await file.close(); }
 }
 
+function fallbackProviders(settings: ReturnType<typeof omniRouteSettings>, env: NodeJS.ProcessEnv = process.env) {
+  const seen = new Set<string>();
+  const models: string[] = [];
+  for (const raw of (env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",")) {
+    const model = raw.trim();
+    if (!model || model === settings.model || seen.has(model)) continue;
+    seen.add(model);
+    models.push(model);
+    if (models.length >= 6) break;
+  }
+  return models.map(model => ({
+    provider: "custom",
+    model,
+    base_url: settings.endpoint,
+    // Same gateway key already injected into the Hermes child as OPENAI_API_KEY.
+    key_env: "OPENAI_API_KEY"
+  }));
+}
+
 /** Managed, repo-local profile: global Nous/OpenRouter configuration is never edited. */
-export async function prepareHermes(settings: ReturnType<typeof omniRouteSettings>, root = process.cwd()) {
+export async function prepareHermes(settings: ReturnType<typeof omniRouteSettings>, root = process.cwd(), env: NodeJS.ProcessEnv = process.env) {
   if (!settings.apiKey) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
   const state = resolve(root, ".orchestrator");
   await privateDirectory(state);
   const home = join(state, "hermes-omniroute");
   await privateDirectory(home);
+  const fallbacks = fallbackProviders(settings, env);
   // JSON is valid YAML. The key is bound to this endpoint, not a global OpenAI/OpenRouter key.
-  await privateFile(join(home, "config.yaml"), JSON.stringify({
+  const config: Record<string, unknown> = {
     model: { provider: "custom", default: settings.model, base_url: settings.endpoint,
       api_mode: "chat_completions", api_key: settings.apiKey }
-  }, null, 2) + "\n");
+  };
+  if (fallbacks.length > 0) config.fallback_providers = fallbacks;
+  await privateFile(join(home, "config.yaml"), JSON.stringify(config, null, 2) + "\n");
   // Hermes clears inherited known provider keys when a profile .env exists.
   await privateFile(join(home, ".env"), "# Credentials are endpoint-bound in the managed config.yaml.\n");
   return {
     command: "hermes",
     args: ["chat", "--provider", "custom", "--model", settings.model],
     cwd: resolve(root),
-    env: { ...process.env, HERMES_HOME: home, HERMES_INFERENCE_PROVIDER: "custom",
+    env: { ...env, HERMES_HOME: home, HERMES_INFERENCE_PROVIDER: "custom",
       HERMES_INFERENCE_MODEL: settings.model, CUSTOM_BASE_URL: settings.endpoint,
       OPENAI_BASE_URL: settings.endpoint, OPENAI_API_KEY: settings.apiKey,
       OPENROUTER_API_KEY: "", OPENROUTER_BASE_URL: "" }

@@ -25,10 +25,10 @@ export type AiBootstrapOptions = {
 };
 
 export const AI_TARGETS: Target[] = [
-  { key: "openai", prefixes: ["cx/"], envName: "KOORDYNATOR_OPENAI_MODEL", preferred: ["cx/gpt-5.5"], localImport: "codex" },
-  { key: "anthropic", prefixes: ["cc/"], envName: "KOORDYNATOR_ANTHROPIC_MODEL", preferred: ["cc/claude-opus-5", "cc/claude-sonnet-5"] },
+  { key: "openai", prefixes: ["cx/"], envName: "KOORDYNATOR_OPENAI_MODEL", preferred: ["cx/gpt-5.6-sol", "cx/gpt-5.5"], localImport: "codex" },
+  { key: "anthropic", prefixes: ["cc/"], envName: "KOORDYNATOR_ANTHROPIC_MODEL", preferred: ["cc/claude-opus-5", "cc/claude-sonnet-5", "cc/claude-opus-4-8"] },
   { key: "github", prefixes: ["gh/"], envName: "KOORDYNATOR_GITHUB_COPILOT_MODEL", preferred: [] },
-  { key: "grok", prefixes: ["gc/", "xao/"], envName: "KOORDYNATOR_GROK_MODEL", preferred: [] },
+  { key: "grok", prefixes: ["gc/", "xao/"], envName: "KOORDYNATOR_GROK_MODEL", preferred: ["gc/grok-4.6", "gc/grok-4.5"] },
   { key: "gemini", prefixes: ["gemini-cli/"], envName: "KOORDYNATOR_GEMINI_MODEL", preferred: [] },
   { key: "kimi", prefixes: ["kmc/"], envName: "KOORDYNATOR_KIMI_MODEL", preferred: ["kmc/kimi-k2.6"] },
   { key: "qoder", prefixes: ["if/"], envName: "KOORDYNATOR_QODER_MODEL", preferred: [] },
@@ -38,6 +38,32 @@ export const AI_TARGETS: Target[] = [
   { key: "amazonq", prefixes: ["aq/"], envName: "KOORDYNATOR_AMAZON_Q_MODEL", preferred: [] },
   { key: "antigravity", prefixes: ["agy/"], envName: "KOORDYNATOR_ANTIGRAVITY_MODEL", preferred: [] }
 ];
+
+/** Free OAuth first, then strongest subscription harness; Codex/OpenAI last (quota-prone). */
+export const CHAT_MODEL_PRIORITY = [
+  "KOORDYNATOR_GEMINI_MODEL",
+  "KOORDYNATOR_QWEN_MODEL",
+  "KOORDYNATOR_KIRO_MODEL",
+  "KOORDYNATOR_AMAZON_Q_MODEL",
+  "KOORDYNATOR_ANTIGRAVITY_MODEL",
+  "KOORDYNATOR_QODER_MODEL",
+  "KOORDYNATOR_ANTHROPIC_MODEL",
+  "KOORDYNATOR_GROK_MODEL",
+  "KOORDYNATOR_GITHUB_COPILOT_MODEL",
+  "KOORDYNATOR_KIMI_MODEL",
+  "KOORDYNATOR_CURSOR_MODEL",
+  "KOORDYNATOR_KILOCODE_MODEL",
+  "KOORDYNATOR_CLINE_MODEL",
+  "KOORDYNATOR_OPENAI_MODEL"
+] as const;
+
+export function selectChatModels(updates: Record<string, string>): { primary: string | null; fallbacks: string[] } {
+  const ordered = CHAT_MODEL_PRIORITY
+    .map(key => updates[key]?.trim())
+    .filter((model): model is string => Boolean(model));
+  const unique = [...new Set(ordered)];
+  return { primary: unique[0] ?? null, fallbacks: unique.slice(1, 7) };
+}
 
 type ApiFetch = (path: string, opts?: Record<string, unknown>) => Promise<Response>;
 
@@ -294,16 +320,18 @@ export async function bootstrapAi(_options: AiBootstrapOptions = {}): Promise<Ai
     });
   }
 
-  const primary = updates.KOORDYNATOR_OPENAI_MODEL
-    || updates.KOORDYNATOR_ANTHROPIC_MODEL
-    || Object.values(updates)[0];
-  if (!primary) {
+  const selected = selectChatModels(updates);
+  if (!selected.primary) {
     printRows(rows);
     throw new Error("NO_WORKING_OMNIROUTE_AI_ROUTE");
   }
-
-  updates.KOORDYNATOR_CHAT_MODEL = primary;
+  updates.KOORDYNATOR_CHAT_MODEL = selected.primary;
+  if (selected.fallbacks.length > 0) updates.KOORDYNATOR_FALLBACK_MODELS = selected.fallbacks.join(",");
   persistModels(updates);
   printRows(rows);
+  if (selected.primary) {
+    console.log(`\nPrimary chat model: ${selected.primary}`);
+    if (selected.fallbacks.length > 0) console.log(`Fallbacks: ${selected.fallbacks.join(" -> ")}`);
+  }
   return rows;
 }

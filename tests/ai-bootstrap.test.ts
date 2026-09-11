@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { AI_TARGETS, mergeEnvText } from "../src/runtime/ai-bootstrap.js";
+import { AI_TARGETS, mergeEnvText, selectChatModels } from "../src/runtime/ai-bootstrap.js";
 import { evaluateChatBilling } from "../src/control/chat-billing-policy.js";
 import type { ChatModelCatalog } from "../src/control/chat-model-catalog.js";
 
@@ -62,6 +62,7 @@ describe("AI bootstrap", () => {
     expect(packageJson.scripts.start).toBe("npm run app");
     expect(packageJson.scripts.app).toContain("runtime/app-launch.js");
     expect(packageJson.scripts["ai:bootstrap"]).toContain("runtime/main.js bootstrap");
+    expect(packageJson.scripts["ai:always-on"]).toContain("scripts/ai-always-on.mjs");
     for (const key of ["kimi", "cursor", "kilocode", "cline", "amazonq", "antigravity"]) {
       expect(packageJson.scripts[`hermes:${key}`]).toContain(`hermes ${key}`);
     }
@@ -74,5 +75,24 @@ describe("AI bootstrap", () => {
     expect(bootstrap).not.toContain("/device-code");
     expect(appLaunch).not.toContain("oauth");
     expect(appLaunch).not.toContain("device-code");
+  });
+
+  it("picks free/subscription routes before Codex for the chat primary", () => {
+    expect(selectChatModels({
+      KOORDYNATOR_OPENAI_MODEL: "cx/gpt-5.5",
+      KOORDYNATOR_ANTHROPIC_MODEL: "cc/claude-opus-5",
+      KOORDYNATOR_GROK_MODEL: "gc/grok-4.5"
+    })).toEqual({
+      primary: "cc/claude-opus-5",
+      fallbacks: ["gc/grok-4.5", "cx/gpt-5.5"]
+    });
+    expect(selectChatModels({
+      KOORDYNATOR_GEMINI_MODEL: "gemini-cli/gemini-2.5-pro",
+      KOORDYNATOR_ANTHROPIC_MODEL: "cc/claude-sonnet-5",
+      KOORDYNATOR_OPENAI_MODEL: "cx/gpt-5.6-sol"
+    })).toEqual({
+      primary: "gemini-cli/gemini-2.5-pro",
+      fallbacks: ["cc/claude-sonnet-5", "cx/gpt-5.6-sol"]
+    });
   });
 });

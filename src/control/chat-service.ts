@@ -3,6 +3,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api/provider-usage.js";
 import type { ChatBillingDecision } from "./chat-billing-policy.js";
+import { extractChatAttachmentText } from "./chat-attachment-text.js";
 import { ChatUsageLedger, type ChatUsageSummary } from "./chat-usage-ledger.js";
 
 export type ChatRole = "user" | "assistant";
@@ -81,6 +82,7 @@ export type ChatServiceOptions = {
   maxAttachmentTotalBytes?: number;
   maxHistoryAttachmentBytes?: number;
   timeoutMs?: number;
+  projectContextProvider?: () => Promise<string | null | undefined>;
 };
 
 type Subscriber = (event: ChatEvent) => void;
@@ -89,7 +91,7 @@ type UpstreamTextPart = { type: "text"; text: string };
 type UpstreamImagePart = { type: "image_url"; image_url: { url: string } };
 type UpstreamFilePart = { type: "file"; file: { filename: string; file_data: string } };
 type UpstreamContentPart = UpstreamTextPart | UpstreamImagePart | UpstreamFilePart;
-type UpstreamMessage = { role: ChatRole; content: string | UpstreamContentPart[] };
+type UpstreamMessage = { role: "system" | ChatRole; content: string | UpstreamContentPart[] };
 
 const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
@@ -207,6 +209,7 @@ export class ChatService {
   private readonly maxHistoryAttachmentBytes: number;
   private readonly timeoutMs: number;
   private readonly usageLedger: ChatUsageLedger;
+  private readonly projectContextProvider?: () => Promise<string | null | undefined>;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
   private readonly active = new Map<string, ActiveGeneration>();
 
@@ -226,6 +229,7 @@ export class ChatService {
     this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 24 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 120_000;
     this.usageLedger = new ChatUsageLedger(options.stateDir);
+    if (options.projectContextProvider) this.projectContextProvider = options.projectContextProvider;
   }
 
   private credential(): string | undefined {
@@ -348,7 +352,7 @@ export class ChatService {
     return true;
   }
 
-  private upstreamMessage(message: ChatMessage): UpstreamMessage {
+  private async upstreamMessage(message: ChatMessage): Promise<UpstreamMessage> {
     const attachments = message.role === "user" ? message.attachments ?? [] : [];
     if (attachments.length === 0) return { role: message.role, content: message.content };
     const parts: UpstreamContentPart[] = [];
@@ -358,14 +362,32 @@ export class ChatService {
       if (!match || match[2] === undefined) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
       if (attachment.mimeType.startsWith("image/")) {
         parts.push({ type: "image_url", image_url: { url: attachment.dataUrl } });
-      } else {
-        parts.push({ type: "file", file: { filename: attachment.name, file_data: match[2] } });
+        continue;
       }
+      const bytes = Buffer.from(match[2], "base64");
+      const extracted = await extractChatAttachmentText({
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        bytes
+      });
+      if (extracted) {
+        parts.push({
+          type: "text",
+          text: `Attached file: ${attachment.name}\n--- BEGIN EXTRACTED TEXT ---\n${extracted}\n--- END EXTRACTED TEXT ---`
+        });
+        continue;
+      }
+      // Keep a tiny metadata note rather than sending unsupported binary file parts
+      // (OmniRoute/Grok/Codex reject application/pdf file parts with HTTP 400).
+      parts.push({
+        type: "text",
+        text: `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes). Binary content could not be extracted as text.`
+      });
     }
     return { role: message.role, content: parts };
   }
 
-  private boundedHistory(messages: ChatMessage[]): UpstreamMessage[] {
+  private async boundedHistory(messages: ChatMessage[]): Promise<UpstreamMessage[]> {
     const selected: ChatMessage[] = [];
     let chars = 0;
     let attachmentBytes = 0;
@@ -379,7 +401,16 @@ export class ChatService {
       chars = nextChars;
       attachmentBytes = nextAttachmentBytes;
     }
-    return selected.reverse().map((message) => this.upstreamMessage(message));
+    const history = [];
+    for (const message of selected.reverse()) history.push(await this.upstreamMessage(message));
+    if (!this.projectContextProvider) return history;
+    try {
+      const context = (await this.projectContextProvider())?.trim();
+      if (!context) return history;
+      return [{ role: "system", content: context.slice(0, 24_000) }, ...history];
+    } catch {
+      return history;
+    }
   }
 
   private async recordUsage(assistant: ChatMessage): Promise<boolean> {
@@ -483,7 +514,7 @@ export class ChatService {
       const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: session.model, messages: this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id)), stream: true, stream_options: { include_usage: true } }),
+        body: JSON.stringify({ model: session.model, messages: await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id)), stream: true, stream_options: { include_usage: true } }),
         signal: controller.signal
       });
       if (response.status === 401 || response.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);

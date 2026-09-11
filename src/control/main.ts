@@ -20,6 +20,7 @@ if (!loopback && !controlToken) throw new Error("CONTROL_TOKEN_REQUIRED_FOR_NON_
 
 const server = createControlServer({
   stateDir: resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator"),
+  projectRoot: resolve(process.env.KOORDYNATOR_PROJECT_ROOT ?? process.cwd()),
   ...(process.env.KOORDYNATOR_WEB_ROOT === undefined ? {} : { webRoot: resolve(process.env.KOORDYNATOR_WEB_ROOT) }),
   ...(process.env.KOORDYNATOR_ENVIRONMENT === undefined ? {} : { environment: process.env.KOORDYNATOR_ENVIRONMENT }),
   ...(process.env.KOORDYNATOR_REGION === undefined ? {} : { region: process.env.KOORDYNATOR_REGION }),
@@ -27,7 +28,8 @@ const server = createControlServer({
   ...(process.env.KOORDYNATOR_OPERATOR === undefined ? {} : { operator: process.env.KOORDYNATOR_OPERATOR }),
   chatEndpoint: route.endpoint,
   ...(controlToken === undefined ? {} : { controlToken }),
-  chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT === "1",
+  chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT !== "0",
+  chatAllowWorkspaceContext: process.env.KOORDYNATOR_CHAT_WORKSPACE_CONTEXT !== "0",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",

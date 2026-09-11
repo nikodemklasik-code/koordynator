@@ -63,7 +63,33 @@ Katalog importowany przez użytkownika 2026-09-10 ma 787 pozycji u 12 provideró
 trzy przesłane kopie są równoważne. Nie zawiera dowodu logowania, salda ani
 udanych wywołań i nie jest importowany do repo jako lista działających modeli.
 
-## 3. Uruchamianie
+## 3. Always-on (zalecane)
+
+Jedna komenda lokalnie ustawia działające trasy free/subscription,
+wybiera primary (darmowe OAuth → Claude/Grok → dopiero Codex) i zapisuje
+fallbacki Hermes przez ten sam gateway OmniRoute:
+
+```bash
+npm run ai:always-on
+# opcjonalnie:
+npm run ai:always-on -- --probe
+npm run ai:always-on -- --start
+```
+
+Z GitHuba (świeży Mac):
+
+```bash
+git clone https://github.com/nikodemklasik-code/koordynator.git
+cd koordynator
+npm ci --ignore-scripts
+npm run ai:always-on
+```
+
+Skrypt nie włącza płatnych bezpośrednich kluczy OpenAI/Anthropic.
+Gdy Codex ma 429, primary przechodzi na działającą trasę abonamentową
+(np. `cc/...`), a `cx/...` ląduje na końcu łańcucha fallback.
+
+## 4. Uruchamianie ręczne
 
 ```bash
 npm run doctor:omniroute -- --probe
@@ -109,7 +135,7 @@ opłat ogranicz połączenie/klucz i combo w OmniRoute do uprawnionych tras.
 Nie dodawaj płatnego fallbacku. Nazwa `auto`, `best-free` lub `hermes-free`
 sama nie stanowi potwierdzenia zerowej ceny.
 
-## 4. Diagnostyka i granice testu
+## 5. Diagnostyka i granice testu
 
 | Wynik | Znaczenie / działanie |
 | --- | --- |

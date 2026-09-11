@@ -45,12 +45,19 @@
               <option value="" selected>Loading verified model routes…</option>
             </select>
           </label>
-          <button class="secondary-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">◷ History</button>
-          <button class="secondary-button new-chat-button" id="newChatButton" type="button">＋ New chat</button>
+          <div class="chat-action-group" role="group" aria-label="Chat actions">
+            <button class="secondary-button chat-action-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
+            <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
+            <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
+            <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
+            <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
+            <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
+          </div>
         </div>
       </section>
 
-      <section class="chat-frame" aria-label="Live conversation">
+      <section class="chat-frame" id="chatFrame" aria-label="Live conversation">
+        <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
         <div class="chat-connection-bar">
           <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
           <div class="chat-connection-right">
@@ -69,8 +76,8 @@
           <div class="chat-welcome" id="chatWelcome">
             <div class="welcome-mark">◇</div>
             <h2>Start a conversation</h2>
-            <p>Ask normally. Context is preserved between turns and restored after refresh.</p>
-            <div class="welcome-hints"><span>Real-time streaming</span><span>Persistent transcript</span><span>Files &amp; images</span><span>Chat history</span><span>GitHub permission gate</span></div>
+            <p>Ask normally. Drop files into this window, or drop a GitHub repo link to request repository access.</p>
+            <div class="welcome-hints"><span>Sticky menus</span><span>Scrollable thread</span><span>Drag &amp; drop files</span><span>Code &amp; docs</span><span>GitHub consent</span></div>
           </div>
         </div>
 
@@ -81,7 +88,7 @@
               class="visually-hidden-file"
               type="file"
               multiple
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
               aria-label="Attach files"
             />
             <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>

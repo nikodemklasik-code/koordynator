@@ -16,12 +16,31 @@ const githubChatState = {
   bypassOnce: false
 };
 
+function isLocalWorkspaceIntent(text) {
+  const value = String(text || "").toLowerCase();
+  if (/https?:\/\/(?:www\.)?github\.com\//i.test(value) || /(?:^|[^A-Za-z0-9_])github(?:$|[^A-Za-z0-9_])/i.test(value)) {
+    return false;
+  }
+  return /\b(lokaln\w*|local|workspace|katalog|folder)\b/i.test(value)
+    || (/\b(wejd[zź]|otw[oó]rz|poka[zż]|wczytaj|przeczytaj|odczytaj)\b/i.test(value)
+      && /\b(plik|file|src|docs|agents|kod|codebase)\b/i.test(value));
+}
+
 function isRepositoryIntent(text) {
   const value = String(text || "");
+  if (isLocalWorkspaceIntent(value)) return false;
   return /https?:\/\/(?:www\.)?github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/i.test(value)
     || /(?:^|[^A-Za-z0-9_])github(?:$|[^A-Za-z0-9_])/i.test(value)
     || /(?:^|[^A-Za-z0-9_])repo(?:zytori(?:um|a|ów|u|ach|ami)?|sitory|sitories)?(?:$|[^A-Za-z0-9_])/i.test(value);
 }
+
+window.koordynatorRequestGithubConsent = function requestGithubConsent(message = "") {
+  if (message) githubNotice(message, "pending");
+  if (githubChatState.status?.state === "CONNECTED") return false;
+  githubChatState.pendingSend = true;
+  openGitHubConsent();
+  return true;
+};
 
 function githubNotice(message = "", kind = "") {
   if (!githubChatNotice) return;

@@ -112,6 +112,7 @@ describe("Hermes / OmniRoute operator setup", () => {
       const path = join(launch.env.HERMES_HOME, "config.yaml");
       const config = JSON.parse(await readFile(path, "utf8"));
       expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions", api_key: settings.apiKey });
+      expect(config.fallback_providers).toBeUndefined();
       expect((await stat(path)).mode & 0o777).toBe(0o600);
       expect(launch.args).toEqual(["chat", "--provider", "custom", "--model", settings.model]);
       expect(launch.args.join(" ")).not.toContain(settings.apiKey);
@@ -122,6 +123,21 @@ describe("Hermes / OmniRoute operator setup", () => {
       await symlink(outside, path);
       await expect(prepareHermes(settings, root)).rejects.toThrow();
       expect(await readFile(outside, "utf8")).toBe("preserve");
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it("writes OmniRoute fallback providers into the managed Hermes profile", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-hermes-fallback-"));
+    try {
+      const launch = await prepareHermes(settings, root, {
+        KOORDYNATOR_FALLBACK_MODELS: "cc/claude-opus-5,gc/grok-4.5,cx/gpt-5.5,cx/gpt-5.5"
+      } as NodeJS.ProcessEnv);
+      const config = JSON.parse(await readFile(join(launch.env.HERMES_HOME, "config.yaml"), "utf8"));
+      expect(config.fallback_providers).toEqual([
+        { provider: "custom", model: "cc/claude-opus-5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" },
+        { provider: "custom", model: "gc/grok-4.5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" },
+        { provider: "custom", model: "cx/gpt-5.5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" }
+      ]);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
 });

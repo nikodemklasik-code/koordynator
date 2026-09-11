@@ -10,7 +10,21 @@ import { createControlServer } from "../src/control/server.js";
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  const pending = roots.splice(0);
+  for (const root of pending) {
+    let lastError = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        await rm(root, { recursive: true, force: true });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+    }
+    if (lastError) throw lastError;
+  }
 });
 
 function streamingFetch(chunks = ["Hel", "lo"]): typeof fetch {
@@ -78,7 +92,37 @@ describe("Live Chat service", () => {
     service.close();
   });
 
-  it("forwards images and documents as multimodal chat content and persists attachment metadata", async () => {
+  it("injects project context as a system message without persisting it in the transcript", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-context-"));
+    roots.push(root);
+    let capturedBody: Record<string, unknown> | null = null;
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      capturedBody = JSON.parse(String(init?.body || "{}"));
+      return streamingFetch(["OK"])(_input, init);
+    }) as typeof fetch;
+    const service = new ChatService({
+      stateDir: root,
+      apiKey: "super-secret-test-key",
+      fetchImpl,
+      projectContextProvider: async () => "PROJECT_CONTRACT_CONTEXT"
+    });
+    const session = await service.createSession("openai/gpt-5.6-sol");
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done") resolvePromise();
+      });
+    });
+    await service.startMessage(session.sessionId, "Use project rules");
+    await done;
+    const messages = (capturedBody?.messages as Array<{ role: string; content: unknown }>) ?? [];
+    expect(messages[0]).toMatchObject({ role: "system", content: "PROJECT_CONTRACT_CONTEXT" });
+    const restored = await service.getSession(session.sessionId);
+    expect(restored?.messages.some((message) => message.role === "system")).toBe(false);
+    expect(restored?.messages[0]?.content).toBe("Use project rules");
+    service.close();
+  });
+
+it("forwards images and documents as multimodal chat content and persists attachment metadata", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-attachments-"));
     roots.push(root);
     let upstreamPayload: { messages?: Array<{ role: string; content: unknown }> } | undefined;
@@ -100,13 +144,14 @@ describe("Live Chat service", () => {
     ]);
     await done;
 
-    const user = upstreamPayload?.messages?.[0];
+    const user = (upstreamPayload?.messages || []).find((message) => message.role === "user");
     expect(user?.role).toBe("user");
-    expect(user?.content).toEqual([
-      { type: "text", text: "Review these" },
-      { type: "image_url", image_url: { url: "data:image/png;base64,YQ==" } },
-      { type: "file", file: { filename: "brief.pdf", file_data: "Yg==" } }
-    ]);
+    expect(Array.isArray(user?.content)).toBe(true);
+    const parts = user?.content as Array<Record<string, unknown>>;
+    expect(parts[0]).toEqual({ type: "text", text: "Review these" });
+    expect(parts.some((part) => part.type === "image_url")).toBe(true);
+    expect(parts.some((part) => part.type === "file")).toBe(false);
+    expect(JSON.stringify(parts)).toContain("brief.pdf");
     const restored = await service.getSession(session.sessionId);
     expect(restored?.messages[0]?.attachments?.map((attachment) => [attachment.name, attachment.mimeType, attachment.size])).toEqual([
       ["photo.png", "image/png", 1],
@@ -186,8 +231,39 @@ describe("Live Chat HTTP boundary and UI", () => {
       expect(page).toContain('id="newChatButton"');
       expect(page).toContain('id="attachButton"');
       expect(page).toContain('id="fileInput"');
+      expect(page).toContain('id="chatFrame"');
+      expect(page).toContain('id="chatDropOverlay"');
+      expect(page).toContain('id="popoutChatButton"');
+      expect(page).toContain('id="exportMdButton"');
+      expect(page).toContain('id="exportPdfButton"');
+      expect(page).toContain('id="exportZipButton"');
+      expect(page).toContain("Drop files or a GitHub repo link here");
+      expect(page).toContain("githubChatConsentDialog");
       expect(page).not.toContain("browser-must-never-see-this");
       expect(page.toLowerCase()).not.toContain("deepseek");
+      const css = await fetch(`${base}/chat.css`).then((response) => response.text());
+      expect(css).toContain(".chat-frame.drag-active");
+      expect(css).toContain(".chat-drop-overlay");
+      expect(css).toContain(".chat-action-button");
+      const ui = await fetch(`${base}/control-ui.css`).then((response) => response.text());
+      expect(ui).toContain("position:sticky");
+      expect(ui).toContain("height:100vh");
+      const js = await fetch(`${base}/chat.js`).then((response) => response.text());
+      expect(js).toContain("handleDroppedPayload");
+      expect(js).toContain("TEXTUAL_EXTENSIONS");
+      expect(js).toContain("extractGithubUrls");
+      expect(js).toContain("createCopyButton");
+      expect(js).toContain("Copy code");
+      expect(js).toContain("Copy message");
+      expect(js).toContain("openPopoutChat");
+      expect(js).toContain("exportConversation");
+      expect(js).toContain("buildMarkdownExport");
+      expect(js).toContain("buildPdfExport");
+      expect(js).toContain("buildZipExport");
+      expect(js).toContain("URLSearchParams");
+      expect(css).toContain(".code-copy");
+      expect(css).toContain(".message-copy");
+      expect(ui).toContain("grid-template-rows:52px minmax(0,1fr)");
       expect(await fetch(`${base}/control-ui.css`).then((response) => response.status)).toBe(200);
       expect(await fetch(`${base}/chat-usage.css`).then((response) => response.status)).toBe(200);
       expect(await fetch(`${base}/chat-usage.js`).then((response) => response.status)).toBe(200);
@@ -230,6 +306,7 @@ describe("Live Chat HTTP boundary and UI", () => {
     } finally {
       server.close();
       if (server.listening) await once(server, "close");
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
   });
 });

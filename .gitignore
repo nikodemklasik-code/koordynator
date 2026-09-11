@@ -10,3 +10,12 @@ coverage/
 .local-keys/
 *.pem
 *.key
+
+# Lokalne dane runtime i raporty diagnostyczne — nie commituj
+.orchestrator/
+ATTACHMENT_DEBUG_REPORT*
+
+# Accidental nested clone / local app bundles
+/koordynator/
+*.app/
+assets/app-icon/*.iconset/

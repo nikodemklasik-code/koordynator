@@ -129,17 +129,19 @@ describe("GitHub runtime fallback", () => {
       expect(sent.status).toBe(202);
       await captured;
 
-      const user = capturedBody.messages?.[0];
-      expect(user.role).toBe("user");
+      const user = capturedBody.messages?.find((message: { role?: string }) => message.role === "user");
+      expect(user?.role).toBe("user");
       expect(Array.isArray(user.content)).toBe(true);
       expect(user.content[0]).toEqual({ type: "text", text: "Review https://github.com/nikodemklasik-code/Harmonia-VERA and assess core" });
-      expect(user.content[1]?.type).toBe("file");
-      expect(user.content[1]?.file?.filename).toMatch(/^GitHub-nikodemklasik-code-Harmonia-VERA-1234567890ab\.txt$/);
-      expect(Buffer.from(user.content[1].file.file_data, "base64").toString("utf8")).toContain("Cargo.toml");
+      const blob = JSON.stringify(user.content);
+      expect(blob).toContain("Cargo.toml");
+      expect(blob).toContain("Harmonia-VERA");
+      expect(blob).not.toContain("\"type\":\"file\"");
       await waitForPersistedGeneration(base, session.sessionId);
     } finally {
       server.close();
       if (server.listening) await once(server, "close");
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 40));
     }
   });
 });

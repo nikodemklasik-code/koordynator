@@ -117,12 +117,29 @@ export class GitHubRepositoryContextService implements GitHubRepositoryContextPo
     private readonly maxFiles = 18
   ) {}
 
-  private async git(args: string[], cwd?: string, timeoutMs = 30_000, maxOutputBytes = 1024 * 1024) {
-    return this.runner("git", args, {
+  private async run(executable: string, args: string[], cwd?: string, timeoutMs = 30_000, maxOutputBytes = 1024 * 1024) {
+    return this.runner(executable, args, {
       ...(cwd === undefined ? {} : { cwd }),
       timeoutMs,
       maxOutputBytes
     });
+  }
+
+  private async git(args: string[], cwd?: string, timeoutMs = 30_000, maxOutputBytes = 1024 * 1024) {
+    return this.run("git", args, cwd, timeoutMs, maxOutputBytes);
+  }
+
+  private async authenticatedCloneUrl(cloneUrl: string): Promise<string> {
+    try {
+      const token = await this.run("gh", ["auth", "token"], undefined, 8_000, 8_192);
+      const value = token.stdout.trim();
+      if (token.code === 0 && value && !/\s/.test(value) && value.length < 512) {
+        return cloneUrl.replace(/^https:\/\/github\.com\//i, `https://x-access-token:${value}@github.com/`);
+      }
+    } catch {
+      // Fall back to the plain URL and let existing git credentials handle auth.
+    }
+    return cloneUrl;
   }
 
   async fromMessage(message: string): Promise<GitHubRepositoryContext | null> {
@@ -132,7 +149,8 @@ export class GitHubRepositoryContextService implements GitHubRepositoryContextPo
     const root = await mkdtemp(join(tmpdir(), "koord-github-read-"));
     const repoDir = join(root, "repo");
     try {
-      const clone = await this.git(["clone", "--depth", "1", "--filter=blob:none", "--single-branch", "--no-tags", target.cloneUrl, repoDir], undefined, 60_000, 512 * 1024);
+      const cloneUrl = await this.authenticatedCloneUrl(target.cloneUrl);
+      const clone = await this.git(["clone", "--depth", "1", "--filter=blob:none", "--single-branch", "--no-tags", cloneUrl, repoDir], undefined, 60_000, 512 * 1024);
       if (clone.code !== 0) throw new GitHubRepositoryContextError("GITHUB_REPOSITORY_ACCESS_DENIED", 502);
 
       const head = await this.git(["rev-parse", "HEAD"], repoDir, 10_000, 32 * 1024);
