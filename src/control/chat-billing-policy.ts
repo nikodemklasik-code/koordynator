@@ -36,7 +36,14 @@ const PROTECTED_PREFIX_SOURCE: Record<string, ChatModelBillingSource> = {
   of: "FREE_OAUTH",
   kr: "FREE_OAUTH",
   kiro: "FREE_OAUTH",
-  qw: "FREE_OAUTH"
+  qw: "FREE_OAUTH",
+  // OmniRoute v3.8.51 declares these aliases as no-auth providers with hasFree=true.
+  // They require no vendor login or paid API key and are admitted only after a
+  // real inference probe in the free-swarm bootstrap.
+  oc: "FREE_CONFIRMED",
+  ddgw: "FREE_CONFIRMED",
+  unc: "FREE_CONFIRMED",
+  horde: "FREE_CONFIRMED"
 };
 
 function protectedPrefixSource(model: string): ChatModelBillingSource | undefined {
@@ -50,7 +57,14 @@ export function evaluateChatBilling(
   catalog: ChatModelCatalog,
   options: ChatBillingPolicyOptions = {}
 ): ChatBillingDecision {
-  const source = catalog.billing?.modelSources[model] ?? protectedPrefixSource(model) ?? "UNKNOWN";
+  const catalogSource = catalog.billing?.modelSources[model];
+  const prefixSource = protectedPrefixSource(model);
+  // A live OmniRoute catalog may omit billing metadata for no-auth transports.
+  // Prefer explicit catalog provenance when it is meaningful, but allow a
+  // repository-audited prefix classification to replace only UNKNOWN/missing.
+  const source = catalogSource && catalogSource !== "UNKNOWN"
+    ? catalogSource
+    : prefixSource ?? catalogSource ?? "UNKNOWN";
   const route = catalog.billing?.modelRoutes?.[model];
   const transport: ChatModelRouteTransport = route?.transport
     ?? (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" ? "OMNIROUTE_OAUTH" : "OMNIROUTE_API");
