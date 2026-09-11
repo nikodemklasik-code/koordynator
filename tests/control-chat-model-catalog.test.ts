@@ -179,8 +179,10 @@ describe("Live Chat model catalog", () => {
       expect(loader).not.toContain("browser-must-not-see-this");
 
       const page = await fetch(`${base}/chat`).then((item) => item.text());
-      expect(page).toContain("Loading verified model routes");
-      expect(page).toContain("PAYG + UNKNOWN + UNCONFIRMED FREE HIDDEN");
+      // Restyled Live Chat: model picker moved to the composer; the loading
+      // placeholder and the "unexecutable routes are hidden" contract survive.
+      expect(page).toContain("Loading…");
+      expect(page).toContain("Models that cannot execute under the active billing policy are not shown");
       expect(page).not.toContain('value="openai/gpt-5.6-sol"');
       expect(page).not.toContain("browser-must-not-see-this");
     } finally {

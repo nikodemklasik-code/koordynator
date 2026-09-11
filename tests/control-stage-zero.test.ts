@@ -261,6 +261,72 @@ describe("Etap 0 zasilany z chatu", () => {
     }
   });
 
+  it("Harmonia czyta na pinie KOORDYNATOR_HARMONIA_MODEL, Mózg spisuje na modelu sesji", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stage-zero-harmonia-model-"));
+    roots.push(root);
+    const seeded = await seedSession(root, {
+      model: "gc/grok-4.6",
+      messages: [
+        { ...message("user", "Chcę tryb ciemny w panelu."), sessionId: "x" },
+        { ...message("assistant", "Mogę to rozplanować bez ruszania API."), sessionId: "x" }
+      ]
+    });
+    const { fetchImpl, bodies } = gateway([CLEAN, MAP]);
+    const { base, close } = await listen({
+      stateDir: root,
+      webRoot: resolve("web/control"),
+      chatApiKey: "test-key",
+      chatFetchImpl: fetchImpl,
+      chatHarmoniaModel: "cx/gpt-5.6-sol"
+    });
+    try {
+      const run = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+      });
+      expect(run.status).toBe(200);
+      const payload = await run.json() as { reading: { model: string }; roadmap: { writtenBy: string } | null };
+      expect(payload.reading.model).toBe("cx/gpt-5.6-sol");
+      expect(payload.roadmap?.writtenBy).toBe("brain");
+      expect(bodies).toHaveLength(2);
+      expect((bodies[0] as { model: string }).model).toBe("cx/gpt-5.6-sol");
+      expect((bodies[1] as { model: string }).model).toBe("gc/grok-4.6");
+    } finally {
+      await close();
+    }
+  });
+
+  it("bez pinu Harmonii oba wywołania jadą na modelu sesji", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stage-zero-session-model-"));
+    roots.push(root);
+    const seeded = await seedSession(root, {
+      model: "gc/grok-4.6",
+      messages: [
+        { ...message("user", "Chcę tryb ciemny w panelu."), sessionId: "x" },
+        { ...message("assistant", "Mogę to rozplanować bez ruszania API."), sessionId: "x" }
+      ]
+    });
+    const { fetchImpl, bodies } = gateway([CLEAN, MAP]);
+    const { base, close } = await listen({
+      stateDir: root,
+      webRoot: resolve("web/control"),
+      chatApiKey: "test-key",
+      chatFetchImpl: fetchImpl
+    });
+    try {
+      const run = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+      });
+      expect(run.status).toBe(200);
+      const payload = await run.json() as { reading: { model: string } };
+      expect(payload.reading.model).toBe("gc/grok-4.6");
+      expect(bodies).toHaveLength(2);
+      expect((bodies[0] as { model: string }).model).toBe("gc/grok-4.6");
+      expect((bodies[1] as { model: string }).model).toBe("gc/grok-4.6");
+    } finally {
+      await close();
+    }
+  });
+
   it("serwuje przycisk Etapu 0 w Live Chat", async () => {
     const root = await mkdtemp(join(tmpdir(), "stage-zero-ui-"));
     roots.push(root);

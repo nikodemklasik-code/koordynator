@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/control-ui.css" />
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/chat-usage.css" />
+  <link rel="stylesheet" href="/xterm.css" />
 </head>
 <body>
   <div class="app-shell">
@@ -33,44 +34,27 @@
 
     <main class="content chat-content">
       <section class="chat-head">
-        <div class="chat-title-block">
-          <div class="chat-kicker">REAL-TIME AI</div>
-          <h1>Live Chat</h1>
-          <p>Persistent multi-turn conversation through executable OmniRoute API, OAuth and subscription-harness routes.</p>
-        </div>
-        <div class="chat-head-actions">
-          <label class="model-picker">
-            <span>MODEL · EXECUTABLE ROUTES</span>
-            <select id="modelSelect" aria-label="AI model" disabled>
-              <option value="" selected>Loading verified model routes…</option>
-            </select>
-          </label>
-          <div class="chat-action-group" role="group" aria-label="Chat actions">
-            <button class="secondary-button chat-action-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
-            <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
-            <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
-            <button class="secondary-button chat-action-button" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
-            <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
-            <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
-            <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
-          </div>
+        <div class="chat-action-group" role="group" aria-label="Chat actions">
+          <button class="secondary-button chat-action-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
+          <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
+          <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
+          <button class="secondary-button chat-action-button" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
+          <button class="secondary-button chat-action-button" id="muteHermesButton" type="button" title="Schowaj lub pokaż terminal Hermesa">Wycisz</button>
+          <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
+          <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
+          <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
         </div>
       </section>
 
+      <section class="chat-workspace" id="chatWorkspace">
       <section class="chat-frame" id="chatFrame" aria-label="Live conversation">
         <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
-        <div class="chat-connection-bar">
+        <div class="chat-connection-bar pane-head">
           <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
-          <div class="chat-connection-right">
-            <button class="github-chat-button" id="githubChatButton" type="button" aria-label="GitHub repository connection"><span class="github-chat-dot checking" id="githubChatDot"></span><span id="githubChatLabel">GitHub checking…</span></button>
-            <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
-          </div>
-        </div>
-
-        <div class="chat-usage-bar" aria-label="Billing and token provenance">
-          <span class="billing-badge checking" id="billingBadge">ROUTE CHECKING</span>
-          <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
-          <span class="strict-policy">STRICT: PAYG + UNKNOWN + UNCONFIRMED FREE HIDDEN</span>
+          <span class="billing-badge checking" id="billingBadge" title="Billing route">ROUTE</span>
+          <span class="usage-24h" id="usage24h" title="24h token provenance">24H</span>
+          <button class="github-chat-button github-chat-icon" id="githubChatButton" type="button" aria-label="GitHub repository connection" title="GitHub checking…"><span class="github-chat-dot checking" id="githubChatDot"></span><span class="github-mark" aria-hidden="true">⌥</span><span id="githubChatLabel" class="visually-hidden">GitHub checking…</span></button>
+          <code id="sessionLabel" class="session-id" title="Session">…</code>
         </div>
 
         <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
@@ -95,9 +79,13 @@
             <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
             <textarea title="Załącz pliki przyciskiem +. ZIP, PDF, TXT, DOCX, XLSX i PPTX są rozpoznawane; obrazy wymagają modelu z obsługą obrazów." id="messageInput" rows="1" maxlength="32768" placeholder="Napisz wiadomość lub /repo https://github.com/owner/repo zadanie" aria-label="Message"></textarea>
             <div class="composer-actions">
+              <label class="model-picker composer-model">
+                <select id="modelSelect" aria-label="AI model" disabled>
+                  <option value="" selected>Loading…</option>
+                </select>
+              </label>
               <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
-              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line <span>·</span> drag, drop or paste files</div>
-              <button class="stop-button hidden" id="stopButton" type="button">■ Stop</button>
+              <button class="stop-button hidden" id="stopButton" type="button">■</button>
               <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
             </div>
           </div>
@@ -106,6 +94,23 @@
           <div class="stage-zero-notice hidden" id="stageZeroNotice" role="status" aria-live="polite"></div>
           <div class="composer-note">Loading route provenance. Models that cannot execute under the active billing policy are not shown.</div>
         </div>
+      </section>
+      <aside class="hermes-pane" id="hermesPane" aria-label="Hermes terminal">
+        <div class="hermes-pane-head pane-head">
+          <div class="connection-state"><span class="chat-status-dot" id="hermesHeadDot"></span><strong id="hermesPaneTitle">Hermes</strong></div>
+          <span class="hermes-state" id="hermesState">OFF</span>
+          <div class="hermes-pane-actions">
+            <button class="secondary-button chat-action-button" id="startHermesButton" type="button">Start</button>
+            <button class="secondary-button chat-action-button" id="stopHermesButton" type="button">Stop</button>
+          </div>
+        </div>
+        <div class="hermes-term" id="hermesTerm" tabindex="0" aria-label="Hermes terminal"></div>
+        <div class="hermes-composer">
+          <textarea id="hermesInput" rows="1" maxlength="8000" placeholder="Napisz do Hermesa…" aria-label="Hermes message"></textarea>
+          <button class="send-button" id="sendHermesButton" type="button" aria-label="Send to Hermes">↑</button>
+        </div>
+        <p class="hermes-hint hidden" id="hermesHint" role="status"></p>
+      </aside>
       </section>
 
       <footer class="statusbar chat-statusbar">
@@ -138,6 +143,8 @@
     </form>
   </dialog>
 
+  <script src="/xterm.js" defer></script>
+  <script src="/xterm-addon-fit.js" defer></script>
   <script src="/chat-models.js" defer></script>
   <script src="/chat.js" defer></script>
   <script src="/chat-history.js" defer></script>

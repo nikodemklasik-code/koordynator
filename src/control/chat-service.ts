@@ -608,8 +608,11 @@ export class ChatService {
           signal: controller.signal
         });
         if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
-        if (attempt.status === 429) {
-          lastRateLimit = new ChatServiceError("CHAT_RATE_LIMITED", 429);
+        if (attempt.status === 429 || attempt.status === 503) {
+          lastRateLimit = new ChatServiceError(
+            attempt.status === 429 ? "CHAT_RATE_LIMITED" : "CHAT_UPSTREAM_503",
+            attempt.status === 429 ? 429 : 502
+          );
           continue;
         }
         if (!attempt.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${attempt.status}`, 502);

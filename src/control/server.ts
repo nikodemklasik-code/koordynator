@@ -19,10 +19,14 @@ import { ProjectPackService } from "./project-pack-service.js";
 import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
 import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
 import { MaterialisationError, MaterialisationService } from "./materialisation-service.js";
+import { TaskExecutionRunner, TaskExecutionError, type IndependentVerifier as TaskRunnerVerifier } from "./task-execution-runner.js";
 import { parseAgreedPlan } from "./chat-consensus.js";
 import { BrainError } from "./brain-roadmap.js";
 import { HarmoniaError } from "./harmonia-cognition.js";
 import { asStageZeroHttpError, StageZeroService } from "./stage-zero-service.js";
+import { HermesPtyError, HermesPtySession, type HermesLaunchSpec, type HermesPtyHooks } from "./hermes-pty.js";
+import { prepareHermes } from "../runtime/hermes-launch.js";
+import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
@@ -43,6 +47,8 @@ export type ControlServerOptions = {
   chatApiKey?: string;
   chatApiKeyEnv?: string;
   chatDefaultModel?: string;
+  /** Pin modelu Harmonii (Etap 0). Pusty / brak = model sesji. */
+  chatHarmoniaModel?: string;
   chatFallbackModels?: string[];
   chatFetchImpl?: typeof fetch;
   chatBillingPolicy?: ChatBillingPolicyOptions;
@@ -55,6 +61,12 @@ export type ControlServerOptions = {
   /** PKCS#8 PEM. When absent, chat→Tasks materialisation is disabled (503). */
   materialisationPrivateKeyPem?: string;
   materialisationKeyId?: string;
+  /** Injected in tests. Production uses macOS `script` PTY + prepareHermes. */
+  hermesPty?: HermesPtyHooks;
+  /** Test hook: PATH prefix so a fixture worker binary (opencode) is found first. */
+  taskRunnerPathPrefix?: string;
+  /** Test hook: replace the independent verifier (production runs vitest). */
+  taskRunnerVerifier?: TaskRunnerVerifier;
 };
 
 export class ControlAuthError extends Error {
@@ -112,10 +124,13 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/repositories/remove" ||
     pathname === "/api/tasks/materialise" ||
     pathname === "/api/tasks/materialise-plan" ||
+    /^\/api\/tasks\/TASK-[A-Za-z0-9._-]+\/run$/.test(pathname) ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname) ||
-    /^\/api\/chat\/sessions\/[0-9a-f-]+\/stage-zero$/i.test(pathname);
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/stage-zero$/i.test(pathname) ||
+    pathname === "/api/hermes/pty" ||
+    /^\/api\/hermes\/pty\/[0-9a-f-]+\/(?:input|resize|stop)$/i.test(pathname);
 }
 
 function presentedControlToken(request: IncomingMessage): string {
@@ -212,6 +227,15 @@ export function createControlServer(options: ControlServerOptions): Server {
   const materialisation = options.materialisationPrivateKeyPem
     ? new MaterialisationService(options.materialisationPrivateKeyPem, options.materialisationKeyId ?? "control-plane", stateDir)
     : null;
+  // The code role's real hand: chat→Tasks materialises a WorkOrder, /run drives the worker.
+  const taskRunner = new TaskExecutionRunner({
+    stateDir,
+    projectRoot,
+    role: "code",
+    requireWrite: true,
+    ...(options.taskRunnerPathPrefix === undefined ? {} : { workerPathPrefix: options.taskRunnerPathPrefix }),
+    ...(options.taskRunnerVerifier === undefined ? {} : { verifier: options.taskRunnerVerifier })
+  });
   const hermesGrants = new HermesGrantStore(stateDir);
   const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
@@ -238,7 +262,21 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
-    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
+    ...(options.chatHarmoniaModel === undefined ? {} : { harmoniaModel: options.chatHarmoniaModel })
+  });
+  const hermesPty = new HermesPtySession({
+    stateDir,
+    ...(options.hermesPty?.spawn === undefined ? {} : { spawn: options.hermesPty.spawn }),
+    prepare: options.hermesPty?.prepare ?? (async (): Promise<HermesLaunchSpec> => {
+      const settings = omniRouteSettings();
+      const launch = await prepareHermes({
+        endpoint: options.chatEndpoint ?? settings.endpoint,
+        apiKey: options.chatApiKey ?? settings.apiKey,
+        model: options.chatDefaultModel ?? settings.model
+      }, projectRoot);
+      return { command: launch.command, args: launch.args, cwd: launch.cwd, env: launch.env, close: launch.close };
+    })
   });
 
   const server = createServer(async (request, response) => {
@@ -388,6 +426,65 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, await hermesGrants.grant("terminal", true));
       }
 
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/hermes/pty") {
+        return sendJson(response, 200, hermesPty.status());
+      }
+      if (method === "POST" && url.pathname === "/api/hermes/pty") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["cols", "rows"]);
+        return sendJson(response, 201, await hermesPty.start(payload));
+      }
+      const hermesPtyMatch = /^\/api\/hermes\/pty\/([0-9a-f-]+)\/(events|input|resize|stop)$/i.exec(url.pathname);
+      if (hermesPtyMatch?.[1] && hermesPtyMatch[2]) {
+        const sessionId = hermesPty.assertSession(hermesPtyMatch[1]);
+        const action = hermesPtyMatch[2].toLowerCase();
+        if (method === "GET" && action === "events") {
+          response.writeHead(200, {
+            "content-type": "text/event-stream; charset=utf-8",
+            "cache-control": "no-cache, no-transform",
+            connection: "keep-alive",
+            "x-accel-buffering": "no",
+            "x-content-type-options": "nosniff"
+          });
+          response.write(": connected\n\n");
+          const unsubscribe = hermesPty.subscribe(sessionId, (event) => {
+            if (response.destroyed || response.writableEnded) return;
+            response.write(`data: ${JSON.stringify(event)}\n\n`);
+          });
+          const heartbeat = setInterval(() => {
+            if (response.destroyed || response.writableEnded) return;
+            response.write(": heartbeat\n\n");
+          }, SSE_HEARTBEAT_MS);
+          heartbeat.unref();
+          request.on("close", () => {
+            clearInterval(heartbeat);
+            unsubscribe();
+          });
+          return;
+        }
+        if (method !== "POST") {
+          response.setHeader("allow", "GET, POST");
+          return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
+        }
+        if (action === "input") {
+          const payload = await readJsonBody(request, 16 * 1024);
+          assertExactKeys(payload, ["data"]);
+          if (typeof payload.data !== "string") throw new HermesPtyError("HERMES_PTY_INPUT_INVALID", 400);
+          hermesPty.write(sessionId, payload.data);
+          return sendJson(response, 200, { ok: true });
+        }
+        if (action === "resize") {
+          const payload = await readJsonBody(request, 1024);
+          assertExactKeys(payload, ["cols", "rows"]);
+          return sendJson(response, 200, hermesPty.resize(sessionId, payload.cols, payload.rows));
+        }
+        if (action === "stop") {
+          const payload = await readJsonBody(request, 1024);
+          assertExactKeys(payload, []);
+          return sendJson(response, 200, hermesPty.stop(sessionId));
+        }
+      }
+
       if (url.pathname === "/api/health") {
         return sendJson(response, 200, {
           ok: true,
@@ -522,6 +619,22 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, await tasks.list({ filter: rawFilter as TaskFilter, query: url.searchParams.get("q") ?? "" }));
       }
 
+      const runMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/run$/.exec(url.pathname);
+      if (method === "POST" && runMatch?.[1]) {
+        const taskId = safeTaskId(runMatch[1]);
+        if (!taskId) return sendJson(response, 400, { error: "INVALID_TASK_ID" });
+        try {
+          const receipt = await taskRunner.run(taskId);
+          return sendJson(response, 200, receipt);
+        } catch (error) {
+          if (error instanceof TaskExecutionError) {
+            return sendJson(response, error.status, { error: error.message });
+          }
+          const message = error instanceof Error ? error.message : "TASK_RUN_ERROR";
+          return sendJson(response, 500, { error: message });
+        }
+      }
+
       const returnMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/return$/.exec(url.pathname);
       if (returnMatch?.[1]) {
         const taskId = safeTaskId(returnMatch[1]);
@@ -573,6 +686,9 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat": { name: "chat.html", type: "text/html; charset=utf-8" },
         "/providers": { name: "providers.html", type: "text/html; charset=utf-8" },
         "/releases": { name: "releases.html", type: "text/html; charset=utf-8" },
+        "/xterm.js": { name: "vendor/xterm.js", type: "text/javascript; charset=utf-8" },
+        "/xterm.css": { name: "vendor/xterm.css", type: "text/css; charset=utf-8" },
+        "/xterm-addon-fit.js": { name: "vendor/xterm-addon-fit.js", type: "text/javascript; charset=utf-8" },
         "/styles.css": { name: "styles.css", type: "text/css; charset=utf-8" },
         "/control-ui.css": { name: "control-ui.css", type: "text/css; charset=utf-8" },
         "/chat.css": { name: "chat.css", type: "text/css; charset=utf-8" },
@@ -606,13 +722,16 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       const stageZeroHttp = asStageZeroHttpError(error);
       if (stageZeroHttp) return sendJson(response, stageZeroHttp.status, { error: stageZeroHttp.code });
-      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError) {
+      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError) {
         return sendJson(response, error.status, { error: error.code });
       }
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });
     }
   });
 
-  server.on("close", () => chat.close());
+  server.on("close", () => {
+    chat.close();
+    hermesPty.stop();
+  });
   return server;
 }

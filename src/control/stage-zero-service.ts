@@ -31,6 +31,13 @@ export class StageZeroError extends Error {
 export type StageZeroOptions = {
   stateDir: string;
   chat: ChatService;
+  /**
+   * Model dla samotnego poznania Harmonii (Etap 0). Harmonia czyta na
+   * najsilniejszym poznawczo modelu, niezależnie od modelu sesji chatu.
+   * Gdy nieustawiony — fallback na model bieżącej sesji. Mózg (spisanie mapy)
+   * zawsze jedzie na modelu sesji: to ręka, nie poznanie.
+   */
+  harmoniaModel?: string;
   endpoint?: string;
   apiKey?: string;
   apiKeyEnv?: string;
@@ -92,19 +99,20 @@ export class StageZeroService {
     const project = sessionToProject(session);
     if (!project) throw new StageZeroError("STAGE_ZERO_NEEDS_INPUT", 400);
 
-    const model = session.model;
+    const sessionModel = session.model;
     const shared = {
-      model,
       ...(this.options.endpoint === undefined ? {} : { endpoint: this.options.endpoint }),
       ...(this.options.apiKey === undefined ? {} : { apiKey: this.options.apiKey }),
       ...(this.options.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.options.apiKeyEnv }),
       ...(this.options.fetchImpl === undefined ? {} : { fetchImpl: this.options.fetchImpl }),
       ...(this.options.timeoutMs === undefined ? {} : { timeoutMs: this.options.timeoutMs })
     };
+    // Harmonia poznaje na najsilniejszym modelu (pin przez env), fallback na sesję.
+    const harmoniaModel = this.options.harmoniaModel?.trim() || sessionModel;
 
     let reading: HarmoniaReading;
     try {
-      reading = await new HarmoniaCognition(shared).read(project);
+      reading = await new HarmoniaCognition({ ...shared, model: harmoniaModel }).read(project);
     } catch (error) {
       if (error instanceof HarmoniaError) throw error;
       throw error;
@@ -113,7 +121,8 @@ export class StageZeroService {
     let roadmap: Roadmap | null = null;
     if (reading.decision.status === "allow") {
       try {
-        roadmap = await new BrainRoadmapWriter(shared).write(project, reading);
+        // Mózg spisuje mapę na modelu sesji — to ręka wykonawcza, nie poznanie.
+        roadmap = await new BrainRoadmapWriter({ ...shared, model: sessionModel }).write(project, reading);
       } catch (error) {
         if (error instanceof BrainError) throw error;
         throw error;
