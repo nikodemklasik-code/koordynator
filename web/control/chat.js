@@ -488,6 +488,79 @@ function renderMessageAttachments(container, attachments = []) {
   container.appendChild(wrap);
 }
 
+const PLAN_MARKER_RE = /(?:^|\n)\s*(?:PLAN\s+UZGODNIONY|AGREED\s+PLAN)\s*(?:\n|$)/i;
+
+/** Mirrors the server's plan check well enough to decide whether to offer the button. */
+function looksLikePlan(content) {
+  const text = String(content || "");
+  if (!PLAN_MARKER_RE.test(text)) return false;
+  const has = (labels) => labels.some((label) =>
+    new RegExp(`(?:^|\\n)\\s*${label}\\s*:`, "i").test(text));
+  return has(["cel", "objective", "goal"]) &&
+    has(["moduły", "moduly", "modules", "moduł", "modul", "module"]) &&
+    has(["ścieżki", "sciezki", "paths", "allowedpaths"]) &&
+    has(["kryteria akceptacji", "kryteria", "acceptance criteria", "acceptance"]);
+}
+
+function createMaterialiseButton(message) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "message-materialise";
+  button.textContent = "Materializuj";
+  button.title = "Utwórz podpisane zadanie w Tasks z tego planu";
+  button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const current = state.messages.get(message.id);
+    const plan = current?.content || "";
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = "Materializuję…";
+    try {
+      const response = await fetch("/api/tasks/materialise-plan", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ plan })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+      button.textContent = `✓ ${payload.taskId}`;
+      button.classList.add("done");
+      button.title = `Zadanie ${payload.taskId} utworzone — otwórz Tasks`;
+      if (current) current.materialisedTaskId = payload.taskId;
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = original;
+      button.classList.add("failed");
+      button.title = error instanceof Error ? error.message : "Materializacja nie powiodła się";
+      setTimeout(() => button.classList.remove("failed"), 2500);
+    }
+  });
+  return button;
+}
+
+/** Adds/updates/removes the Materialise control as streamed content changes. */
+function syncMaterialiseButton(article, message) {
+  if (message.role !== "assistant") return;
+  const meta = article.querySelector(".message-meta");
+  if (!meta) return;
+  const existing = meta.querySelector(".message-materialise");
+
+  if (message.materialisedTaskId) {
+    const button = existing || createMaterialiseButton(message);
+    button.disabled = true;
+    button.classList.add("done");
+    button.textContent = `✓ ${message.materialisedTaskId}`;
+    button.title = `Zadanie ${message.materialisedTaskId} utworzone`;
+    if (!existing) meta.appendChild(button);
+    return;
+  }
+  // Only offer it once the turn has finished and the text really is a plan.
+  const eligible = message.state === "complete" && looksLikePlan(message.content);
+  if (eligible && !existing) meta.appendChild(createMaterialiseButton(message));
+  if (!eligible && existing) existing.remove();
+}
+
 function renderMessage(message) {
   const shouldFollow = nearBottom();
   let article = chatThread.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
@@ -535,6 +608,7 @@ function renderMessage(message) {
   }
   status.className = `message-state ${message.state}`;
   status.textContent = message.state === "stopped" ? "Generation stopped" : message.state === "error" ? "Generation failed" : "";
+  syncMaterialiseButton(article, message);
   welcome.classList.add("hidden");
   if (shouldFollow) scrollBottom(true);
 }

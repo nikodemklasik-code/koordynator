@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
+import { loadOrCreateControlSigningKey } from "./control-signing-key.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -18,8 +19,13 @@ const loopback = host === "127.0.0.1" || host === "::1" || host === "localhost";
 const controlToken = process.env.KOORDYNATOR_CONTROL_TOKEN?.trim() || undefined;
 if (!loopback && !controlToken) throw new Error("CONTROL_TOKEN_REQUIRED_FOR_NON_LOOPBACK");
 
+const stateDir = resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator");
+// Chat→Tasks materialisation is on by default; set KOORDYNATOR_CHAT_MATERIALISE=0 to disable.
+const materialisationEnabled = process.env.KOORDYNATOR_CHAT_MATERIALISE !== "0";
+const signing = materialisationEnabled ? await loadOrCreateControlSigningKey(stateDir) : null;
+
 const server = createControlServer({
-  stateDir: resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator"),
+  stateDir,
   projectRoot: resolve(process.env.KOORDYNATOR_PROJECT_ROOT ?? process.cwd()),
   ...(process.env.KOORDYNATOR_WEB_ROOT === undefined ? {} : { webRoot: resolve(process.env.KOORDYNATOR_WEB_ROOT) }),
   ...(process.env.KOORDYNATOR_ENVIRONMENT === undefined ? {} : { environment: process.env.KOORDYNATOR_ENVIRONMENT }),
@@ -33,7 +39,12 @@ const server = createControlServer({
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
+  chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean),
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
+  ...(signing === null ? {} : {
+    materialisationPrivateKeyPem: signing.privateKeyPem,
+    materialisationKeyId: signing.keyId
+  }),
   version: process.env.KOORDYNATOR_VERSION ?? VERSION
 });
 

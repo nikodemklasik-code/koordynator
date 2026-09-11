@@ -14,6 +14,12 @@ import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPo
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
 import { WorkspaceRepositoryContextService, type WorkspaceRepositoryContextPort } from "./workspace-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
+import { OmniRouteLiveStatusService } from "./omniroute-live-status.js";
+import { ProjectPackService } from "./project-pack-service.js";
+import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
+import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
+import { MaterialisationError, MaterialisationService } from "./materialisation-service.js";
+import { parseAgreedPlan } from "./chat-consensus.js";
 import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
@@ -34,12 +40,18 @@ export type ControlServerOptions = {
   chatApiKey?: string;
   chatApiKeyEnv?: string;
   chatDefaultModel?: string;
+  chatFallbackModels?: string[];
   chatFetchImpl?: typeof fetch;
   chatBillingPolicy?: ChatBillingPolicyOptions;
   githubConnection?: GitHubConnectionPort;
   githubRepositoryContext?: GitHubRepositoryContextPort;
   workspaceRepositoryContext?: WorkspaceRepositoryContextPort;
   chatModelCatalog?: ChatModelCatalogPort;
+  omniRouteLive?: OmniRouteLiveStatusService;
+  projectPack?: ProjectPackService;
+  /** PKCS#8 PEM. When absent, chat→Tasks materialisation is disabled (503). */
+  materialisationPrivateKeyPem?: string;
+  materialisationKeyId?: string;
 };
 
 export class ControlAuthError extends Error {
@@ -91,6 +103,13 @@ function safeChatModel(value: string): string {
 function isControlPost(pathname: string): boolean {
   return pathname === "/api/chat/sessions" ||
     pathname === "/api/integrations/github/connect" ||
+    pathname === "/api/integrations/hermes-grants" ||
+    pathname === "/api/tasks/project-pack" ||
+    pathname === "/api/repositories" ||
+    pathname === "/api/repositories/remove" ||
+    pathname === "/api/tasks/materialise" ||
+    pathname === "/api/tasks/materialise-plan" ||
+    /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname);
 }
@@ -178,6 +197,18 @@ export function createControlServer(options: ControlServerOptions): Server {
   const github = options.githubConnection ?? new GitHubConnectionService();
   const githubRepositories = options.githubRepositoryContext ?? new GitHubRepositoryContextService();
   const workspaceRepositories = options.workspaceRepositoryContext ?? new WorkspaceRepositoryContextService(projectRoot);
+  const omniLive = options.omniRouteLive ?? new OmniRouteLiveStatusService({
+    ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
+    ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
+    ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+  });
+  const projectPacks = options.projectPack ?? new ProjectPackService(stateDir);
+  const repositories = new RepositoryRegistry(stateDir);
+  const materialisation = options.materialisationPrivateKeyPem
+    ? new MaterialisationService(options.materialisationPrivateKeyPem, options.materialisationKeyId ?? "control-plane", stateDir)
+    : null;
+  const hermesGrants = new HermesGrantStore(stateDir);
   const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
@@ -188,10 +219,12 @@ export function createControlServer(options: ControlServerOptions): Server {
   const chat = new ChatService({
     stateDir,
     ...(options.chatAllowRepositoryExecution ? { repositoryExecutor: createRepositoryExecutor(stateDir) } : {}),
+    ...(materialisation ? { materialiser: (consensus) => materialisation.materialise(consensus) } : {}),
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
     ...(options.chatDefaultModel === undefined ? {} : { defaultModel: options.chatDefaultModel }),
+    ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
     projectContextProvider: () => loadChatProjectContext(projectRoot)
   });
@@ -320,6 +353,17 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, await github.connect(true));
       }
 
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/integrations/hermes-grants") {
+        return sendJson(response, 200, await hermesGrants.status());
+      }
+      if (method === "POST" && url.pathname === "/api/integrations/hermes-grants") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["grant", "approved"]);
+        if (payload.grant !== "terminal") throw new HermesGrantError("HERMES_GRANT_UNKNOWN", 400);
+        if (payload.approved !== true) throw new HermesGrantError("HERMES_GRANT_CONSENT_REQUIRED", 400);
+        return sendJson(response, 200, await hermesGrants.grant("terminal", true));
+      }
+
       if (url.pathname === "/api/health") {
         return sendJson(response, 200, {
           ok: true,
@@ -346,18 +390,106 @@ export function createControlServer(options: ControlServerOptions): Server {
         return release ? sendJson(response, 200, release) : sendJson(response, 404, { error: "RELEASE_NOT_FOUND" });
       }
 
-      if (url.pathname === "/api/providers") return sendJson(response, 200, await providers.view(url.searchParams.get("refresh") === "1"));
+      if (url.pathname === "/api/providers") {
+        const force = url.searchParams.get("refresh") === "1";
+        const omniRoutes = await omniLive.list(force);
+        return sendJson(response, 200, await providers.view(force, omniRoutes));
+      }
       const doctorMatch = /^\/api\/providers\/([A-Za-z0-9._-]+)\/doctor$/.exec(url.pathname);
       if (doctorMatch?.[1]) {
         const providerId = safeProviderId(doctorMatch[1]);
         if (!providerId) return sendJson(response, 400, { error: "INVALID_PROVIDER_ID" });
+        if (providerId.startsWith("omni-")) {
+          const result = await omniLive.doctor(providerId, method !== "HEAD");
+          return result ? sendJson(response, 200, result) : sendJson(response, 404, { error: "PROVIDER_NOT_FOUND" });
+        }
         const result = await providers.doctor(providerId, method !== "HEAD");
         return result ? sendJson(response, 200, result) : sendJson(response, 404, { error: "PROVIDER_NOT_FOUND" });
+      }
+      const connectMatch = /^\/api\/providers\/([A-Za-z0-9._-]+)\/connect$/.exec(url.pathname);
+      if (method === "POST" && connectMatch?.[1]) {
+        const providerId = safeProviderId(connectMatch[1]);
+        if (!providerId) return sendJson(response, 400, { error: "INVALID_PROVIDER_ID" });
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["approved"]);
+        if (payload.approved !== true) return sendJson(response, 400, { error: "PROVIDER_CONSENT_REQUIRED" });
+        if (providerId.startsWith("omni-")) {
+          return sendJson(response, 200, await omniLive.connect(providerId));
+        }
+        const summary = await providers.doctor(providerId, true);
+        if (!summary) return sendJson(response, 404, { error: "PROVIDER_NOT_FOUND" });
+        return sendJson(response, 200, {
+          ok: true,
+          action: "COPY",
+          command: summary.connectCommand,
+          status: summary
+        });
       }
       if (url.pathname === "/api/provider-receipts") {
         const limitRaw = Number(url.searchParams.get("limit") ?? "50");
         const limit = Number.isInteger(limitRaw) && limitRaw > 0 && limitRaw <= 200 ? limitRaw : 50;
         return sendJson(response, 200, { receipts: await providers.receipts(limit) });
+      }
+
+      if (method === "POST" && url.pathname === "/api/tasks/project-pack") {
+        const payload = await readJsonBody(request, CHAT_MESSAGE_MAX_BYTES);
+        assertExactKeys(payload, ["files"]);
+        if (!Array.isArray(payload.files)) return sendJson(response, 400, { error: "PROJECT_PACK_INVALID" });
+        try {
+          return sendJson(response, 200, await projectPacks.ingest(payload.files as any));
+        } catch (error) {
+          const code = (error as { code?: string }).code || "PROJECT_PACK_ERROR";
+          const status = Number((error as { status?: number }).status) || 500;
+          return sendJson(response, status, { error: code });
+        }
+      }
+
+      if (url.pathname === "/api/repositories" && (method === "GET" || method === "HEAD")) {
+        return sendJson(response, 200, { repositories: await repositories.list() });
+      }
+
+      if (method === "POST" && url.pathname === "/api/repositories") {
+        const payload = await readJsonBody(request, 8 * 1024);
+        assertExactKeys(payload, ["repository", "defaultBranch", "notes"]);
+        if (typeof payload.repository !== "string") throw new RepositoryRegistryError("REPOSITORY_INVALID", 400);
+        const registered = await repositories.register({
+          repository: payload.repository,
+          ...(payload.defaultBranch === undefined ? {} : { defaultBranch: payload.defaultBranch as string }),
+          ...(payload.notes === undefined ? {} : { notes: payload.notes as string })
+        });
+        return sendJson(response, 201, { repository: registered, repositories: await repositories.list() });
+      }
+
+      if (method === "POST" && url.pathname === "/api/repositories/remove") {
+        const payload = await readJsonBody(request, 8 * 1024);
+        assertExactKeys(payload, ["repository"]);
+        if (typeof payload.repository !== "string") throw new RepositoryRegistryError("REPOSITORY_INVALID", 400);
+        return sendJson(response, 200, { repositories: await repositories.remove(payload.repository) });
+      }
+
+      if (method === "POST" && url.pathname === "/api/tasks/materialise") {
+        const payload = await readJsonBody(request, 64 * 1024);
+        assertExactKeys(payload, ["objective", "modules", "allowedPaths", "acceptanceCriteria"]);
+        if (!materialisation) return sendJson(response, 503, { error: "MATERIALISATION_SIGNING_KEY_UNAVAILABLE" });
+        const result = await materialisation.materialise({
+          objective: payload.objective as string,
+          modules: payload.modules as string[],
+          allowedPaths: payload.allowedPaths as string[],
+          acceptanceCriteria: payload.acceptanceCriteria as string[]
+        });
+        return sendJson(response, 201, result);
+      }
+
+      if (method === "POST" && url.pathname === "/api/tasks/materialise-plan") {
+        const payload = await readJsonBody(request, 64 * 1024);
+        assertExactKeys(payload, ["plan"]);
+        if (!materialisation) return sendJson(response, 503, { error: "MATERIALISATION_SIGNING_KEY_UNAVAILABLE" });
+        if (typeof payload.plan !== "string") return sendJson(response, 400, { error: "MATERIALISATION_PLAN_INCOMPLETE" });
+        // Clicking the button IS the explicit request, so no agreed-phrase check here — but the
+        // plan itself must still be concrete enough to become a signed contract.
+        const parsed = parseAgreedPlan(payload.plan);
+        if (!parsed) return sendJson(response, 400, { error: "MATERIALISATION_PLAN_INCOMPLETE" });
+        return sendJson(response, 201, await materialisation.materialise(parsed));
       }
 
       if (url.pathname === "/api/tasks") {
@@ -448,7 +580,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (error instanceof ControlAuthError) {
         return sendJson(response, error.status, { error: error.code });
       }
-      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError) {
+      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError) {
         return sendJson(response, error.status, { error: error.code });
       }
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });

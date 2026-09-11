@@ -1,4 +1,6 @@
 import { readAttachment } from "./attachment-reader.js";
+import { detectProjectConsensus, type ProjectConsensus } from "./chat-consensus.js";
+import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
@@ -37,6 +39,11 @@ export type ChatMessage = {
   billing?: ChatBillingDecision;
   usage?: ProviderReportedUsage;
   usageAudit?: "PERSISTED" | "WRITE_FAILED";
+  /** Set when this turn shipped an agreed plan into Tasks. */
+  materialisedTaskId?: string;
+  /** Identity of the shipped plan, so repeating the request cannot duplicate it. */
+  materialisationFingerprint?: string;
+  materialisationError?: string;
 };
 
 export type ChatSession = {
@@ -57,6 +64,7 @@ export type ChatSessionSummary = {
 };
 
 export type ChatEvent =
+  | { type: "task_materialised"; sessionId: string; taskId: string }
   | { type: "connected"; sessionId: string }
   | { type: "user_message"; message: ChatMessage }
   | { type: "assistant_start"; message: ChatMessage }
@@ -74,10 +82,13 @@ export class ChatServiceError extends Error {
 export type ChatServiceOptions = {
   stateDir: string;
   repositoryExecutor?: RepositoryExecutor;
+  /** Ships an agreed plan into Tasks; omitted when no signing key is configured. */
+  materialiser?: (consensus: ProjectConsensus) => Promise<{ taskId: string }>;
   endpoint?: string;
   apiKey?: string;
   apiKeyEnv?: string;
   defaultModel?: string;
+  fallbackModels?: string[];
   fetchImpl?: typeof fetch;
   maxMessageBytes?: number;
   maxHistoryMessages?: number;
@@ -180,6 +191,14 @@ function mergeUsage(current: ProviderReportedUsage | undefined, next: ProviderRe
   };
 }
 
+export function materialisationFingerprint(consensus: ProjectConsensus): string {
+  return canonicalDigest({
+    objective: consensus.objective.trim().toLowerCase(),
+    modules: [...consensus.modules].map((item) => item.trim().toLowerCase()).sort(),
+    allowedPaths: [...consensus.allowedPaths].map((item) => item.trim().toLowerCase()).sort()
+  });
+}
+
 export class ChatService {
   private readonly root: string;
   private readonly repositoryExecutor: RepositoryExecutor | undefined;
@@ -187,6 +206,7 @@ export class ChatService {
   private readonly apiKey: string | undefined;
   private readonly apiKeyEnv: string;
   private readonly defaultModel: string;
+  private readonly fallbackModels: string[];
   private readonly fetchImpl: typeof fetch;
   private readonly maxMessageBytes: number;
   private readonly maxHistoryMessages: number;
@@ -201,14 +221,17 @@ export class ChatService {
   private readonly subscribers = new Map<string, Set<Subscriber>>();
   private readonly starting = new Set<string>();
   private readonly active = new Map<string, ActiveGeneration>();
+  private readonly materialiser: ChatServiceOptions["materialiser"];
 
   constructor(options: ChatServiceOptions) {
     this.root = resolve(options.stateDir, "chat");
     this.repositoryExecutor = options.repositoryExecutor;
+    this.materialiser = options.materialiser;
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
     this.defaultModel = safeModel(options.defaultModel ?? "auto/best-free");
+    this.fallbackModels = [...new Set((options.fallbackModels ?? []).map((model) => model.trim()).filter(Boolean).filter((model) => model !== this.defaultModel))].slice(0, 6);
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
@@ -518,8 +541,44 @@ export class ChatService {
     session.updatedAt = assistant.completedAt;
     await this.persist(session);
     const audited = await this.recordUsage(assistant);
+    if (state === "complete") await this.maybeMaterialise(session, assistant);
     await this.persist(session);
     return audited;
+  }
+
+  /**
+   * Materialises a Tasks entry only when the user explicitly asked to ship an agreed plan.
+   * Never throws into the chat turn: a materialisation failure must not break the reply.
+   *
+   * Idempotent per agreed plan: the guard must look at the whole session, because every turn
+   * produces a NEW assistant message. A per-message check would let a second "ship it" create
+   * a duplicate task for work that is already queued.
+   */
+  private async maybeMaterialise(session: ChatSession, assistant: ChatMessage): Promise<void> {
+    if (!this.materialiser) return;
+    if (assistant.materialisedTaskId) return;
+    try {
+      const consensus = detectProjectConsensus(
+        session.messages.map((message) => ({ role: message.role, content: message.content }))
+      );
+      if (!consensus) return;
+      // Same objective + scope already shipped in this session? Re-point, do not re-create.
+      const fingerprint = materialisationFingerprint(consensus);
+      const previous = session.messages.find(
+        (message) => message.materialisedTaskId && message.materialisationFingerprint === fingerprint
+      );
+      if (previous?.materialisedTaskId) {
+        assistant.materialisedTaskId = previous.materialisedTaskId;
+        assistant.materialisationFingerprint = fingerprint;
+        return;
+      }
+      const result = await this.materialiser(consensus);
+      assistant.materialisedTaskId = result.taskId;
+      assistant.materialisationFingerprint = fingerprint;
+      this.emit(session.sessionId, { type: "task_materialised", sessionId: session.sessionId, taskId: result.taskId });
+    } catch (error) {
+      assistant.materialisationError = error instanceof Error ? error.message : "MATERIALISATION_FAILED";
+    }
   }
 
   private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
@@ -537,15 +596,29 @@ export class ChatService {
         this.emit(sessionId, { type: "assistant_done", message: assistant });
         return;
       }
-      const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: session.model, messages: await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id)), stream: true, stream_options: { include_usage: true } }),
-        signal: controller.signal
-      });
-      if (response.status === 401 || response.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
-      if (response.status === 429) throw new ChatServiceError("CHAT_RATE_LIMITED", 429);
-      if (!response.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${response.status}`, 502);
+      const history = await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id));
+      const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
+      let response: Response | undefined;
+      let lastRateLimit: ChatServiceError | undefined;
+      for (const model of chain) {
+        const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+          body: JSON.stringify({ model, messages: history, stream: true, stream_options: { include_usage: true } }),
+          signal: controller.signal
+        });
+        if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+        if (attempt.status === 429) {
+          lastRateLimit = new ChatServiceError("CHAT_RATE_LIMITED", 429);
+          continue;
+        }
+        if (!attempt.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${attempt.status}`, 502);
+        response = attempt;
+        assistant.model = model;
+        session.model = model;
+        break;
+      }
+      if (!response) throw lastRateLimit ?? new ChatServiceError("CHAT_RATE_LIMITED", 429);
       const providerRequestId = response.headers.get("x-request-id") ?? undefined;
       if (providerRequestId !== undefined) assistant.providerRequestId = providerRequestId;
       if (!response.body) throw new ChatServiceError("CHAT_STREAM_MISSING", 502);
