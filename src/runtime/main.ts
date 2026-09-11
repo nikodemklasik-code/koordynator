@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { bootstrapAi } from "./ai-bootstrap.js";
 import { loadLocalConfig, omniRouteSettings } from "./local-config.js";
 import { checkOmniRoute, probeOmniRoute } from "./omniroute-check.js";
 import { prepareHermes } from "./hermes-launch.js";
@@ -12,7 +13,13 @@ const HERMES_ROUTE_ENV = {
   gemini: "KOORDYNATOR_GEMINI_MODEL",
   kiro: "KOORDYNATOR_KIRO_MODEL",
   qoder: "KOORDYNATOR_QODER_MODEL",
-  qwen: "KOORDYNATOR_QWEN_MODEL"
+  qwen: "KOORDYNATOR_QWEN_MODEL",
+  kimi: "KOORDYNATOR_KIMI_MODEL",
+  cursor: "KOORDYNATOR_CURSOR_MODEL",
+  kilocode: "KOORDYNATOR_KILOCODE_MODEL",
+  cline: "KOORDYNATOR_CLINE_MODEL",
+  amazonq: "KOORDYNATOR_AMAZON_Q_MODEL",
+  antigravity: "KOORDYNATOR_ANTIGRAVITY_MODEL"
 } as const;
 
 type HermesRouteAlias = keyof typeof HERMES_ROUTE_ENV;
@@ -25,10 +32,17 @@ function protectedRoutes(check: Awaited<ReturnType<typeof checkOmniRoute>>, fami
 
 async function main(): Promise<void> {
   loadLocalConfig();
-  const settings = omniRouteSettings();
   const command = process.argv[2];
-  if (command !== "doctor" && command !== "hermes") throw new Error("USE_DOCTOR_OR_HERMES");
   const extra = process.argv.slice(3);
+
+  if (command === "bootstrap") {
+    if (extra.length !== 0) throw new Error("UNSUPPORTED_RUNTIME_ARGUMENT");
+    await bootstrapAi();
+    return;
+  }
+
+  const settings = omniRouteSettings();
+  if (command !== "doctor" && command !== "hermes") throw new Error("USE_DOCTOR_HERMES_OR_BOOTSTRAP");
   const routeAlias = extra[0] as HermesRouteAlias | undefined;
   const doctorArgsValid = command === "doctor" && extra.length <= 1 && extra.every(arg => arg === "--probe");
   const hermesArgsValid = command === "hermes" && extra.length <= 1 && (!routeAlias || routeAlias in HERMES_ROUTE_ENV);
@@ -50,13 +64,19 @@ async function main(): Promise<void> {
         openai: protectedRoutes(check, "OPENAI", "SUBSCRIPTION_HARNESS"),
         anthropic: protectedRoutes(check, "ANTHROPIC", "SUBSCRIPTION_HARNESS"),
         github: protectedRoutes(check, "GITHUB COPILOT", "SUBSCRIPTION_HARNESS"),
-        grok: protectedRoutes(check, "XAI / GROK", "SUBSCRIPTION_HARNESS")
+        grok: protectedRoutes(check, "XAI / GROK", "SUBSCRIPTION_HARNESS"),
+        kimi: protectedRoutes(check, "MOONSHOT / KIMI", "SUBSCRIPTION_HARNESS"),
+        cursor: protectedRoutes(check, "CURSOR", "SUBSCRIPTION_HARNESS"),
+        kilocode: protectedRoutes(check, "KILO CODE", "SUBSCRIPTION_HARNESS"),
+        cline: protectedRoutes(check, "CLINE", "SUBSCRIPTION_HARNESS")
       },
       oauthRoutes: {
         gemini: protectedRoutes(check, "GOOGLE / GEMINI", "FREE_OAUTH"),
         kiro: protectedRoutes(check, "KIRO", "FREE_OAUTH"),
         qoder: protectedRoutes(check, "QODER", "FREE_OAUTH"),
-        qwen: protectedRoutes(check, "QWEN", "FREE_OAUTH")
+        qwen: protectedRoutes(check, "QWEN", "FREE_OAUTH"),
+        amazonq: protectedRoutes(check, "AMAZON Q", "FREE_OAUTH"),
+        antigravity: protectedRoutes(check, "ANTIGRAVITY", "FREE_OAUTH")
       },
       models: check.catalog.models.map(id => ({ id, billing: check.catalog.billing?.modelSources[id] ?? "UNKNOWN" }))
     }, null, 2));
