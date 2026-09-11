@@ -20,6 +20,9 @@ import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
 import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
 import { MaterialisationError, MaterialisationService } from "./materialisation-service.js";
 import { parseAgreedPlan } from "./chat-consensus.js";
+import { BrainError } from "./brain-roadmap.js";
+import { HarmoniaError } from "./harmonia-cognition.js";
+import { asStageZeroHttpError, StageZeroService } from "./stage-zero-service.js";
 import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
@@ -111,7 +114,8 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/tasks/materialise-plan" ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
-    /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname);
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname) ||
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/stage-zero$/i.test(pathname);
 }
 
 function presentedControlToken(request: IncomingMessage): string {
@@ -228,6 +232,14 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
     projectContextProvider: () => loadChatProjectContext(projectRoot)
   });
+  const stageZero = new StageZeroService({
+    stateDir,
+    chat,
+    ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
+    ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
+    ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+  });
 
   const server = createServer(async (request, response) => {
     try {
@@ -307,6 +319,18 @@ export function createControlServer(options: ControlServerOptions): Server {
         const session = await chat.getSession(sessionId);
         if (!session) return sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
         return sendJson(response, 200, { stopped: await chat.stop(sessionId) });
+      }
+
+      const stageZeroMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/stage-zero$/i.exec(url.pathname);
+      if (stageZeroMatch?.[1] && (method === "POST" || method === "GET" || method === "HEAD")) {
+        const sessionId = safeSessionId(stageZeroMatch[1]);
+        if (method === "POST") {
+          const payload = await readJsonBody(request, 1024);
+          assertExactKeys(payload, []);
+          return sendJson(response, 200, await stageZero.run(sessionId));
+        }
+        const run = await stageZero.get(sessionId);
+        return run ? sendJson(response, 200, run) : sendJson(response, 404, { error: "STAGE_ZERO_NOT_RUN" });
       }
 
       const chatSessionMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)$/i.exec(url.pathname);
@@ -580,7 +604,9 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (error instanceof ControlAuthError) {
         return sendJson(response, error.status, { error: error.code });
       }
-      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError) {
+      const stageZeroHttp = asStageZeroHttpError(error);
+      if (stageZeroHttp) return sendJson(response, stageZeroHttp.status, { error: stageZeroHttp.code });
+      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError) {
         return sendJson(response, error.status, { error: error.code });
       }
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });

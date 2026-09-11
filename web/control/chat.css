@@ -5,3 +5,9 @@
 .message-materialise:disabled{cursor:default;opacity:.9}
 .message-materialise.done{border-color:rgba(83,217,147,.42);background:rgba(83,217,147,.12);color:#69e3a3}
 .message-materialise.failed{border-color:rgba(255,107,120,.5);background:rgba(255,107,120,.14);color:#ff8b95}
+.stage-zero-notice{margin:6px 0 0;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.4;border:1px solid #31404c;background:#0e151b;color:#d7e8f4}
+.stage-zero-notice.hidden{display:none}
+.stage-zero-notice.pending{border-color:rgba(77,163,255,.42);color:#8ac5ff}
+.stage-zero-notice.ok{border-color:rgba(83,217,147,.42);color:#69e3a3}
+.stage-zero-notice.warn{border-color:rgba(232,176,72,.45);color:#e8b048}
+.stage-zero-notice.error{border-color:rgba(255,107,120,.5);color:#ff8b95}

@@ -6,6 +6,7 @@ const state = {
   generating: false,
   connected: false,
   preparingAttachments: false,
+  stageZeroRunning: false,
   pendingAttachments: [],
   messages: new Map()
 };
@@ -112,6 +113,8 @@ const popoutChatButton = $("popoutChatButton");
 const exportMdButton = $("exportMdButton");
 const exportPdfButton = $("exportPdfButton");
 const exportZipButton = $("exportZipButton");
+const stageZeroButton = $("stageZeroButton");
+const stageZeroNotice = $("stageZeroNotice");
 let dragDepth = 0;
 
 function nearBottom() {
@@ -326,6 +329,7 @@ function updateControls() {
   newChatButton.disabled = state.generating || state.preparingAttachments;
   modelSelect.disabled = state.generating;
   attachButton.disabled = state.generating || state.preparingAttachments;
+  if (stageZeroButton) stageZeroButton.disabled = state.generating || state.preparingAttachments || !state.sessionId || state.stageZeroRunning;
 }
 
 function textBlock(text) {
@@ -906,6 +910,55 @@ function downloadBlob(filename, blob) {
   URL.revokeObjectURL(url);
 }
 
+function setStageZeroNotice(kind, text) {
+  if (!stageZeroNotice) return;
+  if (!text) {
+    stageZeroNotice.className = "stage-zero-notice hidden";
+    stageZeroNotice.textContent = "";
+    return;
+  }
+  stageZeroNotice.className = `stage-zero-notice ${kind || ""}`;
+  stageZeroNotice.textContent = text;
+}
+
+function stageZeroSummary(run) {
+  const decision = run?.reading?.decision;
+  const status = decision?.status || "unknown";
+  if (status === "allow") {
+    const count = run.roadmap?.milestones?.length || 0;
+    return `Etap 0 ALLOW — Mózg spisał ${count} kamieni. Harmonia: ${(run.reading?.understanding || "").slice(0, 180)}`;
+  }
+  if (status === "deny") {
+    return `Etap 0 DENY (${decision.reason || "cardinal_issue"}) — wraca do autora. Mapa nie powstała.`;
+  }
+  if (status === "pause") {
+    return `Etap 0 PAUSE (${decision.reason || "tension"}) — poznanie niedomknięte, mapa nie powstała.`;
+  }
+  return `Etap 0: ${status}`;
+}
+
+async function runStageZero() {
+  if (!state.sessionId || state.generating || state.stageZeroRunning) return;
+  state.stageZeroRunning = true;
+  updateControls();
+  setStageZeroNotice("pending", "Etap 0: Harmonia czyta tę rozmowę…");
+  try {
+    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/stage-zero`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+    setStageZeroNotice(payload.reading?.decision?.status === "allow" ? "ok" : "warn", stageZeroSummary(payload));
+  } catch (error) {
+    setStageZeroNotice("error", error instanceof Error ? error.message : "STAGE_ZERO_FAILED");
+  } finally {
+    state.stageZeroRunning = false;
+    updateControls();
+  }
+}
+
 function exportConversation(kind) {
   if (!state.messages.size) {
     setStatus("error", "Nothing to export yet");
@@ -1078,6 +1131,7 @@ sendButton.addEventListener("click", () => void sendMessage());
 stopButton.addEventListener("click", () => void stopGeneration());
 newChatButton.addEventListener("click", () => void newConversation());
 popoutChatButton?.addEventListener("click", () => openPopoutChat());
+stageZeroButton?.addEventListener("click", () => void runStageZero());
 exportMdButton?.addEventListener("click", () => exportConversation("md"));
 exportPdfButton?.addEventListener("click", () => exportConversation("pdf"));
 exportZipButton?.addEventListener("click", () => exportConversation("zip"));

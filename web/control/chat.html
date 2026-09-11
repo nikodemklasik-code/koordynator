@@ -49,6 +49,7 @@
             <button class="secondary-button chat-action-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
             <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
             <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
+            <button class="secondary-button chat-action-button" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
             <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
             <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
             <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
@@ -102,6 +103,7 @@
           </div>
           <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
           <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
+          <div class="stage-zero-notice hidden" id="stageZeroNotice" role="status" aria-live="polite"></div>
           <div class="composer-note">Loading route provenance. Models that cannot execute under the active billing policy are not shown.</div>
         </div>
       </section>

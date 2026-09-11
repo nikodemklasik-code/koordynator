@@ -268,6 +268,7 @@ describe("Live Chat HTTP boundary and UI", () => {
       expect(page).toContain('id="chatFrame"');
       expect(page).toContain('id="chatDropOverlay"');
       expect(page).toContain('id="popoutChatButton"');
+      expect(page).toContain('id="stageZeroButton"');
       expect(page).toContain('id="exportMdButton"');
       expect(page).toContain('id="exportPdfButton"');
       expect(page).toContain('id="exportZipButton"');
