@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { resolve } from "node:path";
 import { bootstrapAi } from "./ai-bootstrap.js";
+import { bootstrapFreeSwarm } from "./free-swarm.js";
 import { loadLocalConfig } from "./local-config.js";
 import { chooseControlPort, isKoordynatorControl } from "./control-instance.js";
 
@@ -63,8 +64,17 @@ async function main(): Promise<void> {
     console.log(`KOORDYNATOR_CONTROL_PORT_BUSY ${preferredPort}; using ${port}`);
   }
 
-  // Reuse only already-persisted OmniRoute sessions. This never starts OAuth.
+  // Reuse only already-persisted OmniRoute sessions. This never starts a fresh login.
   await bootstrapAi();
+
+  // Then discover OmniRoute's explicitly no-auth/free providers and put every
+  // route that passes a real inference probe ahead of quota-limited accounts.
+  // Failure here is non-fatal: the already-proven subscription route remains active.
+  try {
+    await bootstrapFreeSwarm();
+  } catch {
+    console.log("FREE_SWARM_UNAVAILABLE; keeping existing AI route");
+  }
 
   const controlEntry = resolve("dist", "control", "main.js");
   const child = spawn(process.execPath, [controlEntry], {
