@@ -123,6 +123,8 @@ const startHermesButton = $("startHermesButton");
 const stopHermesButton = $("stopHermesButton");
 const hermesPane = $("hermesPane");
 const hermesTerm = $("hermesTerm");
+const hermesInput = $("hermesInput");
+const sendHermesButton = $("sendHermesButton");
 const hermesState = $("hermesState");
 const hermesHint = $("hermesHint");
 const MUTE_KEY = "koordynator.liveChat.hermesMuted";
@@ -1038,6 +1040,17 @@ async function sendHermesInput(data) {
   });
 }
 
+async function sendHermesLine() {
+  const text = hermesInput?.value ?? "";
+  if (!text.trim()) return;
+  if (!state.hermesSessionId) {
+    if (hermesHint) hermesHint.textContent = "Najpierw Start Hermes.";
+    return;
+  }
+  hermesInput.value = "";
+  await sendHermesInput(`${text}\r`);
+}
+
 function connectHermesEvents(sessionId) {
   state.hermesSource?.close();
   const source = new EventSource(`/api/hermes/pty/${encodeURIComponent(sessionId)}/events`);
@@ -1281,6 +1294,13 @@ stageZeroButton?.addEventListener("click", () => void runStageZero());
 muteHermesButton?.addEventListener("click", () => toggleHermesMute());
 startHermesButton?.addEventListener("click", () => void startHermesPty());
 stopHermesButton?.addEventListener("click", () => void stopHermesPty());
+sendHermesButton?.addEventListener("click", () => void sendHermesLine());
+hermesInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void sendHermesLine();
+  }
+});
 window.addEventListener("resize", () => {
   if (!state.hermesSessionId) return;
   const { cols, rows } = hermesDimensions();

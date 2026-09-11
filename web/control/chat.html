@@ -123,7 +123,11 @@
           </div>
         </div>
         <div class="hermes-term" id="hermesTerm" tabindex="0" aria-label="Hermes terminal"></div>
-        <p class="hermes-hint" id="hermesHint">Grant terminal on Providers, then Start. Click the pane and type — this is a real PTY, not Live Chat.</p>
+        <div class="hermes-composer">
+          <textarea id="hermesInput" rows="2" maxlength="8000" placeholder="Napisz do Hermesa i naciśnij Enter" aria-label="Hermes message"></textarea>
+          <button class="send-button" id="sendHermesButton" type="button" aria-label="Send to Hermes">↑</button>
+        </div>
+        <p class="hermes-hint" id="hermesHint">Grant terminal on Providers, then Start. Type below — this is Hermes, not Live Chat.</p>
       </aside>
       </section>
 
