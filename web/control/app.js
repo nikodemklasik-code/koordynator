@@ -1,4 +1,4 @@
-const state = { filter: "all", query: "", tasks: [], activeTaskId: null, request: 0 };
+const state = { filter: "all", query: "", tasks: [], repositories: [], activeTaskId: null, request: 0 };
 
 const $ = (id) => document.getElementById(id);
 const taskRows = $("taskRows");
@@ -198,6 +198,156 @@ $("copyTaskButton").addEventListener("click", async () => {
   setTimeout(() => { $("copyTaskButton").textContent = "Copy Task ID"; }, 1000);
 });
 
-Promise.all([loadHealth(), loadTasks()]).catch(() => {
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("PROJECT_PACK_READ_FAILED"));
+    reader.onerror = () => reject(reader.error || new Error("PROJECT_PACK_READ_FAILED"));
+    reader.readAsDataURL(file);
+  });
+}
+
+$("projectPackInput")?.addEventListener("change", async (event) => {
+  const files = Array.from(event.target.files || []);
+  event.target.value = "";
+  if (!files.length) return;
+  try {
+    const payload = [];
+    for (const file of files) {
+      payload.push({
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl: await fileToDataUrl(file)
+      });
+    }
+    const response = await fetch("/api/tasks/project-pack", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ files: payload })
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || `PROJECT_PACK_HTTP_${response.status}`);
+    $("newTaskDialog").showModal();
+    const note = document.createElement("p");
+    note.textContent = `Project pack ${body.packId} stored. Objective hint: ${body.objectiveHint}`;
+    $("newTaskDialog").querySelector(".dialog-body")?.prepend(note);
+  } catch (error) {
+    emptyState.classList.remove("hidden");
+    emptyState.querySelector("strong").textContent = "Project pack failed";
+    emptyState.querySelector("span:last-child").textContent = error instanceof Error ? error.message : "Upload failed";
+  }
+});
+
+const repositoryDialog = $("repositoryDialog");
+const repositoryList = $("repositoryList");
+const repositoryError = $("repositoryError");
+
+const REPOSITORY_ERRORS = {
+  REPOSITORY_INVALID: "Use owner/name or a github.com repository URL.",
+  REPOSITORY_BRANCH_INVALID: "Branch name contains unsupported characters.",
+  REPOSITORY_NOTES_INVALID: "Notes are too long or contain control characters.",
+  REPOSITORY_ALREADY_REGISTERED: "This repository is already registered.",
+  REPOSITORY_NOT_REGISTERED: "This repository is not registered.",
+  REPOSITORY_REGISTRY_FULL: "Repository registry is full."
+};
+
+function repositoryMessage(code) {
+  return REPOSITORY_ERRORS[code] || code || "Repository registration failed";
+}
+
+function renderRepositories(repositories) {
+  state.repositories = repositories;
+  if (!repositories.length) {
+    repositoryList.innerHTML = '<span class="repository-empty">No repositories registered yet.</span>';
+    return;
+  }
+  repositoryList.innerHTML = repositories.map((item) => {
+    const branch = item.defaultBranch ? `<span class="repository-branch">${escapeHtml(item.defaultBranch)}</span>` : "";
+    const title = item.notes ? ` title="${escapeHtml(item.notes)}"` : "";
+    return `<span class="repository-chip"${title}>
+      <a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer noopener">${escapeHtml(item.repositoryId)}</a>${branch}
+      <button type="button" class="repository-remove" data-repository="${escapeHtml(item.repositoryId)}" aria-label="Remove ${escapeHtml(item.repositoryId)}">×</button>
+    </span>`;
+  }).join("");
+}
+
+async function loadRepositories() {
+  try {
+    const response = await fetch("/api/repositories", { headers: { accept: "application/json" } });
+    if (!response.ok) throw new Error(`REPOSITORIES_HTTP_${response.status}`);
+    const payload = await response.json();
+    renderRepositories(payload.repositories || []);
+  } catch {
+    repositoryList.innerHTML = '<span class="repository-empty">Repository registry unavailable.</span>';
+  }
+}
+
+function showRepositoryError(message) {
+  repositoryError.textContent = message;
+  repositoryError.classList.toggle("hidden", !message);
+}
+
+$("addRepositoryButton")?.addEventListener("click", () => {
+  showRepositoryError("");
+  $("repositoryInput").value = "";
+  $("repositoryBranchInput").value = "";
+  $("repositoryNotesInput").value = "";
+  repositoryDialog.showModal();
+  $("repositoryInput").focus();
+});
+
+async function registerRepository() {
+  const repository = $("repositoryInput").value.trim();
+  if (!repository) return showRepositoryError(repositoryMessage("REPOSITORY_INVALID"));
+  const branch = $("repositoryBranchInput").value.trim();
+  const notes = $("repositoryNotesInput").value.trim();
+  const body = { repository };
+  if (branch) body.defaultBranch = branch;
+  if (notes) body.notes = notes;
+  try {
+    const response = await fetch("/api/repositories", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(body)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return showRepositoryError(repositoryMessage(payload.error));
+    renderRepositories(payload.repositories || []);
+    showRepositoryError("");
+    repositoryDialog.close();
+  } catch (error) {
+    showRepositoryError(error instanceof Error ? error.message : "Repository registration failed");
+  }
+}
+
+$("repositorySubmit")?.addEventListener("click", registerRepository);
+$("repositoryInput")?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  registerRepository();
+});
+
+repositoryList?.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-repository]");
+  if (!button) return;
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/repositories/remove", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ repository: button.dataset.repository })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(repositoryMessage(payload.error));
+    renderRepositories(payload.repositories || []);
+  } catch {
+    button.disabled = false;
+    await loadRepositories();
+  }
+});
+
+Promise.all([loadHealth(), loadTasks(), loadRepositories()]).catch(() => {
   loadTasks();
+  loadRepositories();
 });

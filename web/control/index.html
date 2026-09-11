@@ -45,6 +45,14 @@
         <button class="filter-chip" data-filter="released" type="button">RELEASED <span id="countReleased">0</span></button>
         <button class="filter-chip" data-filter="returned" type="button">RETURNED <span id="countReturned">0</span></button>
         <button class="add-button" id="newTaskButton" type="button" aria-label="Show safe task creation instructions">+</button>
+        <button class="ghost-button" id="addRepositoryButton" type="button">⎇ <span>Add repository</span></button>
+        <label class="ghost-button" for="projectPackInput">Upload project pack
+          <input id="projectPackInput" class="visually-hidden-file" type="file" multiple accept=".zip,.pdf,.txt,.md,.doc,.docx,application/pdf,application/zip,text/plain" />
+        </label>
+      </section>
+      <section class="repository-row" id="repositoryRow" aria-label="Registered repositories">
+        <div class="repository-row-head"><span>REGISTERED REPOSITORIES</span><span class="muted" id="repositoryHint">Sources and targets available to future WorkOrders.</span></div>
+        <div class="repository-list" id="repositoryList"></div>
       </section>
       <section class="table-wrap" aria-live="polite">
         <table class="task-table"><thead><tr><th>TASK ID</th><th>STATUS</th><th>OBJECTIVE</th><th>TARGET</th><th>INITIATED BY</th><th>CREATED</th><th>UPDATED</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="taskRows"></tbody></table>
@@ -57,6 +65,7 @@
   <dialog id="taskDialog" class="task-dialog"><form method="dialog" class="dialog-card"><div class="dialog-head"><div><div class="dialog-kicker">TASK INSPECTOR</div><h2 id="dialogTitle">Task</h2></div><button class="icon-button" value="close" aria-label="Close dialog">×</button></div><div class="dialog-body" id="dialogBody"></div><div class="dialog-actions"><button type="button" class="secondary-button" id="copyTaskButton">Copy Task ID</button><button value="close" class="primary-button">Close</button></div></form></dialog>
   <dialog id="newTaskDialog" class="task-dialog compact"><form method="dialog" class="dialog-card"><div class="dialog-head"><div><div class="dialog-kicker">SAFE EXECUTION</div><h2>New task</h2></div><button class="icon-button" value="close" aria-label="Close dialog">×</button></div><div class="dialog-body prose"><p>Tasks enter the control plane only through a signed WorkOrder. This console never asks for a private signing key and never creates unsigned runtime state.</p><pre><code>orchestrator sign work-order.json --private-key owner.pem --key-id owner --out signed.json
 orchestrator run run.json --public-key owner.pub --release-key release.pem</code></pre></div><div class="dialog-actions"><button value="close" class="primary-button">Close</button></div></form></dialog>
+  <dialog id="repositoryDialog" class="task-dialog compact"><form method="dialog" class="dialog-card"><div class="dialog-head"><div><div class="dialog-kicker">WORKORDER SOURCE</div><h2>Add repository</h2></div><button class="icon-button" value="close" aria-label="Close dialog">×</button></div><div class="dialog-body"><p class="prose">Registers a repository as a source/target for future WorkOrders. Nothing is cloned, executed or pushed by this action.</p><label class="field"><span>Repository</span><input id="repositoryInput" type="text" placeholder="owner/name or https://github.com/owner/name" autocomplete="off" spellcheck="false" /></label><label class="field"><span>Default branch (optional)</span><input id="repositoryBranchInput" type="text" placeholder="main" autocomplete="off" spellcheck="false" /></label><label class="field"><span>Notes (optional)</span><input id="repositoryNotesInput" type="text" placeholder="What this repository is for" autocomplete="off" /></label><p class="form-error hidden" id="repositoryError"></p></div><div class="dialog-actions"><button value="close" class="secondary-button" type="submit">Cancel</button><button type="button" class="primary-button" id="repositorySubmit">Register repository</button></div></form></dialog>
   <script src="/app.js" defer></script>
 </body>
 </html>

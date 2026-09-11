@@ -90,7 +90,7 @@ button,[role="button"],a{ -webkit-tap-highlight-color:transparent }
   min-width:0;
   min-height:0;
   height:100%;
-  grid-template-rows:auto auto minmax(0,1fr) 36px;
+  grid-template-rows:auto auto auto minmax(0,1fr) 36px;
   background:transparent;
   overflow:hidden;
 }
