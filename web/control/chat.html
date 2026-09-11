@@ -37,7 +37,7 @@
         <div class="chat-title-block">
           <div class="chat-kicker">REAL-TIME AI</div>
           <h1>Live Chat</h1>
-          <p>Persistent multi-turn conversation through executable OmniRoute API, OAuth and subscription-harness routes.</p>
+          <p>Rozmowa po lewej. Hermes z terminalem po prawej. Wycisz chowa PTY, nie zabija sesji.</p>
         </div>
         <div class="chat-head-actions">
           <label class="model-picker">
@@ -62,18 +62,16 @@
       <section class="chat-workspace" id="chatWorkspace">
       <section class="chat-frame" id="chatFrame" aria-label="Live conversation">
         <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
-        <div class="chat-connection-bar">
+        <div class="chat-connection-bar pane-head">
           <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
+          <div class="chat-usage-bar" aria-label="Billing and token provenance">
+            <span class="billing-badge checking" id="billingBadge">ROUTE CHECKING</span>
+            <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
+          </div>
           <div class="chat-connection-right">
             <button class="github-chat-button" id="githubChatButton" type="button" aria-label="GitHub repository connection"><span class="github-chat-dot checking" id="githubChatDot"></span><span id="githubChatLabel">GitHub checking…</span></button>
             <div class="session-meta"><span>SESSION</span><code id="sessionLabel">creating…</code></div>
           </div>
-        </div>
-
-        <div class="chat-usage-bar" aria-label="Billing and token provenance">
-          <span class="billing-badge checking" id="billingBadge">ROUTE CHECKING</span>
-          <span class="usage-24h" id="usage24h">24H USAGE · LOADING</span>
-          <span class="strict-policy">STRICT: PAYG + UNKNOWN + UNCONFIRMED FREE HIDDEN</span>
         </div>
 
         <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
@@ -99,7 +97,6 @@
             <textarea title="Załącz pliki przyciskiem +. ZIP, PDF, TXT, DOCX, XLSX i PPTX są rozpoznawane; obrazy wymagają modelu z obsługą obrazów." id="messageInput" rows="1" maxlength="32768" placeholder="Napisz wiadomość lub /repo https://github.com/owner/repo zadanie" aria-label="Message"></textarea>
             <div class="composer-actions">
               <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
-              <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line <span>·</span> drag, drop or paste files</div>
               <button class="stop-button hidden" id="stopButton" type="button">■ Stop</button>
               <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
             </div>
@@ -111,23 +108,20 @@
         </div>
       </section>
       <aside class="hermes-pane" id="hermesPane" aria-label="Hermes terminal">
-        <div class="hermes-pane-head">
-          <div>
-            <div class="chat-kicker">HERMES PTY</div>
-            <strong id="hermesPaneTitle">Terminal</strong>
-          </div>
+        <div class="hermes-pane-head pane-head">
+          <div class="connection-state"><span class="chat-status-dot" id="hermesHeadDot"></span><strong id="hermesPaneTitle">Hermes</strong></div>
+          <span class="hermes-state" id="hermesState">OFF</span>
           <div class="hermes-pane-actions">
-            <span class="hermes-state" id="hermesState">OFF</span>
-            <button class="secondary-button chat-action-button" id="startHermesButton" type="button">Start Hermes</button>
+            <button class="secondary-button chat-action-button" id="startHermesButton" type="button">Start</button>
             <button class="secondary-button chat-action-button" id="stopHermesButton" type="button">Stop</button>
           </div>
         </div>
         <div class="hermes-term" id="hermesTerm" tabindex="0" aria-label="Hermes terminal"></div>
         <div class="hermes-composer">
-          <textarea id="hermesInput" rows="2" maxlength="8000" placeholder="Napisz do Hermesa i naciśnij Enter" aria-label="Hermes message"></textarea>
+          <textarea id="hermesInput" rows="1" maxlength="8000" placeholder="Napisz do Hermesa…" aria-label="Hermes message"></textarea>
           <button class="send-button" id="sendHermesButton" type="button" aria-label="Send to Hermes">↑</button>
         </div>
-        <p class="hermes-hint" id="hermesHint">Grant terminal on Providers, then Start. Type below — this is Hermes, not Live Chat.</p>
+        <p class="hermes-hint hidden" id="hermesHint" role="status"></p>
       </aside>
       </section>
 

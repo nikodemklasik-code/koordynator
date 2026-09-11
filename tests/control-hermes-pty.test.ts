@@ -80,6 +80,8 @@ describe("Live Chat + Hermes PTY screen", () => {
       expect(css).toContain(".chat-hermes-muted");
       expect(css).toContain(".hermes-pane");
       expect(css).not.toContain("word-break:break-word");
+      expect(css).toContain(".chat-workspace .chat-frame,.hermes-pane{grid-template-rows:46px minmax(0,1fr) 88px");
+      expect(css).toContain(".chat-workspace .composer-wrap,.hermes-composer{height:88px");
       const js = await fetch(`${base}/chat.js`).then((item) => item.text());
       expect(js).toContain("/api/hermes/pty");
       expect(js).toContain("muteHermes");

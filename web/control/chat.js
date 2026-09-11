@@ -1044,7 +1044,10 @@ async function sendHermesLine() {
   const text = hermesInput?.value ?? "";
   if (!text.trim()) return;
   if (!state.hermesSessionId) {
-    if (hermesHint) hermesHint.textContent = "Najpierw Start Hermes.";
+    if (hermesHint) {
+      hermesHint.textContent = "Najpierw Start Hermes.";
+      hermesHint.classList.remove("hidden");
+    }
     return;
   }
   hermesInput.value = "";
@@ -1062,7 +1065,10 @@ function connectHermesEvents(sessionId) {
       if (payload.type === "exit") {
         setHermesState("OFF");
         state.hermesSessionId = null;
-        if (hermesHint) hermesHint.textContent = `Hermes ended (${payload.code}). Start again to attach a new PTY.`;
+        if (hermesHint) {
+          hermesHint.textContent = `Hermes ended (${payload.code}). Start again.`;
+          hermesHint.classList.remove("hidden");
+        }
       }
     } catch { /* ignore */ }
   };
@@ -1081,7 +1087,7 @@ function hermesDimensions() {
 
 async function startHermesPty() {
   setHermesState("STARTING");
-  if (hermesHint) hermesHint.textContent = "Starting Hermes PTY…";
+  if (hermesHint) { hermesHint.textContent = ""; hermesHint.classList.add("hidden"); }
   try {
     const term = ensureHermesTerminal();
     term?.reset();
@@ -1096,11 +1102,14 @@ async function startHermesPty() {
     state.hermesSessionId = payload.sessionId;
     connectHermesEvents(payload.sessionId);
     setHermesState("LIVE");
-    if (hermesHint) hermesHint.textContent = "Click the terminal and type. This is Hermes, not Live Chat.";
+    if (hermesHint) { hermesHint.textContent = ""; hermesHint.classList.add("hidden"); }
     term?.focus();
   } catch (error) {
     setHermesState("OFF");
-    if (hermesHint) hermesHint.textContent = error instanceof Error ? error.message : "HERMES_PTY_FAILED";
+    if (hermesHint) {
+      hermesHint.textContent = error instanceof Error ? error.message : "HERMES_PTY_FAILED";
+      hermesHint.classList.remove("hidden");
+    }
   }
 }
 
