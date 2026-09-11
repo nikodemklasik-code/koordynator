@@ -45,10 +45,10 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   await privateDirectory(home);
   const fallbacks = fallbackProviders(settings, env);
   const grants = await loadHermesGrants(join(root, ".orchestrator"));
-  // JSON is valid YAML. The key is bound to this endpoint, not a global OpenAI/OpenRouter key.
+  // JSON is valid YAML. The gateway key stays in the child env, never in the profile file.
   const config: Record<string, unknown> = {
     model: { provider: "custom", default: settings.model, base_url: settings.endpoint,
-      api_mode: "chat_completions", api_key: settings.apiKey },
+      api_mode: "chat_completions", key_env: "OPENAI_API_KEY" },
     approvals: { mode: grants.terminal ? "off" : "smart" },
     terminal: { cwd: resolve(root) }
   };

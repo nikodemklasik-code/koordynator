@@ -116,7 +116,8 @@ describe("Hermes / OmniRoute operator setup", () => {
       } as NodeJS.ProcessEnv);
       const path = join(launch.env.HERMES_HOME, "config.yaml");
       const config = JSON.parse(await readFile(path, "utf8"));
-      expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions", api_key: settings.apiKey });
+      expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions", key_env: "OPENAI_API_KEY" });
+      expect(JSON.stringify(config)).not.toContain(settings.apiKey);
       expect(config.approvals).toEqual({ mode: "smart" });
       expect(config.disabled_toolsets).toEqual(["terminal"]);
       expect(config.fallback_providers).toBeUndefined();
