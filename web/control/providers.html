@@ -35,6 +35,29 @@
           </div>
         </section>
 
+        <section class="github-connection-card" id="hermesGrantCard" aria-labelledby="hermesGrantTitle">
+          <div class="github-connection-copy">
+            <div class="github-connection-title-row"><h1 id="hermesGrantTitle">HERMES TERMINAL ACCESS</h1><span class="github-state checking" id="hermesGrantBadge">CHECKING</span></div>
+            <p id="hermesGrantDetail">Hermes can run shell commands only after you grant terminal access. Grant writes approvals.mode=off into the managed profile; revoke by deleting .orchestrator/hermes-grants.json.</p>
+          </div>
+          <div class="github-connection-actions">
+            <button id="hermesGrantRefreshButton" type="button" aria-label="Refresh Hermes terminal grant">↻</button>
+            <button id="hermesGrantButton" type="button" disabled>Grant terminal</button>
+          </div>
+        </section>
+
+        <div class="provider-list-card omni-card">
+          <div class="card-head">
+            <div>
+              <h1>OMNIROUTE LIVE HARNESS</h1>
+              <p>Live Claude / Grok / Codex status through the OmniRoute gateway. Doctor probes inference; Connect reports a real ready/status/open action.</p>
+            </div>
+            <button id="refreshOmniRoutes" type="button">↻ Refresh</button>
+          </div>
+          <div class="provider-table-head"><span>FAMILY</span><span>MODEL</span><span>HEALTH</span><span>ACTION</span><span>ACTIONS</span></div>
+          <div id="omniRouteRows" class="provider-rows"><div class="loading-line">Checking OmniRoute routes…</div></div>
+        </div>
+
         <div class="provider-list-card"><div class="card-head"><div><h1>OFFICIAL CLI PROVIDERS</h1><p>Health, access and executable paths reported by the provider fabric.</p></div><button id="refreshProviders" type="button">↻ Refresh</button></div><div class="provider-table-head"><span>PROVIDER</span><span>EXECUTABLE</span><span>HEALTH</span><span>ACCESS</span><span>ACTIONS</span></div><div id="providerRows" class="provider-rows"><div class="loading-line">Checking providers…</div></div></div>
         <aside id="fabric" class="fabric-card"><h2>FABRIC ARCHITECTURE</h2><div class="fabric-rule"><strong>Canonical Capability API</strong><p>Modules request capabilities. They do not import provider SDKs.</p></div><div class="fabric-rule"><strong>Builder and reviewer can be separated</strong><p>Diversity is enforced by routing policy, not improvised in the UI.</p></div><div class="fabric-rule"><strong>Failover requires idempotency</strong><p>Uncertain workspace mutations are never blindly retried on another provider.</p></div><div class="fabric-rule safe"><strong>No password or cookie capture</strong><p>Connection actions use supported provider authentication flows.</p></div></aside>
         <section id="receipts" class="receipts-card"><div class="card-head"><div><h2>PROVIDER EXECUTION RECEIPTS</h2><p>Persisted execution evidence from <code>.orchestrator/provider-receipts</code>.</p></div></div><div id="receiptRows" class="receipt-rows"><div class="empty-receipts">No persisted provider receipts.</div></div></section>
@@ -51,6 +74,15 @@
       <p>Koordynator will start the official GitHub CLI browser sign-in for <strong>github.com</strong>, then configure Git to use that authenticated CLI. Koordynator does not collect your GitHub password, browser cookies or token.</p>
       <div class="github-consent-points"><span>✓ Explicit approval is required before sign-in starts.</span><span>✓ GitHub controls the account and repository permissions you grant.</span><span>✓ Existing authenticated sessions are reused without asking again.</span></div>
       <footer><button value="cancel">Cancel</button><button class="github-approve" type="button" id="githubConsentApprove">Approve &amp; connect</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="hermesGrantDialog" class="command-dialog github-consent-dialog">
+    <form method="dialog">
+      <header><strong>Allow Hermes terminal?</strong><button value="cancel" aria-label="Close Hermes grant dialog">×</button></header>
+      <p>Hermes will be able to run local shell commands in this repo. Destructive commands stay on you. This grant is stored in <code>.orchestrator/hermes-grants.json</code> and applied the next time Hermes starts.</p>
+      <div class="github-consent-points"><span>✓ Explicit approval is required before the grant is written.</span><span>✓ Live Chat still cannot run the shell — only Hermes.</span><span>✓ Restart Hermes / npm run hermes after granting.</span></div>
+      <footer><button value="cancel">Cancel</button><button class="github-approve" type="button" id="hermesGrantApprove">Approve &amp; grant</button></footer>
     </form>
   </dialog>
 

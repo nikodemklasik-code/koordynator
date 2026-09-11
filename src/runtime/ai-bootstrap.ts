@@ -31,8 +31,11 @@ export const AI_TARGETS: Target[] = [
   { key: "github", prefixes: ["gh/"], envName: "KOORDYNATOR_GITHUB_COPILOT_MODEL", preferred: [] },
   { key: "grok", prefixes: ["gc/", "xao/"], envName: "KOORDYNATOR_GROK_MODEL", preferred: ["gc/grok-4.6", "gc/grok-4.5"] },
   { key: "gemini", prefixes: ["gemini-cli/"], envName: "KOORDYNATOR_GEMINI_MODEL", preferred: [] },
+  { key: "kiro", prefixes: ["kr/", "kiro/"], envName: "KOORDYNATOR_KIRO_MODEL", preferred: [] },
+  { key: "qwen", prefixes: ["qw/", "qwen-oauth/"], envName: "KOORDYNATOR_QWEN_MODEL", preferred: [] },
   { key: "kimi", prefixes: ["kmc/"], envName: "KOORDYNATOR_KIMI_MODEL", preferred: ["kmc/kimi-k2.6"] },
   { key: "qoder", prefixes: ["if/"], envName: "KOORDYNATOR_QODER_MODEL", preferred: [] },
+  { key: "astra", prefixes: ["cx/gpt-6-astra", "codex/gpt-6-astra"], envName: "KOORDYNATOR_ASTRA_MODEL", preferred: ["cx/gpt-6-astra", "cx/gpt-6-astra-pro"] },
   { key: "cursor", prefixes: ["cu/"], envName: "KOORDYNATOR_CURSOR_MODEL", preferred: [] },
   { key: "kilocode", prefixes: ["kc/"], envName: "KOORDYNATOR_KILOCODE_MODEL", preferred: [] },
   { key: "cline", prefixes: ["cl/"], envName: "KOORDYNATOR_CLINE_MODEL", preferred: [] },
@@ -55,6 +58,7 @@ export const CHAT_MODEL_PRIORITY = [
   "KOORDYNATOR_CURSOR_MODEL",
   "KOORDYNATOR_KILOCODE_MODEL",
   "KOORDYNATOR_CLINE_MODEL",
+  "KOORDYNATOR_ASTRA_MODEL",
   "KOORDYNATOR_OPENAI_MODEL"
 ] as const;
 

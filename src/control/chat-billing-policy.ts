@@ -33,7 +33,10 @@ const PROTECTED_PREFIX_SOURCE: Record<string, ChatModelBillingSource> = {
   cl: "SUBSCRIPTION_HARNESS",
   aq: "FREE_OAUTH",
   agy: "FREE_OAUTH",
-  of: "FREE_OAUTH"
+  of: "FREE_OAUTH",
+  kr: "FREE_OAUTH",
+  kiro: "FREE_OAUTH",
+  qw: "FREE_OAUTH"
 };
 
 function protectedPrefixSource(model: string): ChatModelBillingSource | undefined {

@@ -19,7 +19,8 @@ const HERMES_ROUTE_ENV = {
   kilocode: "KOORDYNATOR_KILOCODE_MODEL",
   cline: "KOORDYNATOR_CLINE_MODEL",
   amazonq: "KOORDYNATOR_AMAZON_Q_MODEL",
-  antigravity: "KOORDYNATOR_ANTIGRAVITY_MODEL"
+  antigravity: "KOORDYNATOR_ANTIGRAVITY_MODEL",
+  astra: "KOORDYNATOR_ASTRA_MODEL"
 } as const;
 
 type HermesRouteAlias = keyof typeof HERMES_ROUTE_ENV;
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
       configuration: check.ready ? "READY_FOR_PROBE" : "BLOCKED", inference: "NOT_TESTED",
       subscriptionRoutes: {
         openai: protectedRoutes(check, "OPENAI", "SUBSCRIPTION_HARNESS", ["cx/", "codex/"]),
+        astra: protectedRoutes(check, "OPENAI", "SUBSCRIPTION_HARNESS", ["cx/gpt-6-astra", "cx/gpt-6"]),
         anthropic: protectedRoutes(check, "ANTHROPIC", "SUBSCRIPTION_HARNESS", ["cc/", "claude-code/"]),
         github: protectedRoutes(check, "GITHUB COPILOT", "SUBSCRIPTION_HARNESS", ["gh/", "github/"]),
         grok: protectedRoutes(check, "XAI / GROK", "SUBSCRIPTION_HARNESS", ["gc/", "xao/"]),
@@ -83,9 +85,9 @@ async function main(): Promise<void> {
       },
       oauthRoutes: {
         gemini: protectedRoutes(check, "GOOGLE / GEMINI", "FREE_OAUTH", ["gemini-cli/"]),
-        kiro: protectedRoutes(check, "KIRO", "FREE_OAUTH", ["kr/"]),
+        kiro: protectedRoutes(check, "KIRO", "FREE_OAUTH", ["kr/", "kiro/"]),
         qoder: protectedRoutes(check, "QODER", "FREE_OAUTH", ["if/"]),
-        qwen: protectedRoutes(check, "QWEN", "FREE_OAUTH", ["qw/"]),
+        qwen: protectedRoutes(check, "QWEN", "FREE_OAUTH", ["qw/", "qwen-oauth/"]),
         amazonq: protectedRoutes(check, "AMAZON Q", "FREE_OAUTH", ["aq/"]),
         antigravity: protectedRoutes(check, "ANTIGRAVITY", "FREE_OAUTH", ["agy/"])
       },

@@ -42,7 +42,7 @@ describe("AI bootstrap", () => {
     const keys = AI_TARGETS.map(target => target.key);
     expect(keys).toEqual(expect.arrayContaining([
       "openai", "anthropic", "github", "grok", "gemini", "kimi", "qoder",
-      "cursor", "kilocode", "cline", "amazonq", "antigravity"
+      "cursor", "kilocode", "cline", "amazonq", "antigravity", "kiro", "qwen", "astra"
     ]));
   });
 
@@ -52,7 +52,8 @@ describe("AI bootstrap", () => {
     ["kc/kilo-model", "ALLOW_SUBSCRIPTION_HARNESS"],
     ["cl/cline-model", "ALLOW_SUBSCRIPTION_HARNESS"],
     ["aq/amazon-q-model", "ALLOW_FREE_OAUTH"],
-    ["agy/gemini-model", "ALLOW_FREE_OAUTH"]
+    ["agy/gemini-model", "ALLOW_FREE_OAUTH"],
+    ["kr/kiro-model", "ALLOW_FREE_OAUTH"]
   ])("allows protected OAuth route %s without paid-API override", (model, decision) => {
     expect(evaluateChatBilling(model, catalog(model))).toMatchObject({ allowed: true, decision });
   });
@@ -63,7 +64,7 @@ describe("AI bootstrap", () => {
     expect(packageJson.scripts.app).toContain("runtime/app-launch.js");
     expect(packageJson.scripts["ai:bootstrap"]).toContain("runtime/main.js bootstrap");
     expect(packageJson.scripts["ai:always-on"]).toContain("scripts/ai-always-on.mjs");
-    for (const key of ["kimi", "cursor", "kilocode", "cline", "amazonq", "antigravity"]) {
+    for (const key of ["kimi", "cursor", "kilocode", "cline", "amazonq", "antigravity", "astra"]) {
       expect(packageJson.scripts[`hermes:${key}`]).toContain(`hermes ${key}`);
     }
   });
@@ -81,10 +82,11 @@ describe("AI bootstrap", () => {
     expect(selectChatModels({
       KOORDYNATOR_OPENAI_MODEL: "cx/gpt-5.5",
       KOORDYNATOR_ANTHROPIC_MODEL: "cc/claude-opus-5",
-      KOORDYNATOR_GROK_MODEL: "gc/grok-4.5"
+      KOORDYNATOR_GROK_MODEL: "gc/grok-4.5",
+      KOORDYNATOR_KIRO_MODEL: "kr/kiro-claude"
     })).toEqual({
-      primary: "cc/claude-opus-5",
-      fallbacks: ["gc/grok-4.5", "cx/gpt-5.5"]
+      primary: "kr/kiro-claude",
+      fallbacks: ["cc/claude-opus-5", "gc/grok-4.5", "cx/gpt-5.5"]
     });
     expect(selectChatModels({
       KOORDYNATOR_GEMINI_MODEL: "gemini-cli/gemini-2.5-pro",

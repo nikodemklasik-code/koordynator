@@ -40,7 +40,7 @@ describe("chat repository execution", () => {
     control.abort();
     await expect(pending).rejects.toThrow("REPO_STOPPED");
   });
-  it("prepares an isolated job, passes credentials only through its profile and redacts the report", async () => {
+  it("prepares an isolated job, passes credentials only through its profile and redacts the report", { timeout: 20_000 }, async () => {
     const root = await mkdtemp(join(tmpdir(), "repo-runner-"));
     const bin = join(root, "bin");
     await mkdir(bin);

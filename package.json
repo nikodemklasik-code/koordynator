@@ -42,7 +42,8 @@
     "hermes:kilocode": "npm run build && node dist/runtime/main.js hermes kilocode",
     "hermes:cline": "npm run build && node dist/runtime/main.js hermes cline",
     "hermes:amazonq": "npm run build && node dist/runtime/main.js hermes amazonq",
-    "hermes:antigravity": "npm run build && node dist/runtime/main.js hermes antigravity"
+    "hermes:antigravity": "npm run build && node dist/runtime/main.js hermes antigravity",
+    "hermes:astra": "npm run build && node dist/runtime/main.js hermes astra"
   },
   "devDependencies": {
     "@types/node": "22.10.0",

@@ -4,6 +4,7 @@ import { OfficialCliProviderAdapter, officialSubscriptionLaunchSpecs } from "../
 import type { ProviderDescriptor, ProviderHealth } from "../api/provider-contract.js";
 import { FileProviderReceiptStore } from "../api/provider-receipt-store.js";
 import type { ProviderExecutionReceipt } from "../api/provider-receipt.js";
+import type { OmniRouteLiveStatus } from "./omniroute-live-status.js";
 
 export type ProviderSummary = {
   providerId: string;
@@ -18,6 +19,7 @@ export type ProviderSummary = {
 export type ProviderFabricView = {
   mode: "OFFICIAL_CLI";
   providers: ProviderSummary[];
+  omniRoutes: OmniRouteLiveStatus[];
   receipts: ProviderExecutionReceipt[];
   architecture: {
     capabilityBoundary: "CANONICAL_CAPABILITY_API";
@@ -84,10 +86,11 @@ export class ProviderReadModel {
     return groups.flat().sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.receiptFp.localeCompare(a.receiptFp)).slice(0, limit);
   }
 
-  async view(force = false): Promise<ProviderFabricView> {
+  async view(force = false, omniRoutes: OmniRouteLiveStatus[] = []): Promise<ProviderFabricView> {
     return {
       mode: "OFFICIAL_CLI",
       providers: await this.providers(force),
+      omniRoutes,
       receipts: await this.receipts(),
       architecture: {
         capabilityBoundary: "CANONICAL_CAPABILITY_API",

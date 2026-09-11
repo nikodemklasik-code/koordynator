@@ -70,9 +70,24 @@ function receiptRow(receipt) {
   </article>`;
 }
 
+function omniRouteRow(route) {
+  return `<article class="provider-row" data-omni-id="${escapeHtml(route.providerId)}">
+    <div data-label="FAMILY"><strong>${escapeHtml(route.label || route.family)}</strong><small>${escapeHtml(route.transport)}</small></div>
+    <div data-label="MODEL"><code>${escapeHtml(route.model)}</code></div>
+    <div data-label="HEALTH"><span class="health-badge ${healthClass(route.health)}">● ${escapeHtml(route.health)}</span></div>
+    <div data-label="ACTION"><code>${escapeHtml(route.connectAction)}</code><br><small>${escapeHtml(route.detail || "")}</small></div>
+    <div class="provider-actions" data-label="ACTIONS"><button data-omni-action="doctor" type="button">Doctor</button><button data-omni-action="connect" type="button">Connect</button></div>
+  </article>`;
+}
+
 function render(data) {
   fabric = data;
   $("providerRows").innerHTML = data.providers.map(providerRow).join("");
+  if ($("omniRouteRows")) {
+    $("omniRouteRows").innerHTML = (data.omniRoutes || []).length
+      ? data.omniRoutes.map(omniRouteRow).join("")
+      : '<div class="empty-receipts">No OmniRoute family routes reported.</div>';
+  }
   $("receiptRows").innerHTML = data.receipts.length ? data.receipts.map(receiptRow).join("") : '<div class="empty-receipts">No persisted provider receipts.</div>';
   const unhealthy = data.providers.filter((provider) => provider.health !== "HEALTHY");
   $("healthSummary").textContent = unhealthy.length === 0 ? "All configured official CLIs healthy" : `${unhealthy.length} provider${unhealthy.length === 1 ? "" : "s"} require attention`;
@@ -248,10 +263,98 @@ $("copyCommand").addEventListener("click", async () => {
   setTimeout(() => { $("copyCommand").textContent = before; }, 900);
 });
 
+let hermesGrant = null;
+let hermesGranting = false;
+
+function renderHermesGrant(status) {
+  hermesGrant = status;
+  const granted = status?.terminal === true;
+  const badge = $("hermesGrantBadge");
+  if (!badge) return;
+  badge.textContent = granted ? "GRANTED" : "REQUIRED";
+  badge.className = `github-state ${granted ? "connected" : "auth_required"}`;
+  $("hermesGrantDetail").textContent = granted
+    ? "Hermes may run local shell commands. Restart Hermes after changing this grant."
+    : "Hermes can run shell commands only after you grant terminal access. Grant writes approvals.mode=off into the managed profile.";
+  const button = $("hermesGrantButton");
+  button.textContent = granted ? "Granted" : (hermesGranting ? "Granting…" : "Grant terminal");
+  button.disabled = granted || hermesGranting;
+}
+
+async function loadHermesGrant() {
+  const response = await fetch("/api/integrations/hermes-grants", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`HERMES_GRANT_HTTP_${response.status}`);
+  renderHermesGrant(await response.json());
+}
+
+async function grantHermesTerminal() {
+  if (hermesGranting || hermesGrant?.terminal) return;
+  hermesGranting = true;
+  renderHermesGrant(hermesGrant);
+  const approve = $("hermesGrantApprove");
+  const before = approve.textContent;
+  approve.disabled = true;
+  approve.textContent = "Writing grant…";
+  try {
+    const response = await fetch("/api/integrations/hermes-grants", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ grant: "terminal", approved: true })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HERMES_GRANT_HTTP_${response.status}`);
+    $("hermesGrantDialog").close();
+    renderHermesGrant(payload);
+  } catch (error) {
+    $("hermesGrantDialog").close();
+    openCommand("Hermes grant failed", error instanceof Error ? error.message : "Grant failed", "Check /api/integrations/hermes-grants");
+  } finally {
+    hermesGranting = false;
+    approve.disabled = false;
+    approve.textContent = before;
+    renderHermesGrant(hermesGrant);
+  }
+}
+
+$("omniRouteRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-omni-action]");
+  if (!button) return;
+  const row = button.closest("[data-omni-id]");
+  const providerId = row?.dataset.omniId;
+  if (!providerId) return;
+  const route = (fabric?.omniRoutes || []).find((item) => item.providerId === providerId);
+  if (button.dataset.omniAction === "doctor") {
+    fetch(`/api/providers/${encodeURIComponent(providerId)}/doctor`, { headers: { accept: "application/json" } })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error(`DOCTOR_HTTP_${response.status}`)))
+      .then((result) => {
+        const badge = row.querySelector(".health-badge");
+        badge.textContent = `● ${result.health}`;
+        badge.className = `health-badge ${healthClass(result.health)}`;
+      })
+      .catch((error) => openCommand("OmniRoute doctor failed", error.message, route?.doctorCommand || "omniroute doctor"));
+    return;
+  }
+  fetch(`/api/providers/${encodeURIComponent(providerId)}/connect`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ approved: true })
+  }).then(async (response) => {
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `CONNECT_HTTP_${response.status}`);
+    openCommand(`OmniRoute ${providerId}`, payload.status?.detail || payload.action, payload.command || "");
+  }).catch((error) => openCommand("OmniRoute connect failed", error.message, "omniroute serve --daemon --no-open"));
+});
+
+$("refreshOmniRoutes")?.addEventListener("click", () => loadProviders(true).catch((error) => openCommand("OmniRoute refresh failed", error.message, "omniroute doctor")));
+$("hermesGrantRefreshButton")?.addEventListener("click", () => loadHermesGrant().catch((error) => openCommand("Hermes grant refresh failed", error.message, "")));
+$("hermesGrantButton")?.addEventListener("click", () => { if (!hermesGrant?.terminal) $("hermesGrantDialog").showModal(); });
+$("hermesGrantApprove")?.addEventListener("click", () => void grantHermesTerminal());
+
 Promise.all([
   fetch("/api/health", { headers: { accept: "application/json" } }).then((response) => response.ok ? response.json() : Promise.reject(new Error(`HEALTH_HTTP_${response.status}`))),
   loadProviders(),
-  loadGitHubConnection()
+  loadGitHubConnection(),
+  loadHermesGrant().catch(() => undefined)
 ]).then(([health]) => {
   $("versionLabel").textContent = `v${health.version}`;
 }).catch((error) => {

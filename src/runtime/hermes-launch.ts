@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { loadHermesGrants } from "../control/hermes-grant-store.js";
 import { omniRouteSettings } from "./local-config.js";
 
 async function privateDirectory(path: string): Promise<void> {
@@ -43,11 +44,15 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   const home = join(state, "hermes-omniroute");
   await privateDirectory(home);
   const fallbacks = fallbackProviders(settings, env);
+  const grants = await loadHermesGrants(join(root, ".orchestrator"));
   // JSON is valid YAML. The key is bound to this endpoint, not a global OpenAI/OpenRouter key.
   const config: Record<string, unknown> = {
     model: { provider: "custom", default: settings.model, base_url: settings.endpoint,
-      api_mode: "chat_completions", api_key: settings.apiKey }
+      api_mode: "chat_completions", api_key: settings.apiKey },
+    approvals: { mode: grants.terminal ? "off" : "smart" },
+    terminal: { cwd: resolve(root) }
   };
+  if (!grants.terminal) config.disabled_toolsets = ["terminal"];
   if (fallbacks.length > 0) config.fallback_providers = fallbacks;
   await privateFile(join(home, "config.yaml"), JSON.stringify(config, null, 2) + "\n");
   // Hermes clears inherited known provider keys when a profile .env exists.
