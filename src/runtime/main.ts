@@ -24,10 +24,21 @@ const HERMES_ROUTE_ENV = {
 
 type HermesRouteAlias = keyof typeof HERMES_ROUTE_ENV;
 
-function protectedRoutes(check: Awaited<ReturnType<typeof checkOmniRoute>>, family: string, source: "SUBSCRIPTION_HARNESS" | "FREE_OAUTH"): string[] {
-  return check.catalog.entries
-    ?.filter(entry => entry.family === family && entry.billingSource === source)
-    .map(entry => entry.id) ?? [];
+function protectedRoutes(
+  check: Awaited<ReturnType<typeof checkOmniRoute>>,
+  family: string,
+  source: "SUBSCRIPTION_HARNESS" | "FREE_OAUTH",
+  prefixes: string[] = []
+): string[] {
+  const routes = new Set(
+    check.catalog.entries
+      ?.filter(entry => entry.family === family && entry.billingSource === source)
+      .map(entry => entry.id) ?? []
+  );
+  for (const id of check.catalog.models) {
+    if (prefixes.some(prefix => id.startsWith(prefix))) routes.add(id);
+  }
+  return [...routes];
 }
 
 async function main(): Promise<void> {
@@ -61,22 +72,22 @@ async function main(): Promise<void> {
       catalog: "PASS", listed: check.listed, billing: check.billing.decision,
       configuration: check.ready ? "READY_FOR_PROBE" : "BLOCKED", inference: "NOT_TESTED",
       subscriptionRoutes: {
-        openai: protectedRoutes(check, "OPENAI", "SUBSCRIPTION_HARNESS"),
-        anthropic: protectedRoutes(check, "ANTHROPIC", "SUBSCRIPTION_HARNESS"),
-        github: protectedRoutes(check, "GITHUB COPILOT", "SUBSCRIPTION_HARNESS"),
-        grok: protectedRoutes(check, "XAI / GROK", "SUBSCRIPTION_HARNESS"),
-        kimi: protectedRoutes(check, "MOONSHOT / KIMI", "SUBSCRIPTION_HARNESS"),
-        cursor: protectedRoutes(check, "CURSOR", "SUBSCRIPTION_HARNESS"),
-        kilocode: protectedRoutes(check, "KILO CODE", "SUBSCRIPTION_HARNESS"),
-        cline: protectedRoutes(check, "CLINE", "SUBSCRIPTION_HARNESS")
+        openai: protectedRoutes(check, "OPENAI", "SUBSCRIPTION_HARNESS", ["cx/", "codex/"]),
+        anthropic: protectedRoutes(check, "ANTHROPIC", "SUBSCRIPTION_HARNESS", ["cc/", "claude-code/"]),
+        github: protectedRoutes(check, "GITHUB COPILOT", "SUBSCRIPTION_HARNESS", ["gh/", "github/"]),
+        grok: protectedRoutes(check, "XAI / GROK", "SUBSCRIPTION_HARNESS", ["gc/", "xao/"]),
+        kimi: protectedRoutes(check, "MOONSHOT / KIMI", "SUBSCRIPTION_HARNESS", ["kmc/"]),
+        cursor: protectedRoutes(check, "CURSOR", "SUBSCRIPTION_HARNESS", ["cu/"]),
+        kilocode: protectedRoutes(check, "KILO CODE", "SUBSCRIPTION_HARNESS", ["kc/"]),
+        cline: protectedRoutes(check, "CLINE", "SUBSCRIPTION_HARNESS", ["cl/"])
       },
       oauthRoutes: {
-        gemini: protectedRoutes(check, "GOOGLE / GEMINI", "FREE_OAUTH"),
-        kiro: protectedRoutes(check, "KIRO", "FREE_OAUTH"),
-        qoder: protectedRoutes(check, "QODER", "FREE_OAUTH"),
-        qwen: protectedRoutes(check, "QWEN", "FREE_OAUTH"),
-        amazonq: protectedRoutes(check, "AMAZON Q", "FREE_OAUTH"),
-        antigravity: protectedRoutes(check, "ANTIGRAVITY", "FREE_OAUTH")
+        gemini: protectedRoutes(check, "GOOGLE / GEMINI", "FREE_OAUTH", ["gemini-cli/"]),
+        kiro: protectedRoutes(check, "KIRO", "FREE_OAUTH", ["kr/"]),
+        qoder: protectedRoutes(check, "QODER", "FREE_OAUTH", ["if/"]),
+        qwen: protectedRoutes(check, "QWEN", "FREE_OAUTH", ["qw/"]),
+        amazonq: protectedRoutes(check, "AMAZON Q", "FREE_OAUTH", ["aq/"]),
+        antigravity: protectedRoutes(check, "ANTIGRAVITY", "FREE_OAUTH", ["agy/"])
       },
       models: check.catalog.models.map(id => ({ id, billing: check.catalog.billing?.modelSources[id] ?? "UNKNOWN" }))
     }, null, 2));
