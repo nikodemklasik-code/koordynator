@@ -108,15 +108,16 @@ describe("Hermes / OmniRoute operator setup", () => {
   it("creates endpoint-bound Hermes config, keeps secrets out of argv and rejects profile symlinks", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-"));
     try {
-      // prepareHermes reads the real process.env by default, so an operator shell with
-      // KOORDYNATOR_FALLBACK_MODELS set would leak fallbacks into this assertion.
       const launch = await prepareHermes(settings, root, {
         ...process.env,
         KOORDYNATOR_FALLBACK_MODELS: ""
       } as NodeJS.ProcessEnv);
       const path = join(launch.env.HERMES_HOME, "config.yaml");
-      const config = JSON.parse(await readFile(path, "utf8"));
-      expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions", api_key: settings.apiKey });
+      const raw = await readFile(path, "utf8");
+      const config = JSON.parse(raw);
+      expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions" });
+      expect(config.model).not.toHaveProperty("api_key");
+      expect(raw).not.toContain(settings.apiKey);
       expect(config.approvals).toEqual({ mode: "smart" });
       expect(config.disabled_toolsets).toEqual(["terminal"]);
       expect(config.fallback_providers).toBeUndefined();
@@ -140,6 +141,7 @@ describe("Hermes / OmniRoute operator setup", () => {
         KOORDYNATOR_FALLBACK_MODELS: "cc/claude-opus-5,gc/grok-4.5,cx/gpt-5.5,cx/gpt-5.5"
       } as NodeJS.ProcessEnv);
       const config = JSON.parse(await readFile(join(launch.env.HERMES_HOME, "config.yaml"), "utf8"));
+      expect(JSON.stringify(config)).not.toContain(settings.apiKey);
       expect(config.fallback_providers).toEqual([
         { provider: "custom", model: "cc/claude-opus-5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" },
         { provider: "custom", model: "gc/grok-4.5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" },
