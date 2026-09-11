@@ -84,6 +84,15 @@ export class WriteLeaseRegistry {
     this.leases.delete(leaseId);
   }
 
+  snapshot(): WriteLease[] {
+    return [...this.leases.values()].map((lease) => ({ ...lease, paths: [...lease.paths] }));
+  }
+
+  restore(leases: WriteLease[]): void {
+    this.leases.clear();
+    for (const lease of leases) this.leases.set(lease.leaseId, { ...lease, paths: [...lease.paths] });
+  }
+
   recover(leaseId: string, options: { processAlive: boolean }): { recoveryReceipt: boolean } {
     const lease = this.leases.get(leaseId);
     if (!lease) throw new Error("WRITE_LEASE_MISSING");

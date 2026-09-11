@@ -1,11 +1,14 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it, afterEach } from "vitest";
 import { FileStateStore } from "../src/store/file-state-store.js";
 import { TaskExecutionRunner } from "../src/control/task-execution-runner.js";
+import { MandateAuthority } from "../src/control/mandate-authority.js";
 import { WriteLeaseRegistry } from "../src/domain/write-lease.js";
+import { FileWriteLeaseStore } from "../src/store/write-lease-store.js";
 import type { TaskId, WorkspaceId } from "../src/domain/ids.js";
 
 const roots: string[] = [];
@@ -197,5 +200,112 @@ describe("Task execution runner (local, no GitHub)", () => {
       paths: ["feature.txt"],
       ttlMs: 60_000
     }).owner).toBe("next");
+  });
+
+  it("persists the write lease so a restarted Control still blocks overlapping writers", async () => {
+    const { repo, state } = await fixture();
+    let heldPath = "";
+    const first = new TaskExecutionRunner({
+      stateDir: state,
+      projectRoot: repo,
+      repository: "nikodemklasik-code/koordynator",
+      agent: async (context) => {
+        heldPath = join(state, "write-leases.json");
+        const overlapping = new FileWriteLeaseStore(state);
+        await expect(overlapping.grant({
+          taskId: "TASK-OVERLAP",
+          revision: 1,
+          owner: "other",
+          stage: "CODE",
+          repository: "nikodemklasik-code/koordynator",
+          branch: context.branch,
+          paths: ["feature.txt"],
+          ttlMs: 60_000
+        })).rejects.toThrow(/WRITE_LEASE_CONFLICT/);
+        await writeFile(join(repo, "feature.txt"), "ok\n");
+        return { summary: "ok" };
+      }
+    });
+    await first.run(TASK);
+    expect(heldPath).toContain("write-leases.json");
+  });
+
+  it("picks the worker from the task role (code → opencode) and holds the lease under that owner", async () => {
+    const { repo, state } = await fixture();
+    const bin = join(state, "bin");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(bin, { recursive: true }));
+    // Fixture opencode binary: writes a file, so the code role really produces work.
+    await writeFile(join(bin, "opencode"), `#!/usr/bin/env node
+import {writeFileSync} from 'node:fs';
+writeFileSync('from-opencode.txt','ok');
+process.stdout.write('OpenCode did the work');
+`, { mode: 0o755 });
+    const leases = new WriteLeaseRegistry();
+    const owners: string[] = [];
+    const spy: typeof leases.grant = (req) => { owners.push(req.owner); return leases.grant(req); };
+    const runner = new TaskExecutionRunner({
+      stateDir: state,
+      projectRoot: repo,
+      leases: { grant: spy, release: (id) => leases.release(id) },
+      role: "code",
+      workerPathPrefix: bin,
+      verifier: async () => ({ command: "npx vitest run", exitCode: 0, status: "PASS" as const })
+    });
+    const result = await runner.run(TASK);
+    expect(result.state).toBe("BUILD_READY");
+    expect(result.worker).toBe("opencode");
+    expect(owners).toEqual(["opencode"]);
+    // Post-build reviewer ran on the product and reported without blocking.
+    expect(result.review?.blocks).toBe(false);
+    expect(result.review?.verdict).toBeDefined();
+    expect(git(repo, "show", `${result.branch}:from-opencode.txt`)).toContain("ok");
+  });
+
+  it("refuses to run a writing role that has no capability, before spawning anything", async () => {
+    const { repo, state } = await fixture();
+    // 'research' maps to Hermes (read-only); asking the runner to treat it as a
+    // writing task must be rejected by the capability gate, not by the process.
+    const runner = new TaskExecutionRunner({
+      stateDir: state,
+      projectRoot: repo,
+      role: "research",
+      requireWrite: true
+    });
+    await expect(runner.run(TASK)).rejects.toThrow(/WORKER_CAPABILITY_DENIED|WORKER_ROLE_NOT_WRITABLE/);
+  });
+
+  it("blocks the worker when Harmonia's mandate is suspended — no process, no side effect", async () => {
+    const { repo, state } = await fixture();
+    const bin = join(state, "bin");
+    await import("node:fs/promises").then(({ mkdir }) => mkdir(bin, { recursive: true }));
+    // If this binary ever runs it writes a file — its absence proves the gate fired first.
+    await writeFile(join(bin, "opencode"), `#!/usr/bin/env node
+import {writeFileSync} from 'node:fs';
+writeFileSync('MANDATE_LEAK.txt','ran');
+process.stdout.write('should not happen');
+`, { mode: 0o755 });
+    const mandate = new MandateAuthority();
+    mandate.setState("suspended");
+    const runner = new TaskExecutionRunner({
+      stateDir: state,
+      projectRoot: repo,
+      role: "code",
+      requireWrite: true,
+      workerPathPrefix: bin,
+      mandate,
+      verifier: async () => ({ command: "npx vitest run", exitCode: 0, status: "PASS" as const })
+    });
+    await expect(runner.run(TASK)).rejects.toThrow(/MANDATE_NOT_ENABLED/);
+    // The worker never ran, so its file must not exist and main is untouched.
+    expect(existsSync(join(repo, "MANDATE_LEAK.txt"))).toBe(false);
+    // A re-run once Harmonia re-enables the mandate proceeds normally.
+    mandate.setState("enabled");
+    await writeFile(join(bin, "opencode"), `#!/usr/bin/env node
+import {writeFileSync} from 'node:fs';
+writeFileSync('from-opencode.txt','ok');
+process.stdout.write('OpenCode did the work');
+`, { mode: 0o755 });
+    const result = await runner.run(TASK);
+    expect(result.state).toBe("BUILD_READY");
   });
 });

@@ -83,9 +83,12 @@ describe("Harmonia — samotne poznanie", () => {
     expect(reading.findings.map((item) => item.bucket)).toEqual(["assumptions"]);
     expect(reading.guidance.map((item) => item.subject)).toEqual(["tokeny", "zakres"]);
     expect(reading.decision.status).toBe("allow");
+    expect(reading.readingPlan.strategy).toBe("linear");
+    expect(reading.readingPlan.sourceClosed).toBe(true);
 
     // Jako jedyna dostaje całość projektu.
     const sent = bodies[0] as { messages: Array<{ role: string; content: string }> };
+    expect(sent.messages.some((message) => message.content.includes("PLAN CZYTANIA"))).toBe(true);
     expect(sent.messages.some((message) => message.content.includes("Chcę tryb ciemny w panelu."))).toBe(true);
 
     // Nie ma ręki: czytanie nie niesie mapy.

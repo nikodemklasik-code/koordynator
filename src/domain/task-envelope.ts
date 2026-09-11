@@ -1,4 +1,8 @@
 import { canonicalDigest } from "../crypto/canonical-digest.js";
+import {
+  normalizeConstitutionalMandate,
+  type ConstitutionalMandate
+} from "./constitutional-mandate.js";
 import type { Digest, TaskId } from "./ids.js";
 
 export type TaskRole = "research" | "code" | "browser" | "audit" | "deploy";
@@ -19,6 +23,7 @@ export type TaskEnvelope = {
   allowedTools: string[];
   dataClass: TaskDataClass;
   budgetPolicy: TaskBudgetPolicy;
+  constitutionalMandate: ConstitutionalMandate;
   writeLease?: TaskWriteLease;
   idempotencyKey: string;
   acceptanceChecks: string[];
@@ -30,7 +35,7 @@ const BUDGETS = new Set<TaskBudgetPolicy>(["FREE_CONFIRMED", "LOCAL_ONLY", "OWNE
 const READ_ONLY_ROLES = new Set<TaskRole>(["research", "browser", "audit"]);
 const ROOT_KEYS = [
   "taskId", "role", "objective", "allowedPaths", "allowedTools", "dataClass",
-  "budgetPolicy", "writeLease", "idempotencyKey", "acceptanceChecks"
+  "budgetPolicy", "constitutionalMandate", "writeLease", "idempotencyKey", "acceptanceChecks"
 ] as const;
 
 function assertPlainObject(value: unknown, code: string): asserts value is Record<string, unknown> {
@@ -112,6 +117,7 @@ export function normalizeTaskEnvelope(input: TaskEnvelope): TaskEnvelope {
     allowedTools: sortedUnique(input.allowedTools),
     dataClass: input.dataClass,
     budgetPolicy: input.budgetPolicy,
+    constitutionalMandate: normalizeConstitutionalMandate(input.constitutionalMandate),
     idempotencyKey: input.idempotencyKey.trim(),
     acceptanceChecks: sortedUnique(input.acceptanceChecks)
   };

@@ -21,6 +21,7 @@ export type HermesLaunchSpec = {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  close?: () => Promise<void>;
 };
 
 export type HermesPtyHooks = {
@@ -82,6 +83,7 @@ export class HermesPtySession {
   private readonly grants: HermesGrantStore;
   private handle: PtyHandle | null = null;
   private sessionId: string | null = null;
+  private launch: HermesLaunchSpec | null = null;
   private readonly subscribers = new Map<string, Set<(event: HermesPtyEvent) => void>>();
   private cols = 80;
   private rows = 24;
@@ -108,6 +110,7 @@ export class HermesPtySession {
     const sessionId = randomUUID();
     this.handle = handle;
     this.sessionId = sessionId;
+    this.launch = spec;
     handle.onData((chunk) => this.emit(sessionId, { type: "out", text: chunk.toString("utf8") }));
     handle.onExit((code) => {
       this.emit(sessionId, { type: "exit", code });
@@ -145,8 +148,11 @@ export class HermesPtySession {
     }
     if (!this.handle) return { stopped: false };
     try { this.handle.kill(); } catch { /* gone */ }
+    const close = this.launch?.close;
     this.handle = null;
     this.sessionId = null;
+    this.launch = null;
+    void close?.();
     return { stopped: true };
   }
 

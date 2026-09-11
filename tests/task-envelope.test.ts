@@ -5,6 +5,20 @@ import {
   validateTaskEnvelope,
   type TaskEnvelope
 } from "../src/domain/task-envelope.js";
+import { normalizeConstitutionalMandate } from "../src/domain/constitutional-mandate.js";
+
+function mandate() {
+  return normalizeConstitutionalMandate({
+    constitutionVersion: "harmonia-founding.1",
+    mandateId: "MANDATE-40",
+    mandateState: "enabled",
+    allowedEffects: ["fs.write"],
+    forbiddenEffects: ["git.merge"],
+    riskClass: "internal",
+    gateRequirements: ["integrity_gate"],
+    issuedAt: "2026-09-11T15:00:00.000Z"
+  });
+}
 
 function valid(): TaskEnvelope {
   return {
@@ -15,6 +29,7 @@ function valid(): TaskEnvelope {
     allowedTools: ["fs.write", "git.commit"],
     dataClass: "internal",
     budgetPolicy: "FREE_CONFIRMED",
+    constitutionalMandate: mandate(),
     writeLease: {
       repository: "nikodemklasik-code/koordynator",
       branch: "feat/issue-40-contracts",

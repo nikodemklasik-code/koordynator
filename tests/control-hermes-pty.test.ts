@@ -70,6 +70,18 @@ describe("Live Chat + Hermes PTY screen", () => {
       expect(page).toContain('id="hermesInput"');
       expect(page).toContain('id="startHermesButton"');
       expect(page).toContain('id="messageInput"');
+      expect(page).toContain('id="modelSelect"');
+      expect(page).toContain('id="attachButton"');
+      expect(page).toContain('id="fileInput"');
+      expect(page).toContain('id="githubChatButton"');
+      expect(page).toContain('id="githubChatLabel"');
+      expect(page).toContain('id="billingBadge"');
+      expect(page).toContain('id="usage24h"');
+      expect(page).not.toContain("REAL-TIME AI");
+      expect(page).not.toContain("MODEL · EXECUTABLE ROUTES");
+      const composer = page.slice(page.indexOf('id="composer"'));
+      expect(composer).toContain('id="modelSelect"');
+      expect(page.indexOf('id="modelSelect"')).toBeGreaterThan(page.indexOf('id="composer"'));
       expect(page).toContain('href="/xterm.css"');
       expect(page).toContain('src="/xterm.js"');
       expect(await fetch(`${base}/xterm.js`).then((item) => item.status)).toBe(200);

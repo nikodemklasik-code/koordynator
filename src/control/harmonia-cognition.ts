@@ -9,6 +9,7 @@
  * Harmonia nie ma ręki: czytanie nie zwraca mapy. Mapę spisuje Mózg
  * (`planning_requires_brain`), korzystając z jej wskazówek.
  */
+import { firstReading, type FirstReadingPlan } from "../domain/harmonia-reading.js";
 
 export type StageZeroStatus = "allow" | "pause" | "deny";
 
@@ -45,6 +46,8 @@ export type HarmoniaReading = {
   guidance: HarmoniaGuidance[];
   /** Czy źródło zostało domknięte (bez urwanego ogona). */
   sourceClosed: boolean;
+  /** Deterministyczny plan pierwszego czytania — kolejność, nie ocena. */
+  readingPlan: FirstReadingPlan;
   decision: StageZeroDecision;
   model: string;
   readAt: string;
@@ -77,6 +80,7 @@ const SYSTEM = [
   "errors (jawny błąd), inconsistencies (niespójność), gaps (luka), tensions (napięcie), assumptions (założenie).",
   "Oznacz: cardinal (czy uderza w fundament), repairable (czy da się naprawić bez autora),",
   "needsAuthor (czy tylko autor rozstrzygnie), risk 0..1.",
+  "Dostajesz PLAN CZYTANIA: czytaj źródło w tej kolejności. Szew (seam) to miejsce sprzeczności między sąsiadami.",
   "Odpowiadasz WYŁĄCZNIE jednym obiektem JSON, bez komentarza i bez bloku kodu:",
   '{"understanding": "<co rozumiesz przez ten projekt>",',
   ' "findings": [{"code": "<krótki kod>", "bucket": "errors|inconsistencies|gaps|tensions|assumptions",',
@@ -162,6 +166,15 @@ export class HarmoniaCognition {
     const source = String(project ?? "").trim();
     if (!source) throw new HarmoniaError("HARMONIA_PROJECT_REQUIRED", 400);
 
+    // Chat-originated Etap 0 is a brief: edges-first when long, linear when it fits one segment.
+    const readingPlan = firstReading(source, { kind: "brief" });
+    const order = readingPlan.order.map((step) => `#${step.index}/${step.team}`).join(" ");
+    const userContent = [
+      `PLAN CZYTANIA: strategy=${readingPlan.strategy} sourceClosed=${readingPlan.sourceClosed} order=${order || "empty"} seams=${readingPlan.seams.length}`,
+      "Czytaj źródło w tej kolejności. Szew (seam) to miejsce, w którym szukasz sprzeczności między sąsiadującymi segmentami.",
+      `PROJEKT (całość, tak jak podał człowiek):\n\n${source}`
+    ].join("\n\n");
+
     const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${this.credential()}` },
@@ -170,7 +183,7 @@ export class HarmoniaCognition {
         temperature: 0,
         messages: [
           { role: "system", content: SYSTEM },
-          { role: "user", content: `PROJEKT (całość, tak jak podał człowiek):\n\n${source}` }
+          { role: "user", content: userContent }
         ]
       }),
       signal: AbortSignal.timeout(this.timeoutMs)
@@ -191,6 +204,7 @@ export class HarmoniaCognition {
       findings,
       guidance: this.guidance(parsed.guidance),
       sourceClosed,
+      readingPlan,
       decision: decideStageZero({ sourceClosed, findings }),
       model: this.options.model,
       readAt: new Date().toISOString()

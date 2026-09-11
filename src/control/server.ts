@@ -19,6 +19,7 @@ import { ProjectPackService } from "./project-pack-service.js";
 import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
 import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
 import { MaterialisationError, MaterialisationService } from "./materialisation-service.js";
+import { TaskExecutionRunner, TaskExecutionError, type IndependentVerifier as TaskRunnerVerifier } from "./task-execution-runner.js";
 import { parseAgreedPlan } from "./chat-consensus.js";
 import { BrainError } from "./brain-roadmap.js";
 import { HarmoniaError } from "./harmonia-cognition.js";
@@ -46,6 +47,8 @@ export type ControlServerOptions = {
   chatApiKey?: string;
   chatApiKeyEnv?: string;
   chatDefaultModel?: string;
+  /** Pin modelu Harmonii (Etap 0). Pusty / brak = model sesji. */
+  chatHarmoniaModel?: string;
   chatFallbackModels?: string[];
   chatFetchImpl?: typeof fetch;
   chatBillingPolicy?: ChatBillingPolicyOptions;
@@ -60,6 +63,10 @@ export type ControlServerOptions = {
   materialisationKeyId?: string;
   /** Injected in tests. Production uses macOS `script` PTY + prepareHermes. */
   hermesPty?: HermesPtyHooks;
+  /** Test hook: PATH prefix so a fixture worker binary (opencode) is found first. */
+  taskRunnerPathPrefix?: string;
+  /** Test hook: replace the independent verifier (production runs vitest). */
+  taskRunnerVerifier?: TaskRunnerVerifier;
 };
 
 export class ControlAuthError extends Error {
@@ -117,6 +124,7 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/repositories/remove" ||
     pathname === "/api/tasks/materialise" ||
     pathname === "/api/tasks/materialise-plan" ||
+    /^\/api\/tasks\/TASK-[A-Za-z0-9._-]+\/run$/.test(pathname) ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname) ||
@@ -219,6 +227,15 @@ export function createControlServer(options: ControlServerOptions): Server {
   const materialisation = options.materialisationPrivateKeyPem
     ? new MaterialisationService(options.materialisationPrivateKeyPem, options.materialisationKeyId ?? "control-plane", stateDir)
     : null;
+  // The code role's real hand: chat→Tasks materialises a WorkOrder, /run drives the worker.
+  const taskRunner = new TaskExecutionRunner({
+    stateDir,
+    projectRoot,
+    role: "code",
+    requireWrite: true,
+    ...(options.taskRunnerPathPrefix === undefined ? {} : { workerPathPrefix: options.taskRunnerPathPrefix }),
+    ...(options.taskRunnerVerifier === undefined ? {} : { verifier: options.taskRunnerVerifier })
+  });
   const hermesGrants = new HermesGrantStore(stateDir);
   const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
@@ -245,7 +262,8 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
-    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl })
+    ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
+    ...(options.chatHarmoniaModel === undefined ? {} : { harmoniaModel: options.chatHarmoniaModel })
   });
   const hermesPty = new HermesPtySession({
     stateDir,
@@ -257,7 +275,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         apiKey: options.chatApiKey ?? settings.apiKey,
         model: options.chatDefaultModel ?? settings.model
       }, projectRoot);
-      return { command: launch.command, args: launch.args, cwd: launch.cwd, env: launch.env };
+      return { command: launch.command, args: launch.args, cwd: launch.cwd, env: launch.env, close: launch.close };
     })
   });
 
@@ -599,6 +617,22 @@ export function createControlServer(options: ControlServerOptions): Server {
         const rawFilter = url.searchParams.get("status") ?? "all";
         if (!FILTERS.has(rawFilter as TaskFilter)) return sendJson(response, 400, { error: "INVALID_TASK_FILTER" });
         return sendJson(response, 200, await tasks.list({ filter: rawFilter as TaskFilter, query: url.searchParams.get("q") ?? "" }));
+      }
+
+      const runMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/run$/.exec(url.pathname);
+      if (method === "POST" && runMatch?.[1]) {
+        const taskId = safeTaskId(runMatch[1]);
+        if (!taskId) return sendJson(response, 400, { error: "INVALID_TASK_ID" });
+        try {
+          const receipt = await taskRunner.run(taskId);
+          return sendJson(response, 200, receipt);
+        } catch (error) {
+          if (error instanceof TaskExecutionError) {
+            return sendJson(response, error.status, { error: error.message });
+          }
+          const message = error instanceof Error ? error.message : "TASK_RUN_ERROR";
+          return sendJson(response, 500, { error: message });
+        }
       }
 
       const returnMatch = /^\/api\/tasks\/(TASK-[A-Za-z0-9._-]+)\/return$/.exec(url.pathname);

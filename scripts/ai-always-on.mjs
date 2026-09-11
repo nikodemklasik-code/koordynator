@@ -197,6 +197,7 @@ run("Doctor", "npm", doctorArgs, { allowFail: true });
 
 const settings = omniRouteSettings();
 const launch = await prepareHermes(settings, root);
+try {
 const config = JSON.parse(readFileSync(resolve(launch.env.HERMES_HOME, "config.yaml"), "utf8"));
 const fallbacks = Array.isArray(config.fallback_providers)
   ? config.fallback_providers.map(entry => entry.model).filter(Boolean)
@@ -211,4 +212,7 @@ console.log("\nDone. Next command:\n  npm start");
 
 if (wantStart) {
   run("Start control UI", "npm", ["start"]);
+}
+} finally {
+  await launch.close();
 }

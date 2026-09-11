@@ -1,3 +1,5 @@
+import { assertMandateAllowsEffect, type ConstitutionalMandate } from "./constitutional-mandate.js";
+
 export type SideEffectKind = "payment" | "migration" | "publish" | "deploy" | "message";
 
 const KINDS = new Set<SideEffectKind>(["payment", "migration", "publish", "deploy", "message"]);
@@ -5,6 +7,7 @@ const KINDS = new Set<SideEffectKind>(["payment", "migration", "publish", "deplo
 export type SideEffectRequest = {
   key: string;
   kind: SideEffectKind;
+  mandate: ConstitutionalMandate;
 };
 
 export class SideEffectRegistry {
@@ -13,6 +16,8 @@ export class SideEffectRegistry {
   async run<T>(request: SideEffectRequest, exec: () => Promise<T>): Promise<T> {
     if (!KINDS.has(request.kind)) throw new Error("SIDE_EFFECT_KIND_INVALID");
     if (!request.key.trim()) throw new Error("SIDE_EFFECT_KEY_REQUIRED");
+    if (!request.mandate) throw new Error("MANDATE_REQUIRED");
+    assertMandateAllowsEffect(request.mandate, request.kind);
     const id = `${request.kind}:${request.key}`;
     if (this.done.has(id)) return this.done.get(id) as T;
     const result = await exec();

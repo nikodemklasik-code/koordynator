@@ -1,3 +1,5 @@
+import type { TaskRole } from "./task-envelope.js";
+
 export type WorkerKind = "hermes" | "opencode" | "playwright" | "audit" | "deploy" | "coordinator";
 export type WorkerAction =
   | "spawn.hermes"
@@ -37,6 +39,23 @@ const ALLOWED: Record<WorkerKind, ReadonlySet<WorkerAction>> = {
 };
 
 const DELEGATION = new Set<WorkerAction>(["spawn.hermes", "spawn.opencode", "assign.task"]);
+
+// Issue 40 responsibility table: each TaskEnvelope role is executed by exactly one
+// worker. Hermes=research, OpenCode=code, Playwright=browser, audit=read-only
+// auditor, deploy=separate deploy role gated behind owner approval.
+const ROLE_WORKER: Record<TaskRole, Exclude<WorkerKind, "coordinator">> = {
+  research: "hermes",
+  code: "opencode",
+  browser: "playwright",
+  audit: "audit",
+  deploy: "deploy"
+};
+
+export function workerForRole(role: TaskRole): Exclude<WorkerKind, "coordinator"> {
+  const worker = ROLE_WORKER[role];
+  if (!worker) throw new Error("WORKER_ROLE_UNKNOWN");
+  return worker;
+}
 
 export function workerCapabilities(kind: Exclude<WorkerKind, "coordinator">): WorkerCapabilities {
   return { ...CAPABILITIES[kind], tools: [...CAPABILITIES[kind].tools] };

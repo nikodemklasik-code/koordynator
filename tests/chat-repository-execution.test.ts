@@ -57,8 +57,10 @@ if(command==='git') {
 } else if(command==='gh') { process.stdout.write('{}'); }
 else {
   const config=JSON.parse(readFileSync(process.env.HERMES_HOME+'/config.yaml','utf8'));
-  if(config.model.default!=='cx/test' || config.model.base_url!=='http://127.0.0.1:20128/v1') process.exit(2);
+  if(config.model.default!=='cx/test' || !/^http:\\/\\/127\\.0\\.0\\.1:\\d+\\/v1$/.test(config.model.base_url) || config.model.base_url==='http://127.0.0.1:20128/v1') process.exit(2);
   if(config.model.api_key || config.model.key_env!=='OPENAI_API_KEY') process.exit(4);
+  if(!String(process.env.OPENAI_API_KEY||'').startsWith('tkt.')) process.exit(5);
+  if(process.env.OMNIROUTE_API_KEY) process.exit(6);
   if(!args.includes('-q') || !args.includes('--quiet')) process.exit(3);
   process.stdout.write('Agent fixture completed '+process.env.OPENAI_API_KEY);
 }
@@ -70,15 +72,59 @@ else {
       await createRepositoryExecutor(root)({text:"/repo https://github.com/example/repo inspect", model:"cx/test", endpoint:"http://127.0.0.1:20128/v1", apiKey:"fixture-sensitive-key", signal:new AbortController().signal, emit:t=>chunks.push(t), attachments:[{name:"input.txt",dataUrl:"data:text/plain;base64,aGk=",extractedText:"hi"}]});
       expect(chunks.join("")).toContain("Agent fixture completed [REDACTED]");
       expect(chunks.join("")).not.toContain("fixture-sensitive-key");
+      expect(chunks.join("")).not.toMatch(/tkt\./);
       const jobs = await readdir(join(root,"repository-jobs"));
       const job = join(root,"repository-jobs",jobs[0]!);
       const receipt = JSON.parse(await readFile(join(job,"receipt.json"),"utf8"));
       expect(receipt.status).toBe("PROCESS_COMPLETED");
-      expect(receipt.tests).toBe("SEE_AGENT_REPORT");
+      expect(receipt.tests).not.toBe("SEE_AGENT_REPORT");
+      expect(receipt.verifier).toBe("independent");
       expect(receipt.testVerdict).toBe("BLOCKED");
+      expect(receipt.testStatus).toBe("NOT_RUN");
       expect(await readFile(join(job,"attachments","0-input.txt"),"utf8")).toBe("hi");
       expect(process.cwd()).toBe(originalCwd);
     } finally { process.env.PATH=previousPath; await rm(root,{recursive:true,force:true}); }
   });
 
+  it("records an independent PASS when the verifier exits 0 after the agent", { timeout: 20_000 }, async () => {
+    const root = await mkdtemp(join(tmpdir(), "repo-runner-pass-"));
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    const previousPath = process.env.PATH;
+    const script = `#!/usr/bin/env node
+import {mkdirSync,existsSync,writeFileSync} from 'node:fs';
+import {basename} from 'node:path';
+const command=basename(process.argv[1]);
+const args=process.argv.slice(2);
+if(command==='git') {
+  if(args[0]==='clone') { mkdirSync(args.at(-1),{recursive:true}); writeFileSync(args.at(-1)+'/package.json','{}'); }
+  if(args[0]==='rev-parse') process.stdout.write('a'.repeat(40));
+} else if(command==='gh') { process.stdout.write('{}'); }
+else if(command==='npx' && args[0]==='vitest') { process.exit(existsSync('package.json')?0:1); }
+else { process.stdout.write('Agent fixture completed'); }
+`;
+    try {
+      for (const name of ["git", "gh", "hermes", "npx"]) await writeFile(join(bin, name), script, { mode: 0o700 });
+      process.env.PATH = `${bin}:${previousPath}`;
+      await createRepositoryExecutor(root)({
+        text: "/repo https://github.com/example/repo inspect",
+        model: "cx/test",
+        endpoint: "http://127.0.0.1:20128/v1",
+        apiKey: "fixture-sensitive-key",
+        signal: new AbortController().signal,
+        emit: () => undefined
+      });
+      const jobs = await readdir(join(root, "repository-jobs"));
+      const receipt = JSON.parse(await readFile(join(root, "repository-jobs", jobs[0]!, "receipt.json"), "utf8"));
+      expect(receipt.verifier).toBe("independent");
+      expect(receipt.testVerdict).toBe("PASS");
+      expect(receipt.testStatus).toBe("PASS");
+      expect(receipt.testExitCode).toBe(0);
+      // Incremental verify: only what the commit changed, against the base SHA.
+      expect(receipt.tests).toMatch(/^npx vitest run --changed [0-9a-f]+$/);
+    } finally {
+      process.env.PATH = previousPath;
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
