@@ -31,7 +31,8 @@ function fallbackProviders(settings: ReturnType<typeof omniRouteSettings>, env: 
     provider: "custom",
     model,
     base_url: settings.endpoint,
-    // Same gateway key already injected into the Hermes child as OPENAI_API_KEY.
+    // Transitional: child still receives OPENAI_API_KEY in process env.
+    // Persistent profile files must not store the raw gateway key.
     key_env: "OPENAI_API_KEY"
   }));
 }
@@ -45,18 +46,17 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   await privateDirectory(home);
   const fallbacks = fallbackProviders(settings, env);
   const grants = await loadHermesGrants(join(root, ".orchestrator"));
-  // JSON is valid YAML. The key is bound to this endpoint, not a global OpenAI/OpenRouter key.
+  // JSON is valid YAML. Raw provider keys stay out of the persisted profile.
   const config: Record<string, unknown> = {
     model: { provider: "custom", default: settings.model, base_url: settings.endpoint,
-      api_mode: "chat_completions", api_key: settings.apiKey },
+      api_mode: "chat_completions" },
     approvals: { mode: grants.terminal ? "off" : "smart" },
     terminal: { cwd: resolve(root) }
   };
   if (!grants.terminal) config.disabled_toolsets = ["terminal"];
   if (fallbacks.length > 0) config.fallback_providers = fallbacks;
   await privateFile(join(home, "config.yaml"), JSON.stringify(config, null, 2) + "\n");
-  // Hermes clears inherited known provider keys when a profile .env exists.
-  await privateFile(join(home, ".env"), "# Credentials are endpoint-bound in the managed config.yaml.\n");
+  await privateFile(join(home, ".env"), "# Credentials are not persisted in the managed Hermes profile.\n");
   return {
     command: "hermes",
     args: ["chat", "--provider", "custom", "--model", settings.model],
