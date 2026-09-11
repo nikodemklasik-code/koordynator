@@ -26,12 +26,28 @@ export type ChatBillingDecision = {
   checkedAt: string;
 };
 
+const PROTECTED_PREFIX_SOURCE: Record<string, ChatModelBillingSource> = {
+  kmc: "SUBSCRIPTION_HARNESS",
+  cu: "SUBSCRIPTION_HARNESS",
+  kc: "SUBSCRIPTION_HARNESS",
+  cl: "SUBSCRIPTION_HARNESS",
+  aq: "FREE_OAUTH",
+  agy: "FREE_OAUTH",
+  of: "FREE_OAUTH"
+};
+
+function protectedPrefixSource(model: string): ChatModelBillingSource | undefined {
+  const slash = model.indexOf("/");
+  if (slash <= 0) return undefined;
+  return PROTECTED_PREFIX_SOURCE[model.slice(0, slash).toLowerCase()];
+}
+
 export function evaluateChatBilling(
   model: string,
   catalog: ChatModelCatalog,
   options: ChatBillingPolicyOptions = {}
 ): ChatBillingDecision {
-  const source = catalog.billing?.modelSources[model] ?? "UNKNOWN";
+  const source = catalog.billing?.modelSources[model] ?? protectedPrefixSource(model) ?? "UNKNOWN";
   const route = catalog.billing?.modelRoutes?.[model];
   const transport: ChatModelRouteTransport = route?.transport
     ?? (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" ? "OMNIROUTE_OAUTH" : "OMNIROUTE_API");
