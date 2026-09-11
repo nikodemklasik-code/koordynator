@@ -1,3 +1,5 @@
+import { readAttachment } from "./attachment-reader.js";
+import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -14,6 +16,8 @@ export type ChatAttachment = {
   mimeType: string;
   size: number;
   dataUrl: string;
+  extractedText?: string;
+  extractionStatus?: string;
 };
 
 export type ChatAttachmentInput = Omit<ChatAttachment, "id">;
@@ -68,6 +72,7 @@ export class ChatServiceError extends Error {
 
 export type ChatServiceOptions = {
   stateDir: string;
+  repositoryExecutor?: RepositoryExecutor;
   endpoint?: string;
   apiKey?: string;
   apiKeyEnv?: string;
@@ -95,25 +100,7 @@ const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
 const MIME_RE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
 const DATA_URL_RE = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/;
-const ALLOWED_ATTACHMENT_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "application/pdf",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-  "application/json",
-  "application/xml",
-  "text/xml",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-]);
+
 
 function now(): string { return new Date().toISOString(); }
 function normalizeEndpoint(value: string): string { return value.replace(/\/+$/, ""); }
@@ -137,7 +124,7 @@ function safeAttachmentMime(value: unknown): string {
   if (typeof value !== "string") throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
   const mimeType = value.trim().toLowerCase();
   if (!MIME_RE.test(mimeType)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
-  if (!ALLOWED_ATTACHMENT_TYPES.has(mimeType)) throw new ChatServiceError("CHAT_ATTACHMENT_TYPE_UNSUPPORTED", 415);
+
   return mimeType;
 }
 
@@ -193,6 +180,7 @@ function mergeUsage(current: ProviderReportedUsage | undefined, next: ProviderRe
 
 export class ChatService {
   private readonly root: string;
+  private readonly repositoryExecutor: RepositoryExecutor | undefined;
   private readonly endpoint: string;
   private readonly apiKey: string | undefined;
   private readonly apiKeyEnv: string;
@@ -208,10 +196,12 @@ export class ChatService {
   private readonly timeoutMs: number;
   private readonly usageLedger: ChatUsageLedger;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
+  private readonly starting = new Set<string>();
   private readonly active = new Map<string, ActiveGeneration>();
 
   constructor(options: ChatServiceOptions) {
     this.root = resolve(options.stateDir, "chat");
+    this.repositoryExecutor = options.repositoryExecutor;
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
@@ -356,7 +346,9 @@ export class ChatService {
     for (const attachment of attachments) {
       const match = DATA_URL_RE.exec(attachment.dataUrl);
       if (!match || match[2] === undefined) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
-      if (attachment.mimeType.startsWith("image/")) {
+      if (attachment.extractedText !== undefined) {
+        parts.push({ type: "text", text: `[Attachment: ${attachment.name}; ${attachment.extractionStatus}]\n${attachment.extractedText}` });
+      } else if (attachment.mimeType.startsWith("image/")) {
         parts.push({ type: "image_url", image_url: { url: attachment.dataUrl } });
       } else {
         parts.push({ type: "file", file: { filename: attachment.name, file_data: match[2] } });
@@ -371,10 +363,10 @@ export class ChatService {
     let attachmentBytes = 0;
     for (const message of messages.slice().reverse()) {
       if (message.state === "error") continue;
-      const nextChars = chars + message.content.length;
+      const nextChars = chars + message.content.length + (message.attachments ?? []).reduce((sum, a) => sum + (a.extractedText?.length ?? 0), 0);
       const messageAttachmentBytes = (message.attachments ?? []).reduce((sum, attachment) => sum + attachment.size, 0);
       const nextAttachmentBytes = attachmentBytes + messageAttachmentBytes;
-      if (selected.length >= this.maxHistoryMessages || nextChars > this.maxHistoryChars || nextAttachmentBytes > this.maxHistoryAttachmentBytes) break;
+      if (selected.length && (selected.length >= this.maxHistoryMessages || nextChars > this.maxHistoryChars || nextAttachmentBytes > this.maxHistoryAttachmentBytes)) break;
       selected.push(message);
       chars = nextChars;
       attachmentBytes = nextAttachmentBytes;
@@ -407,7 +399,14 @@ export class ChatService {
     }
   }
 
-  async startMessage(
+  async startMessage(sessionId: string, messageText: string, requestedModel?: string, rawAttachments?: unknown, billing?: ChatBillingDecision) {
+    if (this.starting.has(sessionId) || this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
+    this.starting.add(sessionId);
+    try { return await this.prepareMessage(sessionId, messageText, requestedModel, rawAttachments, billing); }
+    finally { this.starting.delete(sessionId); }
+  }
+
+  private async prepareMessage(
     sessionId: string,
     messageText: string,
     requestedModel?: string,
@@ -416,6 +415,10 @@ export class ChatService {
   ): Promise<{ accepted: true; messageId: string; model: string; billingSource: string }> {
     const text = messageText.trim();
     const attachments = this.normalizeAttachments(rawAttachments);
+    let repoTask;
+    try { repoTask = repositoryTask(text); } catch { throw new ChatServiceError("REPO_TASK_INVALID_USE_REPO_URL_TASK", 400); }
+    if (repoTask && !this.repositoryExecutor) throw new ChatServiceError("REPO_EXECUTION_DISABLED", 403);
+
     if (!text && attachments.length === 0) throw new ChatServiceError("CHAT_MESSAGE_EMPTY", 400);
     if (Buffer.byteLength(text, "utf8") > this.maxMessageBytes) throw new ChatServiceError("CHAT_MESSAGE_TOO_LARGE", 413);
     if (this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
@@ -431,6 +434,18 @@ export class ChatService {
     }
     const model = requestedModel === undefined ? session.model : safeModel(requestedModel);
     session.model = model;
+    for (const attachment of attachments) {
+      try {
+        const bytes = Buffer.from(attachment.dataUrl.split(",")[1]!, "base64");
+        const read = await readAttachment(bytes, attachment.name, attachment.mimeType);
+        attachment.extractionStatus = read.status;
+        attachment.mimeType = read.detected;
+        attachment.dataUrl = `data:${read.detected};base64,${bytes.toString("base64")}`;
+        if (read.text !== undefined) attachment.extractedText = read.text;
+      } catch (error) {
+        throw new ChatServiceError(error instanceof Error && /^CHAT_[A-Z_]+$/.test(error.message) ? error.message : "CHAT_ATTACHMENT_PARSE_FAILED", 422);
+      }
+    }
 
     const user: ChatMessage = {
       id: randomUUID(),
@@ -478,8 +493,19 @@ export class ChatService {
 
   private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
     const sessionId = session.sessionId;
-    const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), repositoryTask(session.messages.at(-2)!.content) ? 30 * 60_000 : this.timeoutMs);
     try {
+      const taskText = session.messages.at(-2)!.content;
+      if (repositoryTask(taskText) && this.repositoryExecutor) {
+        await this.repositoryExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: session.messages.at(-2)?.attachments ?? [], signal: controller.signal, emit: delta => {
+          assistant.content += delta;
+          this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
+        } });
+        const audited = await this.finalize(session, assistant, "complete");
+        if (!audited) throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+        this.emit(sessionId, { type: "assistant_done", message: assistant });
+        return;
+      }
       const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${key}` },

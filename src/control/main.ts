@@ -27,6 +27,7 @@ const server = createControlServer({
   ...(process.env.KOORDYNATOR_OPERATOR === undefined ? {} : { operator: process.env.KOORDYNATOR_OPERATOR }),
   chatEndpoint: route.endpoint,
   ...(controlToken === undefined ? {} : { controlToken }),
+  chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,

@@ -39,6 +39,7 @@ const MIME_BY_EXTENSION = {
   jpeg: "image/jpeg",
   webp: "image/webp",
   gif: "image/gif",
+  zip: "application/zip",
   pdf: "application/pdf",
   txt: "text/plain",
   md: "text/markdown",
@@ -113,7 +114,7 @@ function fileExtension(name) {
 function resolvedMime(file) {
   const declared = String(file.type || "").toLowerCase().trim();
   if (ALLOWED_MIME_TYPES.has(declared)) return declared;
-  return MIME_BY_EXTENSION[fileExtension(file.name)] || declared;
+  return MIME_BY_EXTENSION[fileExtension(file.name)] || declared || "application/octet-stream";
 }
 
 function fileKindLabel(mimeType) {
@@ -197,10 +198,6 @@ async function addFiles(fileList) {
   let nextTotal = totalPendingBytes();
   for (const file of files) {
     const mimeType = resolvedMime(file);
-    if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-      showAttachmentError(`Unsupported file type: ${file.name}`);
-      return;
-    }
     if (file.size > MAX_ATTACHMENT_BYTES) {
       showAttachmentError(`${file.name} is larger than 10 MB.`);
       return;
@@ -218,7 +215,8 @@ async function addFiles(fileList) {
   try {
     for (const file of files) {
       const mimeType = resolvedMime(file);
-      const dataUrl = await readAsDataUrl(file);
+      const rawDataUrl = await readAsDataUrl(file);
+      const dataUrl = `data:${mimeType};base64,${rawDataUrl.split(",")[1]}`;
       state.pendingAttachments.push({
         clientId: createClientId(),
         name: file.name,
@@ -343,6 +341,8 @@ function renderMessageAttachments(container, attachments = []) {
     const label = document.createElement("span");
     label.className = "message-attachment-name";
     label.textContent = `${attachment.name || "attachment"} · ${formatBytes(Number(attachment.size) || 0)}`;
+    const status = { EXTRACTED: "tekst odczytany", VISION_REQUIRED: "wymaga odczytu obrazu/OCR", UNSUPPORTED: "format nieodczytany" }[attachment.extractionStatus];
+    if (status) label.textContent += ` · ${status}`;
     label.title = attachment.name || "attachment";
     item.appendChild(label);
     wrap.appendChild(item);
@@ -443,6 +443,14 @@ function applyEvent(event) {
 
 function humanError(code) {
   const known = {
+    REPO_EXECUTION_DISABLED: "Uruchom serwer z KOORDYNATOR_CHAT_REPO_EXECUTION=1",
+    REPO_TASK_INVALID_USE_REPO_URL_TASK: "Użyj: /repo https://github.com/owner/repo zadanie",
+    REPO_EXECUTABLE_UNAVAILABLE: "Nie znaleziono git, gh lub hermes w środowisku serwera",
+    REPO_COMMAND_FAILED: "Polecenie wykonawcy nie powiodło się. Sprawdź logowanie gh i instalację Hermesa.",
+    CHAT_ATTACHMENT_PARSE_FAILED: "Nie udało się odczytać pliku. Może być uszkodzony lub zaszyfrowany.",
+    CHAT_ATTACHMENT_PARSE_TIMEOUT: "Odczyt pliku przekroczył limit czasu",
+    CHAT_ARCHIVE_LIMIT: "ZIP przekracza limit rozpakowanych danych lub liczby plików",
+    CHAT_ARCHIVE_PATH_UNSAFE: "ZIP zawiera nieprawidłowe ścieżki",
     CHAT_AUTH_REQUIRED: "OmniRoute authorization unavailable",
     CHAT_RATE_LIMITED: "Rate limited",
     CHAT_TIMEOUT: "Request timed out",

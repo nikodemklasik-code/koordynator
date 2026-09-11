@@ -81,11 +81,10 @@
               class="visually-hidden-file"
               type="file"
               multiple
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
               aria-label="Attach files"
             />
             <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
-            <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message"></textarea>
+            <textarea title="Załącz pliki przyciskiem +. ZIP, PDF, TXT, DOCX, XLSX i PPTX są rozpoznawane; obrazy wymagają modelu z obsługą obrazów." id="messageInput" rows="1" maxlength="32768" placeholder="Napisz wiadomość lub /repo https://github.com/owner/repo zadanie" aria-label="Message"></textarea>
             <div class="composer-actions">
               <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
               <div class="composer-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift</kbd>+<kbd>Enter</kbd> new line <span>·</span> drag, drop or paste files</div>

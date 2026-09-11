@@ -133,9 +133,9 @@ describe("GitHub runtime fallback", () => {
       expect(user.role).toBe("user");
       expect(Array.isArray(user.content)).toBe(true);
       expect(user.content[0]).toEqual({ type: "text", text: "Review https://github.com/nikodemklasik-code/Harmonia-VERA and assess core" });
-      expect(user.content[1]?.type).toBe("file");
-      expect(user.content[1]?.file?.filename).toMatch(/^GitHub-nikodemklasik-code-Harmonia-VERA-1234567890ab\.txt$/);
-      expect(Buffer.from(user.content[1].file.file_data, "base64").toString("utf8")).toContain("Cargo.toml");
+      expect(user.content[1]?.type).toBe("text");
+      expect(user.content[1]?.text).toContain("GitHub-nikodemklasik-code-Harmonia-VERA-1234567890ab.txt");
+      expect(user.content[1].text).toContain("Cargo.toml");
       await waitForPersistedGeneration(base, session.sessionId);
     } finally {
       server.close();
