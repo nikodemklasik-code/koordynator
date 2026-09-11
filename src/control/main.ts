@@ -45,7 +45,7 @@ const server = createControlServer({
     materialisationPrivateKeyPem: signing.privateKeyPem,
     materialisationKeyId: signing.keyId
   }),
-  version: process.env.KOORDYNATOR_VERSION ?? VERSION
+  version: VERSION
 });
 
 server.listen(port(), host, () => {
