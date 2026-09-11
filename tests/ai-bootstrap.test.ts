@@ -57,11 +57,22 @@ describe("AI bootstrap", () => {
     expect(evaluateChatBilling(model, catalog(model))).toMatchObject({ allowed: true, decision });
   });
 
-  it("exposes the one-command bootstrap and Hermes launchers", async () => {
+  it("exposes one-command app startup and provider launchers", async () => {
     const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+    expect(packageJson.scripts.start).toBe("npm run app");
+    expect(packageJson.scripts.app).toContain("runtime/app-launch.js");
     expect(packageJson.scripts["ai:bootstrap"]).toContain("runtime/main.js bootstrap");
     for (const key of ["kimi", "cursor", "kilocode", "cline", "amazonq", "antigravity"]) {
       expect(packageJson.scripts[`hermes:${key}`]).toContain(`hermes ${key}`);
     }
+  });
+
+  it("never starts OAuth/device login during bootstrap or app launch", async () => {
+    const bootstrap = await readFile(new URL("../src/runtime/ai-bootstrap.ts", import.meta.url), "utf8");
+    const appLaunch = await readFile(new URL("../src/runtime/app-launch.ts", import.meta.url), "utf8");
+    expect(bootstrap).not.toContain('"oauth", "start"');
+    expect(bootstrap).not.toContain("/device-code");
+    expect(appLaunch).not.toContain("oauth");
+    expect(appLaunch).not.toContain("device-code");
   });
 });
