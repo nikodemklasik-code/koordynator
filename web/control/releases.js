@@ -9,6 +9,8 @@ function light(value){const v=String(value||"RED").toUpperCase();return v==="GRE
 function routeLight(health){const h=String(health||"").toUpperCase();if(h==="HEALTHY")return"GREEN";if(h==="RATE_LIMITED"||h==="DEGRADED")return"AMBER";return"RED"}
 function healthCopy(health){const h=String(health||"UNKNOWN").toUpperCase();if(h==="HEALTHY")return"LIVE";if(h==="RATE_LIMITED")return"QUOTA";if(h==="AUTH_REQUIRED")return"AUTH";if(h==="UNAVAILABLE")return"OFFLINE";return h}
 
+let latestReadiness=null;
+
 function renderHealth(h){
   $("environmentLabel").textContent=h.environment;
   $("sidebarEnv").textContent=h.environment;
@@ -76,7 +78,7 @@ function derivedReadiness(health,routes){
     {id:"audit",order:7,label:"Security / independent audit",phase:"WERYFIKACJA",light:"RED",aiRequired:false,agent:"audit",worker:"audit",model:null,detail:"Registry role exists but process bridge is not implemented",blocking:false,action:"Implement audit worker bridge"},
     {id:"deploy",order:8,label:"Release / deploy",phase:"GOTOWE",light:"RED",aiRequired:false,agent:"deploy",worker:"deploy",model:null,detail:"Registry role exists but process bridge is not implemented",blocking:false,action:"Implement deploy worker bridge"}
   ];
-  const canMaterialise=false; // fail closed when the dedicated readiness endpoint is unavailable
+  const canMaterialise=false;
   const fullPipelineReady=false;
   const green=stages.filter(s=>s.light==="GREEN").length,amber=stages.filter(s=>s.light==="AMBER").length;
   return{overall:"RED",canMaterialise,fullPipelineReady,score:Math.round(((green+amber*.5)/stages.length)*100),creativePhase:stages.find(s=>s.light!=="GREEN")?.phase||"GOTOWE",creativeProgress:green/stages.length*100,primaryModel:primary,fallbackModels:health?.chatFallbackModels||[],healthyAiRoutes:healthy.length,connectedAiRoutes:connected.length,terminalGrant:false,stages,checkedAt:new Date().toISOString(),derived:true}
@@ -87,28 +89,62 @@ function stageCard(stage){
   return `<article class="agent-stage ${l.toLowerCase()}"><div class="stage-top"><span class="stage-order">${String(stage.order).padStart(2,"0")}</span><span class="lamp ${l.toLowerCase()}"></span><strong>${esc(stage.label)}</strong><b>${l}</b></div><div class="stage-meta"><span>${esc(stage.agent)}</span><span>→</span><span>${esc(stage.worker)}</span>${stage.aiRequired?'<span class="ai-needed">AI</span>':''}</div>${model}<p>${esc(stage.detail||"")}</p>${action}</article>`
 }
 
-function renderReadiness(readiness){
-  const overall=light(readiness.overall);$("materialiseNow").textContent=readiness.canMaterialise?"READY":"BLOCKED";$("materialiseNow").dataset.light=readiness.canMaterialise?"GREEN":"RED";$("materialiseHint").textContent=readiness.canMaterialise?"Core materialisation gates are executable now":readiness.derived?"Dedicated readiness probe unavailable: failing closed":"At least one blocking gate is not green";
+function activeCreativeProcess(payload){
+  const tasks=Array.isArray(payload?.tasks)?payload.tasks:[];
+  const building=tasks.find(task=>String(task.state).toUpperCase()==="BUILDING");
+  if(building)return{phase:"TWORZENIE",progress:68,taskId:building.taskId,state:"BUILDING"};
+  const validating=tasks.find(task=>String(task.state).toUpperCase()==="VALIDATING");
+  if(validating)return{phase:"WERYFIKACJA",progress:84,taskId:validating.taskId,state:"VALIDATING"};
+  return null;
+}
+
+function renderCreative(readiness,process){
+  const spectrum=$("creativeSpectrum");
+  if(process){
+    $("creativeState").textContent=`RUNNING · ${process.phase} · ${short(process.taskId,14,6)}`;
+    $("creativeState").title=`${process.taskId} · ${process.state}`;
+    spectrum.style.setProperty("--creative-progress",`${process.progress}%`);
+    spectrum.dataset.active="true";
+    spectrum.dataset.state="running";
+    return;
+  }
+  const overall=light(readiness?.overall);
+  const phase=readiness?.creativePhase||"POZNAWANIE";
+  $("creativeState").textContent=`IDLE · readiness ${phase}`;
+  $("creativeState").title="No BUILDING or VALIDATING task is active. Readiness remains visible in the gate cards below.";
+  spectrum.style.setProperty("--creative-progress",`${Math.max(0,Math.min(100,Number(readiness?.creativeProgress)||0))}%`);
+  spectrum.dataset.active="false";
+  spectrum.dataset.state=overall.toLowerCase();
+}
+
+function renderReadiness(readiness,process=null){
+  latestReadiness=readiness;
+  $("materialiseNow").textContent=readiness.canMaterialise?"READY":"BLOCKED";$("materialiseNow").dataset.light=readiness.canMaterialise?"GREEN":"RED";$("materialiseHint").textContent=readiness.canMaterialise?"Core materialisation gates are executable now":readiness.derived?"Dedicated readiness probe unavailable: failing closed":"At least one blocking gate is not green";
   $("pipelineReady").textContent=readiness.fullPipelineReady?"READY":"INCOMPLETE";$("pipelineReady").dataset.light=readiness.fullPipelineReady?"GREEN":"AMBER";$("pipelineHint").textContent=readiness.fullPipelineReady?"All stages executable":"Audit/release or another stage still requires work";
   $("healthyRoutes").textContent=String(readiness.healthyAiRoutes??0);$("connectedRoutes").textContent=`${readiness.connectedAiRoutes??0} connected routes`;
   $("readinessScore").textContent=`${Math.max(0,Math.min(100,Math.round(Number(readiness.score)||0)))}%`;$("readinessPhase").textContent=readiness.creativePhase||"POZNAWANIE";
-  $("creativeState").textContent=`${overall} · ${readiness.creativePhase||"POZNAWANIE"}`;$("creativeDot").className=`creative-dot ${overall.toLowerCase()}`;
-  const progress=Math.max(0,Math.min(100,Number(readiness.creativeProgress)||0));$("creativeSpectrum").style.setProperty("--creative-progress",`${progress}%`);$("creativeSpectrum").dataset.state=overall.toLowerCase();
+  renderCreative(readiness,process);
   $("agentReadinessGrid").innerHTML=Array.isArray(readiness.stages)&&readiness.stages.length?readiness.stages.map(stageCard).join(""):'<div class="readiness-loading">No readiness stages reported.</div>'
 }
 
 async function getJson(path){const r=await fetch(path,{headers:{accept:"application/json"},cache:"no-store"});if(!r.ok)throw Object.assign(new Error(`${path} HTTP ${r.status}`),{status:r.status});return r.json()}
 
+async function refreshActiveProcess(){
+  if(!latestReadiness)return;
+  try{const tasks=await getJson("/api/tasks?status=all");renderCreative(latestReadiness,activeCreativeProcess(tasks))}catch{/* keep the last honest visual state */}
+}
+
 async function load(){
   $("refreshButton").classList.add("refreshing");
   try{
-    const [health,releases,fabric]=await Promise.all([getJson("/api/health"),getJson("/api/releases"),getJson("/api/providers?refresh=1")]);
+    const [health,releases,fabric,tasks]=await Promise.all([getJson("/api/health"),getJson("/api/releases"),getJson("/api/providers?refresh=1"),getJson("/api/tasks?status=all")]);
     renderHealth(health);renderRelease(releases);const routes=renderRoutes(fabric);
     let readiness;try{readiness=await getJson("/api/readiness/materialisation?refresh=1")}catch(error){readiness=derivedReadiness(health,routes)}
-    renderReadiness(readiness);
+    renderReadiness(readiness,activeCreativeProcess(tasks));
   }catch(error){
     $("loadingState").classList.add("hidden");$("emptyState").classList.remove("hidden");$("emptyState").querySelector("strong").textContent="Control readiness unavailable";$("emptyState").querySelector(":scope > span").textContent=error instanceof Error?error.message:String(error);$("activityList").innerHTML='<div class="activity-empty">Control API is unavailable.</div>';$("routeMatrix").innerHTML='<div class="readiness-loading">Route fabric unavailable.</div>';$("agentReadinessGrid").innerHTML='<div class="readiness-loading">Readiness fabric unavailable.</div>';$("lastUpdated").textContent="Refresh failed"
   }finally{$("refreshButton").classList.remove("refreshing")}
 }
 
 $("refreshButton").addEventListener("click",load);$("emptyRefreshButton").addEventListener("click",load);load();
+setInterval(()=>void refreshActiveProcess(),2000);
