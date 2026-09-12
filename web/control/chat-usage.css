@@ -155,13 +155,15 @@ body.workspace-v5 .v5-terminal-pane.terminal-fullscreen{
   height:auto!important;
   min-width:0!important;
   display:grid!important;
-  grid-template-rows:48px minmax(0,1fr) auto auto!important;
+  grid-template-rows:48px minmax(0,1fr)!important;
   border:1px solid #31414c!important;
   border-radius:14px!important;
   background:#070a0d!important;
   box-shadow:0 0 0 100vmax rgba(0,0,0,.72),0 28px 90px rgba(0,0,0,.78)!important;
   overflow:hidden!important;
 }
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .v5-terminal-composer,
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .hermes-hint{display:none!important}
 body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .terminal-readable{padding:18px clamp(16px,4vw,64px) 48px}
 body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .terminal-answer-line{font-size:13px;line-height:1.68}
 body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .terminal-question{font-size:12px;line-height:1.55}
