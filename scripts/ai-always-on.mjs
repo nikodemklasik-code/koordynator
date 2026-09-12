@@ -5,12 +5,12 @@
  * Default: NO interactive login. Uses already-active OmniRoute sessions.
  * Priority: free OAuth / subscription first, Codex/OpenAI last.
  *
- * Two commands for daily use:
+ * Daily:
  *   npm run ai:always-on
  *   npm start
  *
  * Optional:
- *   npm run ai:always-on -- --login   # only when a provider is missing
+ *   npm run ai:always-on -- --login   # explicit one-time vendor auth wizard
  *   npm run ai:always-on -- --probe
  */
 import { spawnSync } from "node:child_process";
@@ -37,7 +37,7 @@ Daily:
   npm start
 
 Options:
-  --login   Allow interactive OAuth for missing providers
+  --login   Run the explicit one-time vendor OAuth wizard for missing routes
   --probe   Live inference probe
   --start   Start control UI after setup
 `);
@@ -103,7 +103,7 @@ console.log(`node: ${need("node")}`);
 console.log(`npm:  ${need("npm")}`);
 console.log(`omniroute: ${need("omniroute")}`);
 console.log(`hermes: ${need("hermes")}`);
-console.log(wantLogin ? "mode: login allowed for missing providers" : "mode: no login (use existing sessions)");
+console.log(wantLogin ? "mode: explicit one-time login wizard" : "mode: no login (use existing sessions)");
 
 if (!existsSync(resolve(root, ".env")) && existsSync(resolve(root, ".env.example"))) {
   run("Create .env from example", "cp", [".env.example", ".env"]);
@@ -114,7 +114,7 @@ ensureOmniRoute();
 run("Build", "npm", ["run", "build"]);
 
 if (wantLogin) {
-  run("Bootstrap / login missing providers", "node", ["dist/runtime/main.js", "bootstrap"]);
+  run("One-time provider authentication", "node", ["scripts/ai-auth-missing.mjs"]);
 }
 
 const {
@@ -172,8 +172,8 @@ if (!selected.primary && !wantLogin) {
 
 if (!selected.primary) {
   console.error("No active OmniRoute model routes yet.");
-  console.error("Connect a provider in OmniRoute, or run once:");
-  console.error("  npm run ai:always-on -- --login");
+  console.error("Run the one-time missing-provider wizard:");
+  console.error("  npm run ai:auth-missing");
   process.exit(1);
 }
 

@@ -28,6 +28,7 @@ describe("Materialisation & Release dashboard", () => {
 
     expect(js).toContain("/api/readiness/materialisation?refresh=1");
     expect(js).toContain("/api/providers?refresh=1");
-    expect(js).toContain("fail closed");
+    expect(js).toContain("const canMaterialise=false");
+    expect(js).toContain("const fullPipelineReady=false");
   });
 });

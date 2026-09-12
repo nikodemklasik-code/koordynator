@@ -20,7 +20,14 @@ for (const path of [
   "src/control/provider-autoconnect.ts",
   "src/control/materialisation-readiness.ts",
   "scripts/ai-connect-existing.mjs",
+  "scripts/ai-auth-missing.mjs",
+  "scripts/ai-always-on.mjs",
+  "scripts/start-all.mjs",
+  "scripts/Koordynator-Start.command",
+  "scripts/install-desktop-launcher.mjs",
   "web/control/chat-v5.js",
+  "web/control/chat-usage.js",
+  "web/control/chat-usage.css",
   "web/control/releases.html",
   "web/control/releases.js",
   "web/control/releases.css"
@@ -30,8 +37,12 @@ const packagePath = "package.json";
 const pkg = JSON.parse(read(packagePath));
 pkg.scripts = pkg.scripts || {};
 pkg.scripts["ai:connect-existing"] = "node scripts/ai-connect-existing.mjs";
+pkg.scripts["ai:auth-missing"] = "node scripts/ai-auth-missing.mjs";
+pkg.scripts["ai:always-on"] = "node scripts/ai-always-on.mjs";
+pkg.scripts["start:all"] = "node scripts/start-all.mjs";
+pkg.scripts["desktop:install"] = "node scripts/install-desktop-launcher.mjs";
 write(packagePath, `${JSON.stringify(pkg, null, 2)}\n`);
-console.log("package.json: ai:connect-existing installed");
+console.log("package.json: AI auth/start/desktop scripts installed");
 
 const serverPath = "src/control/server.ts";
 let server = read(serverPath);
@@ -112,3 +123,5 @@ for (const marker of [
 ]) required(read(serverPath).includes(marker), `AI_READINESS_CONTRACT_MISSING:${marker}`);
 
 console.log("AI_READINESS_WORKSPACE=PASS");
+console.log("Next: npm run desktop:install");
+console.log("One-time missing vendor auth only when needed: npm run ai:auth-missing");
