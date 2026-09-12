@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <title>Releases · Koordynator Control</title>
+  <title>Materialisation & Release · Koordynator Control</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/releases.css" />
   <link rel="stylesheet" href="/control-ui.css" />
@@ -16,28 +16,69 @@
     <div class="building-block"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
     <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
   </header>
+
   <aside class="sidebar" aria-label="Primary navigation">
     <nav class="nav-list">
       <a class="nav-item" href="/"><span>☷</span><span>Tasks</span></a>
       <a class="nav-item" href="/chat"><span>◉</span><span>Live Chat</span></a>
       <a class="nav-item" href="/providers"><span>⬡</span><span>Providers</span></a>
-      <a class="nav-item active" href="/releases" aria-current="page"><span>◫</span><span>Releases</span></a>
+      <a class="nav-item active" href="/releases" aria-current="page"><span>◫</span><span>Readiness</span></a>
     </nav>
-    <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span>•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">Release ledger online</div></div>
+    <div class="sidebar-foot"><div><span id="versionLabel">v0.4.0</span> <span>•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">Materialisation truth online</div></div>
   </aside>
+
   <main class="content release-content">
     <section class="page-head release-head">
       <div>
-        <div class="release-kicker">RELEASE CONTROL</div>
-        <h1>Releases</h1>
-        <p>Track validated release identities, production state and rollback history from the durable ledger.</p>
+        <div class="release-kicker">MATERIALISATION & RELEASE CONTROL</div>
+        <h1>Is Koordynator ready to build?</h1>
+        <p>Live readiness of Harmonia, Mózg, agents, AI routes and the release chain. Green means executable now, amber means usable with a limitation, red means a real blocker.</p>
       </div>
       <div class="release-actions">
-        <a class="release-link-button" href="/">Open tasks</a>
-        <a class="release-link-button" href="/providers">Inspect providers</a>
-        <button class="icon-button large" id="refreshButton" type="button" aria-label="Refresh releases">↻</button>
+        <a class="release-link-button" href="/providers">AI routes</a>
+        <a class="release-link-button" href="/chat">Live workspace</a>
+        <button class="icon-button large" id="refreshButton" type="button" aria-label="Refresh readiness">↻</button>
       </div>
     </section>
+
+    <section class="readiness-kpis" aria-label="Materialisation summary">
+      <article class="readiness-kpi"><span>MATERIALISE NOW</span><strong id="materialiseNow">CHECKING</strong><small id="materialiseHint">Reading executable path…</small></article>
+      <article class="readiness-kpi"><span>FULL PIPELINE</span><strong id="pipelineReady">CHECKING</strong><small id="pipelineHint">Workers + verification + release</small></article>
+      <article class="readiness-kpi"><span>HEALTHY AI ROUTES</span><strong id="healthyRoutes">0</strong><small id="connectedRoutes">0 connected routes</small></article>
+      <article class="readiness-kpi"><span>READINESS SCORE</span><strong id="readinessScore">0%</strong><small id="readinessPhase">POZNAWANIE</small></article>
+    </section>
+
+    <section class="creative-card" aria-labelledby="creativeTitle">
+      <div class="creative-head">
+        <div><span class="eyebrow">CREATIVE PROCESS</span><h2 id="creativeTitle">Harmonia → materialisation</h2></div>
+        <div class="creative-state"><span class="creative-dot" id="creativeDot"></span><strong id="creativeState">CHECKING</strong></div>
+      </div>
+      <div class="creative-spectrum" id="creativeSpectrum" style="--creative-progress:0%" aria-label="Creative process progress">
+        <div class="creative-glow"></div>
+        <div class="creative-marker"></div>
+      </div>
+      <div class="creative-labels" aria-hidden="true">
+        <span>Poznawanie</span><span>Myślenie</span><span>Research</span><span>Projektowanie</span><span>Tworzenie</span><span>Weryfikacja</span><span>Gotowe</span>
+      </div>
+    </section>
+
+    <section class="readiness-section">
+      <div class="section-head readiness-section-head">
+        <div><span class="eyebrow">HARMONIA / AGENT FABRIC</span><h2>Materialisation gates</h2><p>Each lamp is computed from the actual process bridge, executable and current AI health. No receipt, no green.</p></div>
+        <div class="readiness-legend"><span><i class="lamp green"></i> ready</span><span><i class="lamp amber"></i> limited</span><span><i class="lamp red"></i> blocked</span></div>
+      </div>
+      <div class="agent-readiness-grid" id="agentReadinessGrid"><div class="readiness-loading">Reading Harmonia and worker fabric…</div></div>
+    </section>
+
+    <section class="route-section">
+      <div class="section-head">
+        <div><span class="eyebrow">OMNIROUTE EXECUTION FABRIC</span><h2>AI route matrix</h2><p>Live inference status. A model existing in a catalog is not the same thing as a working route.</p></div>
+        <a class="release-link-button" href="/providers">Manage routes</a>
+      </div>
+      <div class="route-matrix" id="routeMatrix"><div class="readiness-loading">Probing AI routes…</div></div>
+    </section>
+
+    <section class="release-divider"><span>RELEASE LEDGER</span></section>
 
     <section class="release-kpis" aria-label="Release summary">
       <article><div><span>TOTAL RELEASES</span><strong id="countTotal">0</strong></div><i class="kpi-icon">◇</i></article>
