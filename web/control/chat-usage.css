@@ -73,6 +73,8 @@ body.workspace-v5 .v5-model-empty{padding:14px!important;color:#6f7e89!important
 
 /* Hermes has two views: a semantic readable transcript and the untouched raw PTY. */
 body.workspace-v5 .terminal-output-stack{
+  width:100%;
+  height:100%;
   min-width:0;
   min-height:0;
   display:grid;
@@ -99,6 +101,7 @@ body.workspace-v5 .terminal-view-button{
   color:#738691;
   font-size:7.5px;
   cursor:pointer;
+  white-space:nowrap;
 }
 body.workspace-v5 .terminal-view-button.active{border-color:#355f7e;background:#0d1c27;color:#b8d9ed}
 body.workspace-v5 .terminal-view-button.copy{margin-left:3px;color:#94a5af}
@@ -107,15 +110,21 @@ body.workspace-v5 .terminal-readable{grid-row:2;grid-column:1;min-width:0;min-he
 body.workspace-v5 .terminal-output-stack:not(.terminal-raw-mode)>.v5-terminal{visibility:hidden!important;pointer-events:none!important}
 body.workspace-v5 .terminal-output-stack.terminal-raw-mode>.terminal-readable{visibility:hidden!important;pointer-events:none!important}
 body.workspace-v5 .terminal-readable{
+  width:100%;
+  height:100%;
   overflow:auto;
-  padding:8px 9px 20px;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  padding:10px 11px 30px;
   background:linear-gradient(180deg,#06090c,#050709);
   color:#d7e0e6;
   user-select:text;
   -webkit-user-select:text;
   scrollbar-width:thin;
-  scrollbar-color:#293640 transparent;
+  scrollbar-color:#33434e transparent;
 }
+body.workspace-v5 .terminal-readable::-webkit-scrollbar{width:9px;height:9px}
+body.workspace-v5 .terminal-readable::-webkit-scrollbar-thumb{border-radius:999px;background:#33434e}
 body.workspace-v5 .terminal-readable::selection,body.workspace-v5 .terminal-readable *::selection{background:#285476;color:#f5fbff}
 body.workspace-v5 .terminal-system-log{padding:4px 2px 7px;color:#53626d;font:500 8px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}
 body.workspace-v5 .terminal-exchange{padding:9px 0 12px;border-bottom:1px solid #18222a}
@@ -130,13 +139,35 @@ body.workspace-v5 .terminal-question{
   color:#d9edf9;
   font:600 10px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
   white-space:pre-wrap;
+  overflow-wrap:anywhere;
 }
 body.workspace-v5 .terminal-question::before{content:"TY";position:absolute;left:8px;top:9px;color:#6caed5;font:700 6px/1 Inter,ui-sans-serif,sans-serif;letter-spacing:.08em}
 body.workspace-v5 .terminal-answer{margin-left:5px;padding-left:10px;border-left:1px solid #315b4a}
-body.workspace-v5 .terminal-answer-line{margin:0 0 4px;color:#dce5e9;font:500 10.5px/1.52 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+body.workspace-v5 .terminal-answer-line{margin:0 0 5px;color:#e3e9ed;font:500 11px/1.58 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 body.workspace-v5 .terminal-noise{margin:1px 0;color:#4f5e67;font:500 8px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
 body.workspace-v5 .terminal-noise.warning{color:#816f4f}
 body.workspace-v5 .terminal-copy-flash{color:#72d49a!important;border-color:#315f45!important}
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen{
+  position:fixed!important;
+  inset:14px!important;
+  z-index:420!important;
+  width:auto!important;
+  height:auto!important;
+  min-width:0!important;
+  display:grid!important;
+  grid-template-rows:48px minmax(0,1fr)!important;
+  border:1px solid #31414c!important;
+  border-radius:14px!important;
+  background:#070a0d!important;
+  box-shadow:0 0 0 100vmax rgba(0,0,0,.72),0 28px 90px rgba(0,0,0,.78)!important;
+  overflow:hidden!important;
+}
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .v5-terminal-composer,
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .hermes-hint{display:none!important}
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .terminal-readable{padding:18px clamp(16px,4vw,64px) 48px}
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .terminal-answer-line{font-size:13px;line-height:1.68}
+body.workspace-v5 .v5-terminal-pane.terminal-fullscreen .terminal-question{font-size:12px;line-height:1.55}
+body.workspace-v5.terminal-fullscreen-open{overflow:hidden!important}
 
 /* Readiness V6: a transient beam marks the active cognitive stage. Completed stages stay dark. */
 .creative-card .creative-marker,.creative-card .creative-dot{display:none!important}
@@ -175,6 +206,8 @@ body.workspace-v5 .terminal-copy-flash{color:#72d49a!important;border-color:#315
   body.workspace-v5 .v5-model-explorer{grid-template-columns:minmax(0,1fr) 124px!important}
   body.workspace-v5 .v5-model-results{width:min(560px,calc(100vw - 82px))!important}
   body.workspace-v5 .terminal-viewbar-label{display:none}
+  body.workspace-v5 .terminal-view-button{padding:0 5px;font-size:7px}
+  body.workspace-v5 .v5-terminal-pane.terminal-fullscreen{inset:6px!important;border-radius:10px!important}
   .release-head .release-actions{grid-template-columns:1fr 1fr 34px!important;width:100%!important}
   .release-head .release-actions .release-link-button{min-width:0!important}
 }

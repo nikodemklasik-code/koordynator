@@ -104,12 +104,13 @@ window.addEventListener("focus", () => void loadUsage24h());
   stack.className = "terminal-output-stack";
   const bar = document.createElement("div");
   bar.className = "terminal-viewbar";
-  bar.innerHTML = '<span class="terminal-viewbar-label">Hermes context</span><button class="terminal-view-button active" id="hermesReadableButton" type="button">Readable</button><button class="terminal-view-button" id="hermesRawButton" type="button">Raw PTY</button><button class="terminal-view-button copy" id="hermesCopyButton" type="button">Copy</button>';
+  bar.innerHTML = '<span class="terminal-viewbar-label">Hermes context</span><button class="terminal-view-button active" id="hermesReadableButton" type="button">Readable</button><button class="terminal-view-button" id="hermesRawButton" type="button">Raw PTY</button><button class="terminal-view-button" id="hermesExpandButton" type="button" aria-pressed="false">Expand</button><button class="terminal-view-button copy" id="hermesCopyButton" type="button">Copy</button>';
   const transcript = document.createElement("div");
   transcript.className = "terminal-readable";
   transcript.id = "hermesTranscript";
   transcript.setAttribute("tabindex", "0");
-  transcript.setAttribute("aria-label", "Readable Hermes transcript. Text is selectable and copyable.");
+  transcript.setAttribute("role", "log");
+  transcript.setAttribute("aria-label", "Readable Hermes transcript. Text is selectable, scrollable and copyable.");
   const systemLog = document.createElement("div");
   systemLog.className = "terminal-system-log";
   transcript.appendChild(systemLog);
@@ -119,12 +120,14 @@ window.addEventListener("focus", () => void loadUsage24h());
 
   const readableButton = bar.querySelector("#hermesReadableButton");
   const rawButton = bar.querySelector("#hermesRawButton");
+  const expandButton = bar.querySelector("#hermesExpandButton");
   const copyButton = bar.querySelector("#hermesCopyButton");
 
   let currentAnswer = null;
   let lastQuestion = "";
   let buffer = "";
   let partialTimer = null;
+  let followTail = true;
 
   function stripAnsi(value) {
     return String(value || "")
@@ -149,6 +152,18 @@ window.addEventListener("focus", () => void loadUsage24h());
     return false;
   }
 
+  function isNearTranscriptBottom() {
+    return transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 70;
+  }
+
+  function scrollTranscriptBottom(force = false) {
+    if (force || followTail || isNearTranscriptBottom()) transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  transcript.addEventListener("scroll", () => {
+    followTail = isNearTranscriptBottom();
+  }, { passive: true });
+
   function ensureAnswer() {
     if (currentAnswer) return currentAnswer;
     const exchange = document.createElement("section");
@@ -164,6 +179,7 @@ window.addEventListener("focus", () => void loadUsage24h());
     const text = String(question || "").trim();
     if (!text) return;
     lastQuestion = text;
+    followTail = true;
     const exchange = document.createElement("section");
     exchange.className = "terminal-exchange";
     const q = document.createElement("div");
@@ -173,7 +189,7 @@ window.addEventListener("focus", () => void loadUsage24h());
     currentAnswer.className = "terminal-answer";
     exchange.append(q, currentAnswer);
     transcript.appendChild(exchange);
-    transcript.scrollTop = transcript.scrollHeight;
+    scrollTranscriptBottom(true);
   }
 
   function appendLine(line) {
@@ -183,13 +199,14 @@ window.addEventListener("focus", () => void loadUsage24h());
     const question = normalized(lastQuestion);
     if (question && (compact === question || compact.endsWith(` ${question}`))) return;
 
+    const shouldFollow = followTail || isNearTranscriptBottom();
     const target = currentAnswer || systemLog;
     const row = document.createElement("div");
     const noise = isNoise(clean);
     row.className = noise ? `terminal-noise${/warn|error|fail|denied/i.test(clean) ? " warning" : ""}` : "terminal-answer-line";
     row.textContent = clean;
     target.appendChild(row);
-    transcript.scrollTop = transcript.scrollHeight;
+    if (shouldFollow) scrollTranscriptBottom(true);
   }
 
   function flushPartial() {
@@ -237,6 +254,22 @@ window.addEventListener("focus", () => void loadUsage24h());
   }
   readableButton.addEventListener("click", () => setRaw(false));
   rawButton.addEventListener("click", () => setRaw(true));
+
+  function setExpanded(expanded) {
+    pane.classList.toggle("terminal-fullscreen", expanded);
+    expandButton.textContent = expanded ? "Collapse" : "Expand";
+    expandButton.setAttribute("aria-pressed", expanded ? "true" : "false");
+    document.body.classList.toggle("terminal-fullscreen-open", expanded);
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+      scrollTranscriptBottom(false);
+      transcript.focus({ preventScroll: true });
+    });
+  }
+  expandButton.addEventListener("click", () => setExpanded(!pane.classList.contains("terminal-fullscreen")));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && pane.classList.contains("terminal-fullscreen")) setExpanded(false);
+  });
 
   async function copyTranscript() {
     const selection = window.getSelection();
