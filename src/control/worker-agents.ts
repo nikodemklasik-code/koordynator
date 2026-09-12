@@ -176,6 +176,11 @@ const BUILDERS: Partial<Record<Exclude<WorkerKind, "coordinator">, (options: Wor
   playwright: playwrightAgent
 };
 
+/** True only when the role has a concrete process bridge, not merely a registry placeholder. */
+export function workerAgentImplemented(role: TaskRole): boolean {
+  return Boolean(BUILDERS[workerForRole(role)]);
+}
+
 /** Picks the worker issue 40 assigns to the role and returns its real process bridge. */
 export function resolveWorkerAgent(role: TaskRole, options: WorkerAgentOptions = {}): ResolvedWorkerAgent {
   const worker = workerForRole(role);
