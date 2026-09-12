@@ -85,7 +85,7 @@ function derivedReadiness(health,routes){
 }
 
 function stageCard(stage){
-  const l=light(stage.light);const model=stage.model?`<code>${esc(stage.model)}</code>:"";const action=stage.action?`<small class="stage-action">${esc(stage.action)}</small>`:"";
+  const l=light(stage.light);const model=stage.model?`<code>${esc(stage.model)}</code>`:"";const action=stage.action?`<small class="stage-action">${esc(stage.action)}</small>`:"";
   return `<article class="agent-stage ${l.toLowerCase()}"><div class="stage-top"><span class="stage-order">${String(stage.order).padStart(2,"0")}</span><span class="lamp ${l.toLowerCase()}"></span><strong>${esc(stage.label)}</strong><b>${l}</b></div><div class="stage-meta"><span>${esc(stage.agent)}</span><span>→</span><span>${esc(stage.worker)}</span>${stage.aiRequired?'<span class="ai-needed">AI</span>':''}</div>${model}<p>${esc(stage.detail||"")}</p>${action}</article>`
 }
 
