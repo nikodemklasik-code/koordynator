@@ -1,13 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 export type HermesGrantName = "terminal";
 
 export type HermesGrantStatus = {
   terminal: boolean;
-  localFiles: boolean;
-  localRoots: string[];
+  localFiles?: boolean;
+  localRoots?: string[];
   updatedAt: string | null;
 };
 
