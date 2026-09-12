@@ -10,6 +10,14 @@ const JSON_MODE = process.argv.includes("--json");
 const NO_BOOTSTRAP = process.argv.includes("--no-bootstrap");
 const REPO = process.cwd();
 
+const KNOWN_PROVIDERS = [
+  "claude-code", "github", "gemini-cli", "kimi-coding", "qoder", "cursor",
+  "kilocode", "cline", "amazonq", "antigravity", "qwen-oauth", "grok-cli", "zed"
+];
+// These OmniRoute imports explicitly read already-existing local/system credentials.
+// Do not add a provider here unless its import path is known not to start fresh OAuth.
+const SAFE_SYSTEM_IMPORT = new Set(["cursor", "zed"]);
+
 function exec(name, args, options = {}) {
   const result = spawnSync(name, args, {
     cwd: options.cwd ?? REPO,
@@ -18,27 +26,17 @@ function exec(name, args, options = {}) {
     timeout: options.timeout ?? 15_000,
     stdio: options.inherit ? "inherit" : "pipe"
   });
-  return {
-    status: result.status ?? 1,
-    stdout: String(result.stdout ?? ""),
-    stderr: String(result.stderr ?? "")
-  };
+  return { status: result.status ?? 1, stdout: String(result.stdout ?? ""), stderr: String(result.stderr ?? "") };
 }
-
-function log(message) {
-  if (!JSON_MODE) console.log(message);
-}
+function log(message) { if (!JSON_MODE) console.log(message); }
 
 function locateApiModule() {
   const candidates = [];
   const npmRoot = exec("npm", ["root", "-g"]);
-  if (npmRoot.status === 0 && npmRoot.stdout.trim()) {
-    candidates.push(join(npmRoot.stdout.trim(), "omniroute", "bin", "cli", "api.mjs"));
-  }
+  if (npmRoot.status === 0 && npmRoot.stdout.trim()) candidates.push(join(npmRoot.stdout.trim(), "omniroute", "bin", "cli", "api.mjs"));
   candidates.push(join(homedir(), ".local", "lib", "node_modules", "omniroute", "bin", "cli", "api.mjs"));
   return candidates.find(path => existsSync(path)) ?? null;
 }
-
 async function loadApiFetch() {
   const modulePath = locateApiModule();
   if (!modulePath) throw new Error("OMNIROUTE_CLI_MODULE_NOT_FOUND");
@@ -46,79 +44,47 @@ async function loadApiFetch() {
   if (typeof mod.apiFetch !== "function") throw new Error("OMNIROUTE_APIFETCH_NOT_FOUND");
   return mod.apiFetch;
 }
-
-async function sleep(ms) {
-  await new Promise(resolve => setTimeout(resolve, ms));
-}
+async function sleep(ms) { await new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function ensureOmniRoute(apiFetch) {
-  try {
-    const response = await apiFetch("/api/health", { acceptNotOk: true, retry: false });
-    if (response.ok) return;
-  } catch {}
-
+  try { const response = await apiFetch("/api/health", { acceptNotOk: true, retry: false }); if (response.ok) return; } catch {}
   const started = exec("omniroute", ["serve", "--daemon", "--no-open"], { timeout: 20_000 });
   if (started.status !== 0) throw new Error("OMNIROUTE_START_FAILED");
   for (let attempt = 0; attempt < 20; attempt += 1) {
     await sleep(250);
-    try {
-      const response = await apiFetch("/api/health", { acceptNotOk: true, retry: false });
-      if (response.ok) return;
-    } catch {}
+    try { const response = await apiFetch("/api/health", { acceptNotOk: true, retry: false }); if (response.ok) return; } catch {}
   }
   throw new Error("OMNIROUTE_NOT_READY");
 }
-
 async function connections(apiFetch) {
   const response = await apiFetch("/api/providers", { acceptNotOk: true, retry: false });
   if (!response.ok) throw new Error("OMNIROUTE_PROVIDER_LIST_FAILED");
   const body = await response.json();
-  const rows = Array.isArray(body?.connections)
-    ? body.connections
-    : Array.isArray(body?.providers)
-      ? body.providers
-      : Array.isArray(body?.items)
-        ? body.items
-        : [];
+  const rows = Array.isArray(body?.connections) ? body.connections : Array.isArray(body?.providers) ? body.providers : Array.isArray(body?.items) ? body.items : [];
   return rows.filter(row => row && typeof row === "object");
 }
-
 function activeProviderSet(rows) {
-  return new Set(rows
-    .filter(row => row.isActive !== false)
-    .map(row => typeof row.provider === "string" ? row.provider : "")
-    .filter(Boolean));
+  return new Set(rows.filter(row => row.isActive !== false).map(row => typeof row.provider === "string" ? row.provider : "").filter(Boolean));
 }
 
 async function importCodex(apiFetch, active) {
   if (active.has("codex")) return { provider: "codex", result: "REUSE", detail: "already connected" };
   const authPath = join(homedir(), ".codex", "auth.json");
   if (!existsSync(authPath)) return { provider: "codex", result: "SKIP", detail: "no local Codex session" };
-
   let auth;
-  try {
-    auth = JSON.parse(readFileSync(authPath, "utf8"));
-  } catch {
-    return { provider: "codex", result: "SKIP", detail: "local Codex session unreadable" };
-  }
-
+  try { auth = JSON.parse(readFileSync(authPath, "utf8")); }
+  catch { return { provider: "codex", result: "SKIP", detail: "local Codex session unreadable" }; }
   const response = await apiFetch("/api/providers/codex-auth/import", {
-    method: "POST",
-    body: { source: { kind: "json", json: auth }, name: "OpenAI Codex", overwriteExisting: true },
-    acceptNotOk: true,
-    retry: false
+    method: "POST", body: { source: { kind: "json", json: auth }, name: "OpenAI Codex", overwriteExisting: true }, acceptNotOk: true, retry: false
   });
-  return response.ok
-    ? { provider: "codex", result: "IMPORTED", detail: "local session reused" }
-    : { provider: "codex", result: "SKIP", detail: `import HTTP ${response.status}` };
+  return response.ok ? { provider: "codex", result: "IMPORTED", detail: "local session reused" } : { provider: "codex", result: "SKIP", detail: `import HTTP ${response.status}` };
 }
 
-function autoImportCli(provider, active) {
+function safeSystemImport(provider, active) {
   if (active.has(provider)) return { provider, result: "REUSE", detail: "already connected" };
+  if (!SAFE_SYSTEM_IMPORT.has(provider)) return { provider, result: "SKIP", detail: "fresh vendor consent required; not started" };
   const run = exec("omniroute", ["oauth", "start", "--provider", provider, "--import-from-system", "--timeout", "10000"], { timeout: 15_000 });
-  return run.status === 0
-    ? { provider, result: "IMPORTED", detail: "system credentials imported" }
-    : { provider, result: "SKIP", detail: "no importable local session" };
+  return run.status === 0 ? { provider, result: "IMPORTED", detail: "existing system credentials imported" } : { provider, result: "SKIP", detail: "no importable local session" };
 }
 
 function runBootstrap() {
@@ -126,85 +92,50 @@ function runBootstrap() {
   const packagePath = join(REPO, "package.json");
   if (!existsSync(packagePath)) return 0;
   let pkg;
-  try {
-    pkg = JSON.parse(readFileSync(packagePath, "utf8"));
-  } catch {
-    return 0;
-  }
+  try { pkg = JSON.parse(readFileSync(packagePath, "utf8")); } catch { return 0; }
   if (!pkg?.scripts?.["ai:bootstrap"]) return 0;
   log("Running Koordynator live probes...");
   return exec("npm", ["run", "ai:bootstrap"], { inherit: !JSON_MODE, timeout: 180_000 }).status;
 }
 
 async function main() {
-  const plan = {
-    mode: "EXISTING_SESSIONS_ONLY",
-    freshConsentStarted: false,
-    results: [],
-    activeProviders: [],
-    bootstrapStatus: 0
-  };
-
+  const plan = { mode: "EXISTING_SESSIONS_ONLY", freshConsentStarted: false, results: [], activeProviders: [], bootstrapStatus: 0 };
   if (DRY_RUN) {
-    if (JSON_MODE) console.log(JSON.stringify(plan));
-    else log("AUTO_IMPORT: existing local AI sessions only; no OAuth/login prompts");
+    if (JSON_MODE) console.log(JSON.stringify(plan)); else log("AUTO_IMPORT: existing local AI sessions only; fresh OAuth is never started");
     return;
   }
-
   const version = exec("omniroute", ["--version"]);
   if (version.status !== 0) throw new Error("OMNIROUTE_CLI_NOT_FOUND");
 
-  // Management API uses OmniRoute's loopback CLI token. Do not leak or substitute
-  // the inference-plane client key here.
   delete process.env.OMNIROUTE_API_KEY;
   const apiFetch = await loadApiFetch();
   await ensureOmniRoute(apiFetch);
-
   let current = await connections(apiFetch);
   let active = activeProviderSet(current);
-  const results = [];
+  const results = [await importCodex(apiFetch, active)];
 
-  results.push(await importCodex(apiFetch, active));
   current = await connections(apiFetch);
   active = activeProviderSet(current);
-
-  // Safe, non-interactive imports only. If a vendor needs fresh consent these
-  // attempts fail/skip because no TTY or browser consent is opened here.
-  for (const provider of [
-    "claude-code",
-    "github",
-    "gemini-cli",
-    "kimi-coding",
-    "qoder",
-    "cursor",
-    "kilocode",
-    "cline",
-    "amazonq",
-    "antigravity",
-    "qwen-oauth",
-    "grok-cli",
-    "zed"
-  ]) {
-    results.push(autoImportCli(provider, active));
-    current = await connections(apiFetch);
-    active = activeProviderSet(current);
+  for (const provider of KNOWN_PROVIDERS) {
+    results.push(safeSystemImport(provider, active));
+    if (SAFE_SYSTEM_IMPORT.has(provider)) {
+      current = await connections(apiFetch);
+      active = activeProviderSet(current);
+    }
   }
 
-  await sleep(250);
   current = await connections(apiFetch);
   plan.results = results;
   plan.activeProviders = [...activeProviderSet(current)].sort();
   plan.bootstrapStatus = runBootstrap();
 
-  if (JSON_MODE) {
-    console.log(JSON.stringify(plan));
-  } else {
+  if (JSON_MODE) console.log(JSON.stringify(plan));
+  else {
     log("Existing-session import");
     for (const row of results) log(`${row.provider.padEnd(16)} ${row.result.padEnd(8)} ${row.detail}`);
     log(`Active providers: ${plan.activeProviders.length ? plan.activeProviders.join(", ") : "none"}`);
-    log("Fresh provider consent was intentionally NOT started. Different vendors do not share one OAuth identity.");
+    log("Fresh provider consent: NOT STARTED. Missing vendors stay visible as consent-required routes.");
   }
-
   if (plan.bootstrapStatus !== 0) process.exitCode = plan.bootstrapStatus;
 }
 

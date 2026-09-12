@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 
-const BRANCH = "origin/feature/ai-readiness-workspace";
+const BRANCH = "origin/redesign/live-chat-v5";
 
 function read(path) { return readFileSync(path, "utf8"); }
 function write(path, value) { writeFileSync(path, value, "utf8"); }
@@ -26,7 +26,6 @@ for (const path of [
   "web/control/releases.css"
 ]) install(path);
 
-// Preserve the user's local package.json while adding only the connector script.
 const packagePath = "package.json";
 const pkg = JSON.parse(read(packagePath));
 pkg.scripts = pkg.scripts || {};
@@ -58,7 +57,6 @@ if (!server.includes("const providerAutoconnect = new ProviderAutoconnectService
   console.log("server: provider autoconnect service patched");
 }
 
-// Health is also the UI source of truth for primary/fallback routes and whether signing exists.
 if (!server.includes("materialisationEnabled: materialisation !== null")) {
   const healthAnchor = "          version: options.version ?? VERSION,";
   required(server.includes(healthAnchor), "SERVER_HEALTH_ANCHOR_MISSING");
@@ -93,7 +91,6 @@ if (!server.includes("error instanceof ProviderAutoconnectError")) {
   console.log("server: provider autoconnect error mapping patched");
 }
 
-// V5 once shipped HTML without serving its CSS/JS. Make the HTTP contract explicit here.
 if (!server.includes('"/chat-v5.css"')) {
   const anchor = '        "/chat.css": { name: "chat.css", type: "text/css; charset=utf-8" },';
   required(server.includes(anchor), "SERVER_V5_CSS_ANCHOR_MISSING");
@@ -106,7 +103,6 @@ if (!server.includes('"/chat-v5.js"')) {
 }
 
 write(serverPath, server);
-
 for (const marker of [
   'url.pathname === "/api/readiness/materialisation"',
   'method === "POST" && url.pathname === "/api/providers/connect-existing"',
