@@ -31,6 +31,7 @@
     "ai:connect-existing": "node scripts/ai-connect-existing.mjs",
     "ai:auth-missing": "node scripts/ai-auth-missing.mjs",
     "ai:always-on": "node scripts/ai-always-on.mjs",
+    "hermes:local-files": "node scripts/hermes-local-files.mjs",
     "hermes": "npm run build && node dist/runtime/main.js hermes",
     "hermes:openai": "npm run build && node dist/runtime/main.js hermes openai",
     "hermes:anthropic": "npm run build && node dist/runtime/main.js hermes anthropic",
