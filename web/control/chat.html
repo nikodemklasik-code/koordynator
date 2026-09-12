@@ -10,6 +10,33 @@
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/chat-usage.css" />
   <link rel="stylesheet" href="/xterm.css" />
+  <style>
+    /* Visible workspace redesign for the local a4de1cf Control lineage. */
+    .app-shell{width:calc(100vw - 16px);min-height:calc(100vh - 16px);margin:8px auto;grid-template-columns:176px minmax(0,1fr);grid-template-rows:64px minmax(0,calc(100vh - 80px));border-radius:14px;background:#070c10}
+    .topbar{min-height:64px;padding:0 18px;background:linear-gradient(180deg,#0f171e,#0a1015)}
+    .brand-mark{font-size:29px}.brand-title{font-size:14px;letter-spacing:.055em}.brand-subtitle{margin-top:2px;font-size:9px;color:#617384}
+    .building-block{padding:7px 12px;border:1px solid #2b3a46;border-radius:999px;background:#0b1319}
+    .operator-block{font-size:11px}.operator-icon{width:25px;height:25px}
+    .sidebar{padding:10px 0 14px;background:#080e13}.nav-list{gap:5px;padding:0 7px}.nav-item{height:44px;padding:0 12px;border-radius:9px;font-size:13px;color:#8fa0ae}.nav-item.active{background:#10243a;border:1px solid #24507a;color:#f4f8fb}.nav-item.active::before{display:none}.sidebar-foot{padding:0 14px;font-size:9px}
+    .chat-content{grid-template-rows:64px minmax(0,1fr) 30px;background:radial-gradient(circle at 35% 0,#101a23 0,#091016 36%,#070b0f 100%)}
+    .chat-head{min-height:64px;padding:8px 14px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #20303d;background:rgba(8,14,19,.94)}
+    .workspace-heading{min-width:210px;display:grid;gap:1px}.workspace-heading small{font-size:8px;letter-spacing:.18em;color:#5e9fd0}.workspace-heading strong{font-size:15px;letter-spacing:-.01em}.workspace-heading span{font-size:9px;color:#708291}
+    .chat-action-group{gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.chat-action-group::-webkit-scrollbar{display:none}.chat-action-button{height:34px;min-width:auto;padding:0 11px;border-radius:8px;font-size:10px;white-space:nowrap;background:#0d161d;border-color:#2b3e4c}.chat-action-button:hover{background:#132330;border-color:#40647f}
+    .chat-workspace{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,29%);gap:10px;padding:10px 12px 9px}
+    .chat-frame,.hermes-pane{min-width:0;min-height:0;margin:0!important;border:1px solid #263a49!important;border-radius:13px!important;overflow:hidden;background:linear-gradient(180deg,#0b1319,#080d11);box-shadow:0 18px 44px rgba(0,0,0,.22)}
+    .chat-frame{display:grid;grid-template-rows:46px minmax(0,1fr) auto!important}
+    .hermes-pane{display:grid;grid-template-rows:46px minmax(0,1fr) auto auto}
+    .pane-head{min-height:46px;padding:0 12px!important;display:flex;align-items:center;gap:9px;border-bottom:1px solid #22333f!important;background:linear-gradient(180deg,#111b23,#0d151b)!important}
+    .chat-connection-bar{justify-content:flex-start}.connection-state{flex:0 0 auto}.session-id{margin-left:auto;max-width:104px;overflow:hidden;text-overflow:ellipsis;color:#5f7180;font-size:9px}
+    .billing-badge,.usage-24h,.runtime-route-badge{min-height:24px!important;padding:3px 8px!important;border-radius:7px!important;font-size:8px!important;letter-spacing:.04em;white-space:nowrap}.billing-badge{margin-left:3px}.usage-24h{max-width:360px!important}.runtime-route-badge.live{box-shadow:0 0 0 1px rgba(95,211,138,.08),0 0 18px rgba(95,211,138,.08)}
+    .github-chat-icon{margin-left:auto}.chat-thread{padding:20px 0 16px;background:radial-gradient(circle at 50% 0,rgba(35,64,82,.11),transparent 34%)}
+    .chat-message{width:min(920px,calc(100% - 34px));margin:0 auto 18px;gap:6px}.message-meta{font-size:9px}.message-model{padding:2px 7px;background:#0b141a;border-color:#2b3c48}.message-bubble{font-size:13px;line-height:1.55}.chat-message.assistant .message-bubble{padding:2px 1px}.chat-message.user .message-bubble{max-width:min(720px,90%);padding:10px 13px;border-radius:12px 12px 3px 12px;background:linear-gradient(180deg,#123354,#0f2a45);border-color:#2a5c86}
+    .composer-wrap{padding:10px 12px 11px;background:#080e13}.composer{width:100%;border-radius:11px;background:#0d171e;border-color:#2d4353}.composer textarea{min-height:44px;padding:12px 13px 6px;font-size:12px}.composer-actions{gap:6px;padding:4px 6px 6px}.composer-model{flex:1 1 auto;min-width:0}.composer-model select{width:100%;height:34px;min-width:0;border-radius:7px;background:#091117;font-size:10px;color:#dbe7ee;border-color:#2c4352}.attach-button,.send-button,.stop-button{height:34px}.composer-note{margin-top:6px;font-size:8px;color:#536473}
+    .hermes-pane-head{justify-content:flex-start}.hermes-state{margin-left:auto;padding:3px 7px;border:1px solid #2a3944;border-radius:999px;color:#72818d;font-size:8px;letter-spacing:.12em}.hermes-pane-actions{display:flex;gap:5px}.hermes-pane-actions .chat-action-button{height:30px;padding:0 9px}.hermes-term{min-height:0;background:#05080a!important}.hermes-composer{display:grid;grid-template-columns:minmax(0,1fr) 34px;gap:6px;padding:8px;border-top:1px solid #1f2d37;background:#080e13}.hermes-composer textarea{min-width:0;resize:none;border:1px solid #2a3b48;border-radius:8px;background:#0b1319;color:#dce5eb;padding:9px 10px;outline:none;font:inherit;font-size:11px}.hermes-composer textarea:focus{border-color:#47789d}.hermes-hint{margin:0;padding:6px 9px;color:#768795;font-size:9px;background:#080e13}
+    .statusbar.chat-statusbar{min-height:30px;height:30px;padding:0 12px;border-top:1px solid #1d2a33;background:#070c10;font-size:9px}.ci-status,.runtime-meta{font-size:9px}
+    @media(max-width:1250px){.app-shell{grid-template-columns:150px minmax(0,1fr)}.chat-workspace{grid-template-columns:minmax(0,1fr) 300px}.usage-24h{display:none}.workspace-heading span{display:none}}
+    @media(max-width:980px){.app-shell{grid-template-columns:74px minmax(0,1fr)}.nav-item span:last-child,.sidebar-foot{display:none}.nav-item{justify-content:center}.workspace-heading{display:none}.chat-workspace{grid-template-columns:minmax(0,1fr)}.hermes-pane{display:none}}
+  </style>
 </head>
 <body>
   <div class="app-shell">
@@ -34,12 +61,13 @@
 
     <main class="content chat-content">
       <section class="chat-head">
+        <div class="workspace-heading"><small>AI WORKSPACE</small><strong>Koordynator + Hermes</strong><span>Live routing, terminal and execution in one control desk</span></div>
         <div class="chat-action-group" role="group" aria-label="Chat actions">
           <button class="secondary-button chat-action-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
           <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
           <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
           <button class="secondary-button chat-action-button" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
-          <button class="secondary-button chat-action-button" id="muteHermesButton" type="button" title="Schowaj lub pokaż terminal Hermesa">Wycisz</button>
+          <button class="secondary-button chat-action-button" id="muteHermesButton" type="button" title="Schowaj lub pokaż terminal Hermesa">Wycisz terminal</button>
           <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
           <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
           <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
@@ -68,22 +96,11 @@
 
         <div class="composer-wrap">
           <div class="composer" id="composer">
-            <input
-              id="fileInput"
-              class="visually-hidden-file"
-              type="file"
-              multiple
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"
-              aria-label="Attach files"
-            />
+            <input id="fileInput" class="visually-hidden-file" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip" aria-label="Attach files" />
             <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
             <textarea title="Załącz pliki przyciskiem +. ZIP, PDF, TXT, DOCX, XLSX i PPTX są rozpoznawane; obrazy wymagają modelu z obsługą obrazów." id="messageInput" rows="1" maxlength="32768" placeholder="Napisz wiadomość lub /repo https://github.com/owner/repo zadanie" aria-label="Message"></textarea>
             <div class="composer-actions">
-              <label class="model-picker composer-model">
-                <select id="modelSelect" aria-label="AI model" disabled>
-                  <option value="" selected>Loading…</option>
-                </select>
-              </label>
+              <label class="model-picker composer-model"><select id="modelSelect" aria-label="AI model" disabled><option value="" selected>Loading…</option></select></label>
               <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
               <button class="stop-button hidden" id="stopButton" type="button">■</button>
               <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
@@ -122,14 +139,8 @@
 
   <div class="history-backdrop hidden" id="historyBackdrop"></div>
   <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
-    <div class="history-head">
-      <div><div class="chat-kicker">PERSISTENT SESSIONS</div><h2 id="historyTitle">Chat history</h2></div>
-      <button class="history-close" id="historyCloseButton" type="button" aria-label="Close chat history">×</button>
-    </div>
-    <div class="history-toolbar">
-      <button class="secondary-button history-new-button" id="historyNewChatButton" type="button">＋ New chat</button>
-      <button class="history-refresh" id="historyRefreshButton" type="button" aria-label="Refresh chat history" title="Refresh">↻</button>
-    </div>
+    <div class="history-head"><div><div class="chat-kicker">PERSISTENT SESSIONS</div><h2 id="historyTitle">Chat history</h2></div><button class="history-close" id="historyCloseButton" type="button" aria-label="Close chat history">×</button></div>
+    <div class="history-toolbar"><button class="secondary-button history-new-button" id="historyNewChatButton" type="button">＋ New chat</button><button class="history-refresh" id="historyRefreshButton" type="button" aria-label="Refresh chat history" title="Refresh">↻</button></div>
     <div class="history-list" id="historyList" aria-live="polite"></div>
     <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
   </aside>
