@@ -46,9 +46,13 @@ const targets = [
   { key: "antigravity", label: "Antigravity", ids: ["antigravity", "agy"], callbackHint: true }
 ];
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function firstSupported(candidates, listing) {
-  const lines = listing.toLowerCase();
-  return candidates.find((id) => new RegExp(`(^|\\s)${id.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}(\\s|$)`, "mi").test(lines)) || null;
+  const text = listing.toLowerCase();
+  return candidates.find((id) => new RegExp(`(^|[^a-z0-9_-])${escapeRegExp(id)}([^a-z0-9_-]|$)`, "mi").test(text)) || null;
 }
 
 async function main() {
@@ -90,7 +94,7 @@ async function main() {
   const after = run("npm", ["run", "ai:bootstrap"], { inherit: true, timeout: 12 * 60_000 });
   process.exitCode = after.status ?? 1;
   console.log("\nQoder is intentionally not auto-started here: OmniRoute 3.8.50 recommends PAT/configured OAuth rather than silently launching the experimental flow.");
-  console.log("Qwen OAuth is intentionally omitted: that free OAuth tier was retired; use another current route instead.");
+  console.log("Qwen is intentionally omitted: OmniRoute marks the old Qwen OAuth free tier deprecated/discontinued; use a current Alibaba/Bailian route if you want Qwen models.");
   console.log("Astra is a model slot under the Codex/OpenAI route, not a separate vendor login.");
 }
 
