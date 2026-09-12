@@ -126,10 +126,147 @@
     }
   }
 
+  const MODEL_ROLES = [
+    ["ALL", "All roles"],
+    ["DEVELOPER", "Developer"],
+    ["RESEARCHER", "Researcher"],
+    ["FRONTEND_DEVELOPER", "Frontend Developer"],
+    ["FRONTEND_BUILDER", "Frontend Builder"],
+    ["BUILDER", "Builder"],
+    ["INNOVATION_DEVELOPER", "Innovation Developer"],
+    ["SECURITY", "Security"]
+  ];
+
+  function contextSize(text) {
+    const match = /\b(\d+(?:\.\d+)?)K\s+CTX\b/i.exec(text);
+    return match ? Number(match[1]) : 0;
+  }
+
+  function rolesForOption(option) {
+    const text = `${option.value} ${option.textContent || ""}`.toLowerCase();
+    const roles = new Set(["GENERAL"]);
+    const coding = /(codex|gpt|claude|qwen|kimi|grok|gemini|coder|code|big-pickle|nemotron|mimo|ling|sonnet|opus)/.test(text);
+    const reasoning = /(opus|sonnet|gpt-5|grok-4|gemini|reason|thinking|xhigh|high)/.test(text);
+    const vision = /\bvision\b/.test(text);
+    const longContext = contextSize(option.textContent || "") >= 128;
+    if (coding) {
+      roles.add("DEVELOPER");
+      roles.add("BUILDER");
+    }
+    if (coding || vision) roles.add("FRONTEND_DEVELOPER");
+    if (coding && (vision || longContext || reasoning)) roles.add("FRONTEND_BUILDER");
+    if (longContext || reasoning || /research/.test(text)) roles.add("RESEARCHER");
+    if (reasoning || vision || /innovation/.test(text)) roles.add("INNOVATION_DEVELOPER");
+    if (coding && (reasoning || longContext)) roles.add("SECURITY");
+    return roles;
+  }
+
+  function ensureExplorerStyles() {
+    if (document.getElementById("v5ModelExplorerStyles")) return;
+    const style = document.createElement("style");
+    style.id = "v5ModelExplorerStyles";
+    style.textContent = `
+      .v5-model-explorer{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
+      .v5-model-search{width:170px;height:34px;padding:0 10px;border:1px solid #27333d;border-radius:9px;background:#0b1116;color:#d9e2e8;font-size:10px;outline:none}
+      .v5-model-search:focus{border-color:#44779a;box-shadow:0 0 0 3px rgba(77,139,181,.10)}
+      .v5-model-role{height:34px;max-width:150px;padding:0 8px;border:1px solid #27333d;border-radius:9px;background:#0b1116;color:#9fb0bb;font-size:9px;outline:none}
+      .v5-model-results{position:absolute;z-index:180;left:0;bottom:40px;width:min(620px,70vw);max-height:340px;overflow:auto;padding:6px;border:1px solid #2b3944;border-radius:12px;background:#090e13;box-shadow:0 24px 70px rgba(0,0,0,.62)}
+      .v5-model-results[hidden]{display:none}
+      .v5-model-result{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 9px;border:0;border-radius:8px;background:transparent;color:#dce5eb;text-align:left;cursor:pointer}
+      .v5-model-result:hover,.v5-model-result.active{background:#111b23}
+      .v5-model-result strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 10px/1.25 ui-monospace,SFMono-Regular,Menlo,monospace}
+      .v5-model-result small{display:block;margin-top:3px;color:#687986;font-size:8px}
+      .v5-model-tags{display:flex;gap:3px;justify-content:flex-end;flex-wrap:wrap;max-width:210px}
+      .v5-model-tag{padding:2px 5px;border:1px solid #263844;border-radius:999px;color:#7194aa;font-size:6px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+      .v5-model-empty{padding:14px;color:#6f7e89;font-size:9px;text-align:center}
+      @media (max-width:980px){.v5-model-search{width:130px}.v5-model-role{max-width:110px}.v5-model-results{width:min(520px,88vw)}}
+      @media (max-width:720px){.v5-model-explorer{width:100%}.v5-model-search{flex:1;width:auto}.v5-model-role{max-width:140px}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureModelExplorer() {
+    if (!modelSelect || document.getElementById("modelSearchInput")) return;
+    ensureExplorerStyles();
+    const picker = modelSelect.closest(".v5-model-picker") || modelSelect.parentElement;
+    const actions = modelSelect.closest(".v5-composer-actions") || picker?.parentElement;
+    if (!picker || !actions) return;
+
+    const explorer = document.createElement("div");
+    explorer.className = "v5-model-explorer";
+    explorer.innerHTML = `
+      <input id="modelSearchInput" class="v5-model-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search model…" aria-label="Search AI model" />
+      <select id="modelRoleFilter" class="v5-model-role" aria-label="Model role category">
+        ${MODEL_ROLES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}
+      </select>
+      <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>`;
+    actions.insertBefore(explorer, picker);
+
+    const input = explorer.querySelector("#modelSearchInput");
+    const role = explorer.querySelector("#modelRoleFilter");
+    const results = explorer.querySelector("#modelSearchResults");
+
+    function entries() {
+      return [...modelSelect.options]
+        .filter((option) => option.value && !option.disabled)
+        .map((option) => ({ option, roles: rolesForOption(option) }));
+    }
+
+    function renderResults(forceOpen = false) {
+      const query = String(input.value || "").trim().toLowerCase();
+      const selectedRole = role.value;
+      const filtered = entries().filter(({ option, roles }) => {
+        const roleMatch = selectedRole === "ALL" || roles.has(selectedRole);
+        const text = `${option.value} ${option.textContent || ""}`.toLowerCase();
+        return roleMatch && (!query || text.includes(query));
+      }).slice(0, 20);
+
+      if (!forceOpen && !query && selectedRole === "ALL") {
+        results.hidden = true;
+        return;
+      }
+      results.hidden = false;
+      if (!filtered.length) {
+        results.innerHTML = '<div class="v5-model-empty">No matching executable model.</div>';
+        return;
+      }
+      results.innerHTML = filtered.map(({ option, roles }) => {
+        const labels = [...roles].filter((item) => item !== "GENERAL").slice(0, 3);
+        return `<button type="button" class="v5-model-result${option.value === modelSelect.value ? " active" : ""}" data-model="${option.value.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}">
+          <span><strong>${(option.textContent || option.value).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</strong><small>${option.value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</small></span>
+          <span class="v5-model-tags">${labels.map((item) => `<i class="v5-model-tag">${MODEL_ROLES.find(([value]) => value === item)?.[1] || item}</i>`).join("")}</span>
+        </button>`;
+      }).join("");
+    }
+
+    input.addEventListener("input", () => renderResults(true));
+    input.addEventListener("focus", () => renderResults(Boolean(input.value || role.value !== "ALL")));
+    role.addEventListener("change", () => renderResults(true));
+    results.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-model]");
+      if (!button) return;
+      const value = button.dataset.model;
+      const option = [...modelSelect.options].find((item) => item.value === value && !item.disabled);
+      if (!option) return;
+      modelSelect.value = value;
+      modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      input.value = "";
+      results.hidden = true;
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (!explorer.contains(event.target)) results.hidden = true;
+    });
+    new MutationObserver(() => {
+      if (!results.hidden) renderResults(true);
+    }).observe(modelSelect, { childList: true, subtree: true });
+  }
+
   document.addEventListener("koordynator:billing-change", () => {
     if (!routeHealth) return;
     renderRouteSummary(routeHealth);
   });
   window.addEventListener("focus", () => void ensureBackendPrimary());
+  Promise.resolve(window.koordynatorChatModelsReady || true).finally(() => ensureModelExplorer());
+  setTimeout(ensureModelExplorer, 1200);
   void ensureBackendPrimary();
 })();
