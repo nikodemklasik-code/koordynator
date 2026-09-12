@@ -51,7 +51,6 @@ function fallbackProviders(endpoint: string, settings: ReturnType<typeof omniRou
     provider: "custom",
     model,
     base_url: endpoint,
-    // Ticket lives in the child as OPENAI_API_KEY; Hermes custom provider reads that env name.
     key_env: "OPENAI_API_KEY"
   }));
 }
@@ -63,7 +62,7 @@ function realUserHome(env: NodeJS.ProcessEnv): string {
 
 function dynamicSkillRoots(root: string, env: NodeJS.ProcessEnv): string[] {
   const home = realUserHome(env);
-  const candidates = [
+  return [...new Set([
     join(home, ".hermes", "skills"),
     join(home, ".agents", "skills"),
     join(home, ".claude", "skills"),
@@ -72,8 +71,7 @@ function dynamicSkillRoots(root: string, env: NodeJS.ProcessEnv): string[] {
     resolve(root, ".agents", "skills"),
     resolve(root, "skills"),
     resolve(root, ".orchestrator", "dynamic-skills")
-  ];
-  return [...new Set(candidates)];
+  ])];
 }
 
 function managedSoul(grants: HermesGrantStatus): string {
@@ -96,10 +94,8 @@ function managedSoul(grants: HermesGrantStatus): string {
 
 async function prepareManagedSkills(home: string): Promise<void> {
   const skillsRoot = join(home, "skills");
-  const category = join(skillsRoot, "koordynator");
-  const skill = join(category, "dynamic-routing");
+  const skill = join(skillsRoot, "koordynator-dynamic-routing");
   await privateDirectory(skillsRoot);
-  await privateDirectory(category);
   await privateDirectory(skill);
   await privateFile(join(skill, "SKILL.md"), `---\nname: koordynator-dynamic-routing\ndescription: Always-use routing policy for Koordynator tasks: discover and load existing skills first, create a narrow reusable skill only when a repeatable capability is genuinely missing, and preserve execution evidence.\nversion: 1.0.0\nplatforms: [macos, linux]\nmetadata:\n  hermes:\n    tags: [routing, skills, orchestration, verification]\n---\n\n# Koordynator Dynamic Skill Routing\n\n## Procedure\n1. Read the user's requested outcome and identify the smallest capabilities needed.\n2. Search the available skill index. Load relevant skills with skill_view before following them.\n3. Prefer an existing trusted/local skill over inventing a new one.\n4. If no suitable skill exists and the workflow is reusable, create one with skill_manage. Keep its scope narrow, include verification steps, and never embed secrets.\n5. Execute only what the user authorized. A skill is procedure, not permission to expand scope.\n6. Report actual tests/tool receipts. UNEXECUTED and NOT_TESTED are not PASS.\n`);
 }
@@ -124,34 +120,22 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   const { token } = mintTaskTicket(secret, { aud: "hermes", model: settings.model });
   let proxy: TicketProxy | undefined;
   try {
-    proxy = await startTicketProxy({
-      upstream: settings.endpoint,
-      apiKey: settings.apiKey,
-      secret,
-      audience: "hermes"
-    });
+    proxy = await startTicketProxy({ upstream: settings.endpoint, apiKey: settings.apiKey, secret, audience: "hermes" });
     const fallbacks = fallbackProviders(proxy.url, settings, env);
     const grants = await loadHermesGrants(join(root, ".orchestrator"));
     await prepareManagedSkills(home);
     await privateFile(join(home, "SOUL.md"), managedSoul(grants));
     const externalDirs = dynamicSkillRoots(root, env);
-    // JSON is valid YAML. The gateway key stays in Control; the profile only names the env.
     const config: Record<string, unknown> = {
       model: { provider: "custom", default: settings.model, base_url: proxy.url,
         api_mode: "chat_completions", key_env: "OPENAI_API_KEY" },
       approvals: { mode: grants.terminal ? "off" : "smart" },
       terminal: { cwd: resolve(root) },
-      skills: {
-        external_dirs: externalDirs,
-        template_vars: true,
-        // External skills are data until explicitly loaded. Never run inline shell while indexing/loading them.
-        inline_shell: false
-      }
+      skills: { external_dirs: externalDirs, template_vars: true, inline_shell: false }
     };
     if (!grants.terminal) config.disabled_toolsets = ["terminal"];
     if (fallbacks.length > 0) config.fallback_providers = fallbacks;
     await privateFile(join(home, "config.yaml"), JSON.stringify(config, null, 2) + "\n");
-    // Hermes clears inherited known provider keys when a profile .env exists.
     await privateFile(join(home, ".env"), "# Credentials are a short-lived task ticket, never the gateway key.\n");
     const held = proxy;
     const localRoots = grants.localFiles ? grants.localRoots : [];
