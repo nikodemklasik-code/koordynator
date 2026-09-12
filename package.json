@@ -25,6 +25,7 @@
     "start": "npm run app",
     "app": "npm run build && node dist/runtime/app-launch.js",
     "start:all": "node scripts/start-all.mjs",
+    "desktop:install": "node scripts/install-desktop-launcher.mjs",
     "doctor:omniroute": "npm run build && node dist/runtime/main.js doctor",
     "ai:bootstrap": "npm run build && node dist/runtime/main.js bootstrap",
     "ai:connect-existing": "node scripts/ai-connect-existing.mjs",
