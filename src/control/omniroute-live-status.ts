@@ -49,6 +49,7 @@ type RouteTarget = {
   preferred: string[];
   connectCommand: string;
   noAuth?: boolean;
+  deprecated?: boolean;
 };
 
 const TARGETS: RouteTarget[] = [
@@ -65,20 +66,20 @@ const TARGETS: RouteTarget[] = [
     label: "Claude (OmniRoute)",
     prefixes: ["cc/", "claude-code/"],
     preferred: ["cc/claude-opus-5", "cc/claude-sonnet-5", "cc/claude-opus-4-8"],
-    connectCommand: "omniroute providers auth claude-code"
+    connectCommand: "omniroute oauth start --provider claude-code"
   },
   {
     family: "grok",
     label: "Grok (OmniRoute)",
     prefixes: ["gc/", "xao/"],
     preferred: ["gc/grok-4.6", "gc/grok-4.5"],
-    connectCommand: "omniroute providers auth grok-cli"
+    connectCommand: "omniroute oauth start --provider grok-cli"
   },
   {
     family: "codex",
     label: "Codex (OmniRoute)",
     prefixes: ["cx/", "codex/"],
-    preferred: ["cx/gpt-5.5", "cx/gpt-5.6-sol"],
+    preferred: ["cx/gpt-5.6-sol", "cx/gpt-5.5"],
     connectCommand: "node scripts/ai-connect-existing.mjs"
   },
   {
@@ -86,28 +87,28 @@ const TARGETS: RouteTarget[] = [
     label: "GitHub Copilot",
     prefixes: ["gh/", "github/", "github-copilot/"],
     preferred: [],
-    connectCommand: "omniroute providers auth github"
+    connectCommand: "omniroute oauth start --provider github"
   },
   {
     family: "gemini",
     label: "Gemini CLI",
     prefixes: ["gemini-cli/"],
     preferred: [],
-    connectCommand: "omniroute providers auth gemini-cli"
+    connectCommand: "omniroute oauth start --provider gemini-cli"
   },
   {
     family: "kimi",
     label: "Kimi Coding",
     prefixes: ["kmc/"],
     preferred: ["kmc/kimi-k2.6"],
-    connectCommand: "omniroute providers auth kimi-coding"
+    connectCommand: "omniroute oauth start --provider kimi-coding"
   },
   {
     family: "qoder",
     label: "Qoder",
     prefixes: ["if/", "qoder/"],
     preferred: [],
-    connectCommand: "omniroute providers auth qoder"
+    connectCommand: "Use a Qoder PAT, or configure QODER_OAUTH_* before using the experimental browser OAuth flow."
   },
   {
     family: "cursor",
@@ -121,14 +122,14 @@ const TARGETS: RouteTarget[] = [
     label: "KiloCode",
     prefixes: ["kc/"],
     preferred: [],
-    connectCommand: "omniroute providers auth kilocode"
+    connectCommand: "omniroute oauth start --provider kilocode"
   },
   {
     family: "cline",
     label: "Cline",
     prefixes: ["cl/"],
     preferred: [],
-    connectCommand: "omniroute providers auth cline"
+    connectCommand: "omniroute oauth start --provider cline"
   },
   {
     family: "duckduckgo",
@@ -159,28 +160,29 @@ const TARGETS: RouteTarget[] = [
     label: "Amazon Q",
     prefixes: ["aq/"],
     preferred: [],
-    connectCommand: "omniroute providers auth amazonq"
+    connectCommand: "omniroute oauth start --provider amazon-q"
   },
   {
     family: "antigravity",
     label: "Antigravity",
     prefixes: ["agy/"],
     preferred: [],
-    connectCommand: "omniroute providers auth antigravity"
+    connectCommand: "omniroute oauth start --provider antigravity"
   },
   {
     family: "kiro",
     label: "Kiro",
     prefixes: ["kr/"],
     preferred: [],
-    connectCommand: "omniroute providers auth kiro"
+    connectCommand: "omniroute oauth start --provider kiro"
   },
   {
     family: "qwen",
-    label: "Qwen OAuth",
+    label: "Qwen OAuth (deprecated)",
     prefixes: ["qw/", "qwen-oauth/"],
     preferred: [],
-    connectCommand: "omniroute providers auth qwen-oauth"
+    connectCommand: "Qwen OAuth free tier is deprecated/discontinued upstream; migrate to Alibaba/Bailian/OpenRouter.",
+    deprecated: true
   }
 ];
 
@@ -188,14 +190,25 @@ function normalizeEndpoint(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-function firstModel(target: RouteTarget, preferred: Partial<Record<OmniRouteFamily, string[]>>, available: string[]): string | null {
+function modelsFor(target: RouteTarget, preferred: Partial<Record<OmniRouteFamily, string[]>>, available: string[]): string[] {
   const preferredModels = preferred[target.family]?.length ? preferred[target.family]! : target.preferred;
-  for (const model of preferredModels) if (available.includes(model)) return model;
-  return available.find((model) => target.prefixes.some((prefix) => model.startsWith(prefix))) ?? null;
+  const matches = available.filter((model) => target.prefixes.some((prefix) => model.startsWith(prefix)));
+  const rank = new Map(preferredModels.map((model, index) => [model, index]));
+  return matches.sort((left, right) => (rank.get(left) ?? 999) - (rank.get(right) ?? 999) || left.localeCompare(right));
 }
 
 function targetByProviderId(providerId: string): RouteTarget | undefined {
   return TARGETS.find((target) => `omni-${target.family}` === providerId);
+}
+
+function healthRank(health: ProviderHealth): number {
+  if (health === "HEALTHY") return 100;
+  if (health === "RATE_LIMITED") return 80;
+  if (health === "AUTH_REQUIRED") return 70;
+  if (health === "DEGRADED") return 60;
+  if (health === "BLOCKED") return 30;
+  if (health === "QUARANTINED") return 20;
+  return 10;
 }
 
 export class OmniRouteLiveStatusService {
@@ -259,6 +272,30 @@ export class OmniRouteLiveStatusService {
     }
   }
 
+  private async bestProbe(target: RouteTarget, available: string[], key: string): Promise<{ model: string | null; health: ProviderHealth; detail: string }> {
+    const candidates = modelsFor(target, this.preferredModels, available).slice(0, 8);
+    if (!candidates.length) {
+      return {
+        model: null,
+        health: "UNAVAILABLE",
+        detail: target.deprecated
+          ? "Deprecated route has no live model; migrate to a current provider"
+          : target.noAuth
+            ? "No matching no-auth model in live OmniRoute catalog"
+            : "No matching authenticated route in live OmniRoute catalog"
+      };
+    }
+
+    let best = { model: candidates[0]!, health: "UNAVAILABLE" as ProviderHealth, detail: "Not probed" };
+    for (const model of candidates) {
+      const probe = await this.probe(model, key);
+      const current = { model, ...probe };
+      if (probe.health === "HEALTHY") return current;
+      if (healthRank(probe.health) > healthRank(best.health)) best = current;
+    }
+    return best;
+  }
+
   async list(force = false): Promise<OmniRouteLiveStatus[]> {
     const now = Date.now();
     if (!force && this.cache && this.cache.expiresAt > now) return this.cache.value;
@@ -284,23 +321,8 @@ export class OmniRouteLiveStatusService {
 
     const available = await this.listModels(key);
     const out = await Promise.all(TARGETS.map(async (target): Promise<OmniRouteLiveStatus> => {
-      const model = firstModel(target, this.preferredModels, available);
-      if (!model) {
-        return {
-          providerId: `omni-${target.family}`,
-          family: target.family,
-          label: target.label,
-          model: "-",
-          health: "UNAVAILABLE",
-          transport: "OMNIROUTE",
-          connectAction: target.noAuth ? "CATALOG" : "CONNECT",
-          doctorCommand: `curl -sS -H "authorization: Bearer $OMNIROUTE_API_KEY" ${this.endpoint}/models`,
-          connectCommand: target.connectCommand,
-          detail: target.noAuth ? "No matching no-auth model in live OmniRoute catalog" : "No matching authenticated route in live OmniRoute catalog",
-          checkedAt
-        };
-      }
-      const probe = await this.probe(model, key);
+      const probe = await this.bestProbe(target, available, key);
+      const model = probe.model ?? "-";
       return {
         providerId: `omni-${target.family}`,
         family: target.family,
@@ -308,15 +330,17 @@ export class OmniRouteLiveStatusService {
         model,
         health: probe.health,
         transport: "OMNIROUTE",
-        connectAction: probe.health === "HEALTHY"
-          ? "READY"
-          : probe.health === "RATE_LIMITED"
-            ? "QUOTA"
-            : probe.health === "AUTH_REQUIRED"
-              ? "AUTH"
-              : target.noAuth
-                ? "RETRY"
-                : "CONNECT",
+        connectAction: target.deprecated
+          ? "MIGRATE"
+          : probe.health === "HEALTHY"
+            ? "READY"
+            : probe.health === "RATE_LIMITED"
+              ? "QUOTA"
+              : probe.health === "AUTH_REQUIRED"
+                ? "AUTH"
+                : target.noAuth
+                  ? "RETRY"
+                  : "CONNECT",
         doctorCommand: `curl -sS -H "authorization: Bearer $OMNIROUTE_API_KEY" ${this.endpoint}/models`,
         connectCommand: target.connectCommand,
         detail: probe.detail,
@@ -338,6 +362,7 @@ export class OmniRouteLiveStatusService {
     if (!target) throw Object.assign(new Error("PROVIDER_NOT_FOUND"), { code: "PROVIDER_NOT_FOUND", status: 404 });
     const status = await this.doctor(providerId, true);
     if (!status) throw Object.assign(new Error("PROVIDER_NOT_FOUND"), { code: "PROVIDER_NOT_FOUND", status: 404 });
+    if (target.deprecated) return { ok: true, action: "MIGRATE", command: target.connectCommand, status };
     if (status.health === "HEALTHY") return { ok: true, action: "READY", command: `Ready · ${status.model}`, status };
     if (status.health === "RATE_LIMITED") return { ok: true, action: "STATUS", command: `Model ${status.model} is rate-limited. Another healthy route should be used until quota resets.`, status };
     return { ok: true, action: target.noAuth ? "RETRY" : "OPEN", command: target.connectCommand, status };
