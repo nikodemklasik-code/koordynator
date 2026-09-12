@@ -44,7 +44,7 @@ if (!server.includes('from "./provider-autoconnect.js"')) {
   console.log("server: readiness imports patched");
 }
 
-if (!server.includes('pathname === "/api/providers/connect-existing"')) {
+if (!server.includes('    pathname === "/api/providers/connect-existing" ||')) {
   const anchor = '    pathname === "/api/integrations/hermes-grants" ||';
   required(server.includes(anchor), "SERVER_POST_ANCHOR_MISSING");
   server = server.replace(anchor, `${anchor}\n    pathname === "/api/providers/connect-existing" ||`);
@@ -78,7 +78,7 @@ if (!server.includes('url.pathname === "/api/readiness/materialisation"')) {
   console.log("server: materialisation readiness endpoint patched");
 }
 
-if (!server.includes('url.pathname === "/api/providers/connect-existing"')) {
+if (!server.includes('method === "POST" && url.pathname === "/api/providers/connect-existing"')) {
   const anchor = '      if (url.pathname === "/api/providers") {';
   required(server.includes(anchor), "SERVER_BULK_CONNECT_ROUTE_ANCHOR_MISSING");
   const route = `      if (method === "POST" && url.pathname === "/api/providers/connect-existing") {\n        const payload = await readJsonBody(request, 1024);\n        assertExactKeys(payload, ["approved"]);\n        const result = await providerAutoconnect.connectExisting(payload.approved === true);\n        return sendJson(response, 200, { ...result, omniRoutes: await omniLive.list(true) });\n      }\n`;
@@ -109,7 +109,7 @@ write(serverPath, server);
 
 for (const marker of [
   'url.pathname === "/api/readiness/materialisation"',
-  'url.pathname === "/api/providers/connect-existing"',
+  'method === "POST" && url.pathname === "/api/providers/connect-existing"',
   "materialisationEnabled: materialisation !== null",
   '"/chat-v5.css"',
   '"/chat-v5.js"'
