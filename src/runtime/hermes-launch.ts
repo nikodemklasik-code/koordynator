@@ -75,8 +75,9 @@ function dynamicSkillRoots(root: string, env: NodeJS.ProcessEnv): string[] {
 }
 
 function managedSoul(grants: HermesGrantStatus): string {
-  const roots = grants.localFiles && grants.localRoots.length
-    ? grants.localRoots.map((root) => `- ${root}`).join("\n")
+  const explicitRoots = grants.localRoots ?? [];
+  const roots = grants.localFiles && explicitRoots.length
+    ? explicitRoots.map((root) => `- ${root}`).join("\n")
     : "- none explicitly granted";
   return `# Koordynator managed Hermes runtime\n\n` +
     `## Skill routing\n` +
@@ -138,7 +139,7 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
     await privateFile(join(home, "config.yaml"), JSON.stringify(config, null, 2) + "\n");
     await privateFile(join(home, ".env"), "# Credentials are a short-lived task ticket, never the gateway key.\n");
     const held = proxy;
-    const localRoots = grants.localFiles ? grants.localRoots : [];
+    const localRoots = grants.localFiles ? (grants.localRoots ?? []) : [];
     return {
       command: "hermes",
       args: ["chat", "--provider", "custom", "--model", settings.model],
