@@ -10,7 +10,7 @@
  * Or double-click:
  *   scripts/Koordynator-Start.command
  *
- * Fresh vendor OAuth is deliberately NOT part of normal startup. Use the
+ * Fresh vendor authorization is deliberately NOT part of normal launch. Use the
  * explicit one-time `npm run ai:auth-missing` wizard only when a route needs it.
  */
 import { spawn, spawnSync } from "node:child_process";
@@ -121,5 +121,5 @@ run("AI always-on (no login)", "npm", ["run", "ai:always-on"]);
 startControlWithLog();
 openChat();
 console.log(`\nDone. Chat: ${chatUrl}`);
-console.log("Fresh vendor OAuth is never started here. Run npm run ai:auth-missing only when a missing route needs one-time consent.");
+console.log("Fresh vendor authorization is never launched here. Run npm run ai:auth-missing only when a missing route needs one-time consent.");
 console.log("Stop later: close the Control UI process; OmniRoute can stay running.");
