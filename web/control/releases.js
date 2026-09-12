@@ -85,7 +85,7 @@ function derivedReadiness(health,routes){
 }
 
 function stageCard(stage){
-  const l=light(stage.light);const model=stage.model?`<code>${esc(stage.model)}</code>`:"";const action=stage.action?`<small class="stage-action">${esc(stage.action)}</small>`:"";
+  const l=light(stage.light);const model=stage.model?`<code>${esc(stage.model)}</code>:"";const action=stage.action?`<small class="stage-action">${esc(stage.action)}</small>`:"";
   return `<article class="agent-stage ${l.toLowerCase()}"><div class="stage-top"><span class="stage-order">${String(stage.order).padStart(2,"0")}</span><span class="lamp ${l.toLowerCase()}"></span><strong>${esc(stage.label)}</strong><b>${l}</b></div><div class="stage-meta"><span>${esc(stage.agent)}</span><span>→</span><span>${esc(stage.worker)}</span>${stage.aiRequired?'<span class="ai-needed">AI</span>':''}</div>${model}<p>${esc(stage.detail||"")}</p>${action}</article>`
 }
 
@@ -100,7 +100,9 @@ function activeCreativeProcess(payload){
 
 function renderCreative(readiness,process){
   const spectrum=$("creativeSpectrum");
+  const glow=spectrum?.querySelector(".creative-glow");
   if(process){
+    if(glow)glow.hidden=false;
     $("creativeState").textContent=`RUNNING · ${process.phase} · ${short(process.taskId,14,6)}`;
     $("creativeState").title=`${process.taskId} · ${process.state}`;
     spectrum.style.setProperty("--creative-progress",`${process.progress}%`);
@@ -108,6 +110,7 @@ function renderCreative(readiness,process){
     spectrum.dataset.state="running";
     return;
   }
+  if(glow)glow.hidden=true;
   const overall=light(readiness?.overall);
   const phase=readiness?.creativePhase||"POZNAWANIE";
   $("creativeState").textContent=`IDLE · readiness ${phase}`;
