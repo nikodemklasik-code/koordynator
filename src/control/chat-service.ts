@@ -2,7 +2,7 @@ import { readAttachment } from "./attachment-reader.js";
 import { detectProjectConsensus, type ProjectConsensus } from "./chat-consensus.js";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
-import { createSkillExecutor, isActionableSkillTask, type SkillExecutor } from "./hermes-skill-runner.js";
+import { createSkillExecutor, isActionableSkillTask, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -101,6 +101,8 @@ export type ChatServiceOptions = {
   maxHistoryAttachmentBytes?: number;
   timeoutMs?: number;
   projectContextProvider?: () => Promise<string | null | undefined>;
+  /** Route every substantive chat turn through Hermes dynamic skill discovery. */
+  hermesSkillsEveryTurn?: boolean;
 };
 
 type Subscriber = (event: ChatEvent) => void;
@@ -219,6 +221,7 @@ export class ChatService {
   private readonly timeoutMs: number;
   private readonly usageLedger: ChatUsageLedger;
   private readonly projectContextProvider?: () => Promise<string | null | undefined>;
+  private readonly hermesSkillsEveryTurn: boolean;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
   private readonly starting = new Set<string>();
   private readonly active = new Map<string, ActiveGeneration>();
@@ -244,6 +247,7 @@ export class ChatService {
     this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 24 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 120_000;
     this.usageLedger = new ChatUsageLedger(options.stateDir);
+    this.hermesSkillsEveryTurn = options.hermesSkillsEveryTurn ?? false;
     if (options.projectContextProvider) this.projectContextProvider = options.projectContextProvider;
   }
 
@@ -550,7 +554,8 @@ export class ChatService {
     const sessionId = session.sessionId;
     const userMessage = session.messages.at(-2)!;
     const taskText = userMessage.content;
-    const skillTask = isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
+    const naturalSkillTask = isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
+    const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText) || (this.hermesSkillsEveryTurn && naturalSkillTask);
     const longRunning = Boolean(repositoryTask(taskText)) || skillTask;
     const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
@@ -565,7 +570,28 @@ export class ChatService {
         return;
       }
       if (skillTask) {
-        await this.skillExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: userMessage.attachments ?? [], signal: controller.signal, emit: delta => {
+        const context: SkillContextMessage[] = session.messages
+          .filter((message) => message.id !== assistant.id && message.state !== "error")
+          .slice(-this.maxHistoryMessages)
+          .map((message) => ({
+            role: message.role,
+            content: message.content.slice(0, 12_000),
+            createdAt: message.createdAt,
+            ...(message.model ? { model: message.model } : {}),
+            ...(!message.attachments?.length ? {} : {
+              attachments: message.attachments.map((attachment) => ({
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                size: attachment.size,
+                ...(attachment.extractionStatus ? { extractionStatus: attachment.extractionStatus } : {})
+              }))
+            })
+          }));
+        const attachments = session.messages
+          .filter((message) => message.role === "user")
+          .flatMap((message) => message.attachments ?? [])
+          .filter((attachment, index, values) => values.findIndex((candidate) => candidate.id === attachment.id) === index);
+        await this.skillExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments, context, signal: controller.signal, emit: delta => {
           assistant.content += delta;
           session.updatedAt = now();
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });

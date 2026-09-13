@@ -5,9 +5,9 @@
   const modelSelect = document.getElementById("modelSelect");
   const primaryLabel = document.getElementById("primaryRouteLabel");
   const fallbackLabel = document.getElementById("fallbackRoutesLabel");
-  const STORAGE_WIDTH = "koordynator.liveChat.v5.terminalWidth";
-  const DEFAULT_WIDTH = 420;
-  const MIN_WIDTH = 300;
+  const STORAGE_WIDTH = "koordynator.liveChat.v5.terminalWidth.runtime2";
+  const DEFAULT_WIDTH = 500;
+  const MIN_WIDTH = 380;
   const MAX_WIDTH = 720;
   let routeHealth = null;
 

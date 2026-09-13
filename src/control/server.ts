@@ -43,6 +43,7 @@ export type ControlServerOptions = {
   chatAllowGithubContext?: boolean;
   chatAllowWorkspaceContext?: boolean;
   chatAllowRepositoryExecution?: boolean;
+  chatHermesSkillsEveryTurn?: boolean;
   chatEndpoint?: string;
   chatApiKey?: string;
   chatApiKeyEnv?: string;
@@ -253,6 +254,7 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
     ...(options.chatDefaultModel === undefined ? {} : { defaultModel: options.chatDefaultModel }),
     ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
+    ...(options.chatHermesSkillsEveryTurn === undefined ? {} : { hermesSkillsEveryTurn: options.chatHermesSkillsEveryTurn }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
     projectContextProvider: () => loadChatProjectContext(projectRoot)
   });
@@ -494,6 +496,8 @@ export function createControlServer(options: ControlServerOptions): Server {
           operator: options.operator ?? "operator@koordynator.local",
           ciVerify: options.ciVerify ?? "UNKNOWN",
           version: options.version ?? VERSION,
+          chatDefaultModel: options.chatDefaultModel ?? null,
+          chatFallbackModels: options.chatFallbackModels ?? [],
           liveChatBillingPolicy: "STRICT_PROVENANCE",
           paidApiAllowedByDefault: options.chatBillingPolicy?.allowPaidApi === true,
           unknownBillingAllowedByDefault: options.chatBillingPolicy?.allowUnknown === true,

@@ -13,4 +13,12 @@ describe("Live Workspace V5 lower inputs patch", () => {
     });
     expect(stdout).toContain("LIVE_WORKSPACE_V5_LOWER_INPUTS_SELF_TEST=PASS");
   });
+
+  it("keeps chat and terminal composer stacks on the same top and bottom lines", async () => {
+    const css = await import("node:fs/promises").then(({ readFile }) => readFile(resolve("web/control/chat-v5.css"), "utf8"));
+    expect(css).toContain("--v5-input-stack-height: 122px");
+    expect(css.match(/height: var\(--v5-input-stack-height\) !important;/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(css).toContain("bottom: 0 !important");
+    expect(css).toContain("margin-bottom: 0 !important");
+  });
 });

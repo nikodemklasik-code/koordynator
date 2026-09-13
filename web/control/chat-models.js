@@ -113,9 +113,10 @@ function sourceAllowed(source) {
 function routeReady() {
   return Boolean(
     chatModelSelect
-    && chatModelSelect.dataset.catalog === "omniroute"
-    && chatModelSelect.dataset.billingAllowed === "true"
-    && chatModelSelect.value
+    && (
+      (chatModelSelect.dataset.catalog === "omniroute" && chatModelSelect.dataset.billingAllowed === "true" && chatModelSelect.value)
+      || chatModelSelect.dataset.catalog === "server-default"
+    )
   );
 }
 
@@ -381,11 +382,62 @@ async function loadChatModels() {
     settleChatModelGate(true);
     return true;
   } catch (error) {
-    showCatalogFailure(error instanceof Error ? error.message : "Model catalog unavailable");
-    settleChatModelGate(false);
+    activateServerDefaultRoute(error instanceof Error ? error.message : "Model catalog unavailable");
     return false;
   }
 }
 
 chatModelSelect?.addEventListener("change", billingSummary);
 void loadChatModels();
+
+
+/* LIVE_WORKSPACE_V5_RUNTIME_RECOVERY */
+function activateServerDefaultRoute(reason = "Model catalog is still resolving") {
+  if (!chatModelSelect || chatModelSelect.dataset.catalog === "omniroute") return;
+  chatModelSelect.textContent = "";
+  const option = document.createElement("option");
+  option.value = "";
+  option.textContent = "Server default route";
+  option.selected = true;
+  chatModelSelect.appendChild(option);
+  chatModelSelect.dataset.catalog = "server-default";
+  chatModelSelect.dataset.billingAllowed = "true";
+  chatModelSelect.disabled = false;
+  chatModelSelect.title = String(reason);
+  if (chatBillingBadge) {
+    chatBillingBadge.textContent = "SERVER ROUTE";
+    chatBillingBadge.className = "billing-badge checking";
+  }
+  if (chatBillingNote) chatBillingNote.textContent = "Using the server-configured default route while the live model catalog resolves.";
+  settleChatModelGate(true);
+  enforceRouteGuard();
+}
+
+const v5RuntimeFetchBase = window.fetch;
+window.fetch = async function koordynatorRuntimeRecoveryFetch(input, init) {
+  const method = String(init?.method || (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET") || "GET").toUpperCase();
+  const path = requestPath(input);
+  const bypassModelGate = chatModelSelect?.dataset.catalog === "server-default"
+    && method === "POST"
+    && (path === "/api/chat/sessions" || /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(path));
+  if (bypassModelGate) {
+    let nextInit = init;
+    if (typeof init?.body === "string") {
+      try {
+        const payload = JSON.parse(init.body);
+        if (payload && typeof payload === "object" && payload.model === "") delete payload.model;
+        nextInit = { ...init, body: JSON.stringify(payload) };
+      } catch { /* server validates malformed JSON */ }
+    }
+    return chatNativeFetch(input, nextInit);
+  }
+  return v5RuntimeFetchBase(input, init);
+};
+
+if (typeof setTimeout === "function") {
+  setTimeout(() => {
+    if (!chatModelGateSettled && chatModelSelect?.dataset.catalog !== "omniroute") {
+      activateServerDefaultRoute("Live model catalog is taking too long; server default route enabled.");
+    }
+  }, 1500);
+}

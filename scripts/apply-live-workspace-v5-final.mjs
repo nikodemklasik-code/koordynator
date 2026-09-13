@@ -9,6 +9,7 @@ const FINAL_CSS = `
 
 ${MARKER}
 /* Final V5 desktop geometry + interaction recovery. */
+:root { --v5-input-stack-height: 122px; }
 .v5-main { grid-template-rows: 64px 54px minmax(0,1fr) 32px !important; }
 .v5-toolbar { position: relative; z-index: 60; }
 .v5-brand-title { font-size: 14px !important; }
@@ -36,14 +37,16 @@ ${MARKER}
 
 /* Composer uses the previously empty bottom band without growing. */
 .v5-composer-zone {
-  bottom: -4px !important;
-  padding: 30px 6px 0 14px !important;
+  bottom: 0 !important;
+  height: var(--v5-input-stack-height) !important;
+  padding: 0 6px 0 14px !important;
   pointer-events: none !important;
 }
 .v5-composer {
   width: 100% !important;
   max-width: none !important;
   margin: 0 !important;
+  height: var(--v5-input-stack-height) !important;
   pointer-events: auto !important;
 }
 .v5-composer textarea { min-height: 66px !important; font-size: 15px !important; pointer-events: auto !important; }
@@ -60,11 +63,14 @@ ${MARKER}
   pointer-events: auto !important;
 }
 .v5-terminal-composer {
-  padding: 6px 6px 0 6px !important;
-  margin-bottom: -4px !important;
+  min-height: var(--v5-input-stack-height) !important;
+  height: var(--v5-input-stack-height) !important;
+  padding: 8px 6px !important;
+  margin-bottom: 0 !important;
   pointer-events: auto !important;
 }
-.v5-terminal-composer textarea { min-height: 44px !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-terminal-composer textarea { min-height: 0 !important; height: 100% !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-terminal-send { align-self: end !important; }
 .v5-terminal-send,.v5-mini-button { pointer-events: auto !important; }
 .hermes-hint { display: none !important; }
 
@@ -158,7 +164,7 @@ function patchChatModels(source) {
     return false;`
   );
 
-  return `${next}\n\n${RUNTIME_MARKER}\nfunction activateServerDefaultRoute(reason = "Model catalog is still resolving") {\n  if (!chatModelSelect || chatModelSelect.dataset.catalog === "omniroute") return;\n  chatModelSelect.textContent = "";\n  const option = document.createElement("option");\n  option.value = "";\n  option.textContent = "Server default route";\n  option.selected = true;\n  chatModelSelect.appendChild(option);\n  chatModelSelect.dataset.catalog = "server-default";\n  chatModelSelect.dataset.billingAllowed = "true";\n  chatModelSelect.disabled = false;\n  chatModelSelect.title = String(reason);\n  if (chatBillingBadge) {\n    chatBillingBadge.textContent = "SERVER ROUTE";\n    chatBillingBadge.className = "billing-badge checking";\n  }\n  if (chatBillingNote) chatBillingNote.textContent = "Using the server-configured default route while the live model catalog resolves.";\n  settleChatModelGate(true);\n  enforceRouteGuard();\n}\n\nconst v5RuntimeFetchBase = window.fetch;\nwindow.fetch = async function koordynatorRuntimeRecoveryFetch(input, init) {\n  const method = String(init?.method || (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET") || "GET").toUpperCase();\n  const path = requestPath(input);\n  const bypassModelGate = method === "POST" && (path === "/api/chat/sessions" || /^\\/api\\/chat\\/sessions\\/[0-9a-f-]+\\/messages$/i.test(path));\n  if (bypassModelGate) {\n    let nextInit = init;\n    if (typeof init?.body === "string") {\n      try {\n        const payload = JSON.parse(init.body);\n        if (payload && typeof payload === "object" && payload.model === "") delete payload.model;\n        nextInit = { ...init, body: JSON.stringify(payload) };\n      } catch { /* server validates malformed JSON */ }\n    }\n    return chatNativeFetch(input, nextInit);\n  }\n  return v5RuntimeFetchBase(input, init);\n};\n\nsetTimeout(() => {\n  if (!chatModelGateSettled && chatModelSelect?.dataset.catalog !== "omniroute") {\n    activateServerDefaultRoute("Live model catalog is taking too long; server default route enabled.");\n  }\n}, 1500);\n`;
+  return `${next}\n\n${RUNTIME_MARKER}\nfunction activateServerDefaultRoute(reason = "Model catalog is still resolving") {\n  if (!chatModelSelect || chatModelSelect.dataset.catalog === "omniroute") return;\n  chatModelSelect.textContent = "";\n  const option = document.createElement("option");\n  option.value = "";\n  option.textContent = "Server default route";\n  option.selected = true;\n  chatModelSelect.appendChild(option);\n  chatModelSelect.dataset.catalog = "server-default";\n  chatModelSelect.dataset.billingAllowed = "true";\n  chatModelSelect.disabled = false;\n  chatModelSelect.title = String(reason);\n  if (chatBillingBadge) {\n    chatBillingBadge.textContent = "SERVER ROUTE";\n    chatBillingBadge.className = "billing-badge checking";\n  }\n  if (chatBillingNote) chatBillingNote.textContent = "Using the server-configured default route while the live model catalog resolves.";\n  settleChatModelGate(true);\n  enforceRouteGuard();\n}\n\nconst v5RuntimeFetchBase = window.fetch;\nwindow.fetch = async function koordynatorRuntimeRecoveryFetch(input, init) {\n  const method = String(init?.method || (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET") || "GET").toUpperCase();\n  const path = requestPath(input);\n  const bypassModelGate = method === "POST" && (path === "/api/chat/sessions" || /^\\/api\\/chat\\/sessions\\/[0-9a-f-]+\\/messages$/i.test(path));\n  if (bypassModelGate) {\n    let nextInit = init;\n    if (typeof init?.body === "string") {\n      try {\n        const payload = JSON.parse(init.body);\n        if (payload && typeof payload === "object" && payload.model === "") delete payload.model;\n        nextInit = { ...init, body: JSON.stringify(payload) };\n      } catch { /* server validates malformed JSON */ }\n    }\n    return chatNativeFetch(input, nextInit);\n  }\n  return v5RuntimeFetchBase(input, init);\n};\n\nif (typeof setTimeout === "function") {\n  setTimeout(() => {\n    if (!chatModelGateSettled && chatModelSelect?.dataset.catalog !== "omniroute") {\n      activateServerDefaultRoute("Live model catalog is taking too long; server default route enabled.");\n    }\n  }, 1500);\n}\n`;
 }
 
 function patchHistoryJs(source) {
@@ -179,6 +185,13 @@ function patchHistoryJs(source) {
   return next;
 }
 
+function patchChatModelsWithSafeGate(source) {
+  return patchChatModels(source).replace(
+    '  const bypassModelGate = method === "POST" && (path === "/api/chat/sessions" || /^\\/api\\/chat\\/sessions\\/[0-9a-f-]+\\/messages$/i.test(path));',
+    '  const bypassModelGate = chatModelSelect?.dataset.catalog === "server-default"\n    && method === "POST"\n    && (path === "/api/chat/sessions" || /^\\/api\\/chat\\/sessions\\/[0-9a-f-]+\\/messages$/i.test(path));'
+  );
+}
+
 function patchServerTs(source) {
   if (source.includes("chatDefaultModel: options.chatDefaultModel ?? null")) return source;
   return source.replace(
@@ -193,7 +206,7 @@ async function apply(root = process.cwd()) {
     ["web/control/chat-v5.js", patchV5Js],
     ["web/control/chat.html", patchHtml],
     ["web/control/chat.js", patchChatJs],
-    ["web/control/chat-models.js", patchChatModels],
+    ["web/control/chat-models.js", patchChatModelsWithSafeGate],
     ["web/control/chat-history.js", patchHistoryJs],
     ["src/control/server.ts", patchServerTs]
   ];
@@ -213,7 +226,7 @@ async function apply(root = process.cwd()) {
 
 function selfTest() {
   const css = patchCss(".x{display:block}");
-  if (!css.includes(MARKER) || !css.includes("border-right: 1px solid") || !css.includes(".hermes-hint { display: none")) throw new Error("V5_FINAL_CSS_FAILED");
+  if (!css.includes(MARKER) || !css.includes("--v5-input-stack-height: 122px") || !css.includes("border-right: 1px solid") || !css.includes(".hermes-hint { display: none")) throw new Error("V5_FINAL_CSS_FAILED");
   if (patchCss(css) !== css) throw new Error("V5_FINAL_CSS_NOT_IDEMPOTENT");
 
   const js = 'const STORAGE_WIDTH = "old";\nconst DEFAULT_WIDTH = 320;\nconst MIN_WIDTH = 280;';
@@ -229,7 +242,7 @@ function selfTest() {
   if (!chatOut.includes('modelSelect.value ? { model: modelSelect.value } : {}') || !chatOut.includes('{ message, attachments }')) throw new Error("V5_FINAL_CHAT_RUNTIME_FAILED");
 
   const models = `function routeReady() {\n  return Boolean(\n    chatModelSelect\n    && chatModelSelect.dataset.catalog === "omniroute"\n    && chatModelSelect.dataset.billingAllowed === "true"\n    && chatModelSelect.value\n  );\n}\n    showCatalogFailure(error instanceof Error ? error.message : "Model catalog unavailable");\n    settleChatModelGate(false);\n    return false;`;
-  const modelsOut = patchChatModels(models);
+  const modelsOut = patchChatModelsWithSafeGate(models);
   if (!modelsOut.includes("server-default") || !modelsOut.includes("1500") || !modelsOut.includes("chatNativeFetch")) throw new Error("V5_FINAL_MODEL_RECOVERY_FAILED");
 
   const server = '          version: options.version ?? VERSION,\n          liveChatBillingPolicy: "STRICT_PROVENANCE",';

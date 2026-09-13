@@ -521,17 +521,18 @@ function scheduleResponseActionSync() {
 
 function installDocumentExport() {
   const oldButtons = [document.getElementById("exportMdButton"), document.getElementById("exportPdfButton"), document.getElementById("exportZipButton")];
-  oldButtons.forEach((button) => button?.classList.add("hidden"));
-  const group = document.querySelector(".chat-action-group");
+  const group = document.querySelector(".v5-toolbar-left") || document.querySelector(".chat-action-group");
   if (group && !document.getElementById("createDocumentButton")) {
     const button = document.createElement("button");
     button.id = "createDocumentButton";
     button.type = "button";
-    button.className = "secondary-button chat-action-button";
+    button.className = group.classList.contains("v5-toolbar-left") ? "v5-action" : "secondary-button chat-action-button";
     button.textContent = "Create document";
     button.title = "Select AI responses and attachments, then create PDF, DOCX or ZIP";
     button.addEventListener("click", () => openSelector());
-    group.insertBefore(button, oldButtons.find(Boolean) || null);
+    const stageZero = document.getElementById("stageZeroButton");
+    if (stageZero?.parentNode === group) group.insertBefore(button, stageZero);
+    else group.appendChild(button);
   }
   const thread = document.getElementById("chatThread");
   if (thread) new MutationObserver(scheduleResponseActionSync).observe(thread, { childList: true, subtree: true });

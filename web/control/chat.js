@@ -728,7 +728,7 @@ async function createSession({ persist = !isPopoutWindow } = {}) {
   const response = await fetch("/api/chat/sessions", {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ model: modelSelect.value })
+    body: JSON.stringify(modelSelect.value ? { model: modelSelect.value } : {})
   });
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
@@ -1176,7 +1176,7 @@ async function sendMessage() {
     const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ message, model: modelSelect.value, attachments })
+      body: JSON.stringify(modelSelect.value ? { message, model: modelSelect.value, attachments } : { message, attachments })
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -1240,7 +1240,7 @@ async function loadHealth() {
   $("operatorLabel").textContent = health.operator;
   $("regionLabel").textContent = health.region;
   $("zoneLabel").textContent = health.zone;
-  $("versionLabel").textContent = `v${health.version}`;
+  $("versionLabel").textContent = `V5 · app v${health.version}`;
   $("ciStatus").textContent = health.ciVerify;
   $("ciStatus").className = `status-badge ${health.ciVerify === "PASS" ? "pass" : health.ciVerify === "FAIL" ? "fail" : "neutral"}`;
   $("ciRing").className = `status-ring ${health.ciVerify === "PASS" ? "pass" : health.ciVerify === "FAIL" ? "fail" : ""}`;
