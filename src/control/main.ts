@@ -2,6 +2,9 @@
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
 import { loadOrCreateControlSigningKey } from "./control-signing-key.js";
+import { ChatService } from "./chat-service.js";
+import { ChatExportService } from "./chat-export-service.js";
+import { installChatExportHttp } from "./chat-export-http.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -47,6 +50,17 @@ const server = createControlServer({
   }),
   version: process.env.KOORDYNATOR_VERSION ?? VERSION
 });
+
+// Export reads the same persisted chat truth but owns only generated artifacts/receipts.
+// This keeps document generation outside the conversational execution path.
+const exportChat = new ChatService({ stateDir });
+const chatExports = new ChatExportService({
+  stateDir,
+  chat: exportChat,
+  ...(process.env.KOORDYNATOR_EXPORT_ROOT === undefined ? {} : { exportRoot: resolve(process.env.KOORDYNATOR_EXPORT_ROOT) })
+});
+installChatExportHttp(server, chatExports, controlToken);
+server.on("close", () => exportChat.close());
 
 server.listen(port(), host, () => {
   process.stdout.write(`KOORDYNATOR_CONTROL http://${host}:${port()}\n`);
