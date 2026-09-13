@@ -22,8 +22,10 @@ describe("attachment recognition and extraction", () => {
     const data = zipSync({ "notes.txt": strToU8("read this"), "binary.exe": new Uint8Array([0,255]) });
     const read = await extractAttachment(data,"file.zip","application/zip");
     expect(read.text).toContain("read this"); expect(read.text).toContain("UNSUPPORTED");
+    const manyEntries = Object.fromEntries(Array.from({ length: 1000 }, (_, i) => [`src/file-${i}.ts`, strToU8(`export const v${i} = ${i};`)]));
+    expect((await extractAttachment(zipSync(manyEntries),"many.zip","application/zip")).text).toContain("src/file-0.ts");
     await expect(extractAttachment(archive({ "../escape": "x" }),"bad.zip","application/zip")).rejects.toThrow("CHAT_ARCHIVE_PATH_UNSAFE");
-    await expect(extractAttachment(zipSync({ "bomb.txt": new Uint8Array(11 * 1024 * 1024) }),"bad.zip","application/zip")).rejects.toThrow("CHAT_ARCHIVE_LIMIT");
+    await expect(extractAttachment(zipSync({ "bomb.txt": new Uint8Array(65 * 1024 * 1024) }),"bad.zip","application/zip")).rejects.toThrow("CHAT_ARCHIVE_LIMIT");
   });
   it("recognizes JPG bytes despite an incorrect extension", async () => {
     expect(await extractAttachment(new Uint8Array([255,216,255,224]),"photo.txt","text/plain")).toMatchObject({ detected: "image/jpeg", status: "VISION_REQUIRED" });

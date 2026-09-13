@@ -37,6 +37,7 @@ Daily:
   npm start
 
 Options:
+  --free    Select only live, catalog-confirmed free routes with tool calling
   --login   Run the explicit one-time vendor OAuth wizard for missing routes
   --probe   Live inference probe
   --start   Start control UI after setup
@@ -131,6 +132,7 @@ const {
 } = await import(pathToFileURL(resolve(root, "dist/runtime/ai-bootstrap.js")).href);
 
 loadLocalConfig();
+const freeOnly = args.has("--free") || process.env.KOORDYNATOR_FREE_ONLY === "1";
 
 const familyKeys = [
   "KOORDYNATOR_GEMINI_MODEL",
@@ -158,7 +160,7 @@ let selected = selectChatModels(family);
 
 // No interactive OAuth by default. If .env has no family slots yet, discover
 // already-connected OmniRoute sessions using the Keychain gateway key.
-if (!selected.primary && !wantLogin) {
+if (!freeOnly && !selected.primary && !wantLogin) {
   console.log("\n==> Discover active OmniRoute routes (no login)");
   await bootstrapAi();
   loadLocalConfig();
@@ -170,7 +172,23 @@ if (!selected.primary && !wantLogin) {
   selected = selectChatModels(family);
 }
 
+if (freeOnly) {
+  const { selectWorkingFreeRoutes } = await import(pathToFileURL(resolve(root, "dist/runtime/free-routes.js")).href);
+  const result = await selectWorkingFreeRoutes(omniRouteSettings());
+  console.log(`Catalog: ${result.diagnostics.modelCount} models; ${result.diagnostics.freeCandidateCount} confirmed free candidates; pricing endpoint: ${result.diagnostics.pricingAvailable ? "available" : "unavailable"}`);
+  if (result.diagnostics.freeCandidateCount === 0) {
+    console.log(`Billing evidence: ${JSON.stringify(result.diagnostics.billingSources)}`);
+    console.log("No inference attempted: the live catalog/pricing did not confirm a free route. Check provider connections and pricing access in OmniRoute.");
+  }
+  for (const probe of result.probes) console.log(`  ${probe.status} ${probe.model}: ${probe.detail}`);
+  selected = result;
+}
+
 if (!selected.primary) {
+  if (freeOnly) {
+    console.error("FREE_ROUTE_UNAVAILABLE: no confirmed free route passed the tool-call probe. Configuration unchanged.");
+    process.exit(1);
+  }
   console.error("No active OmniRoute model routes yet.");
   console.error("Run the one-time missing-provider wizard:");
   console.error("  npm run ai:auth-missing");
@@ -178,6 +196,7 @@ if (!selected.primary) {
 }
 
 const updates = {
+  KOORDYNATOR_FREE_ONLY: freeOnly ? "1" : "0",
   KOORDYNATOR_CHAT_MODEL: selected.primary,
   KOORDYNATOR_FALLBACK_MODELS: selected.fallbacks.join(",")
 };
@@ -193,7 +212,7 @@ console.log(`    fallbacks: ${selected.fallbacks.join(" -> ") || "(none)"}`);
 
 const doctorArgs = ["run", "doctor:omniroute"];
 if (wantProbe) doctorArgs.push("--", "--probe");
-run("Doctor", "npm", doctorArgs, { allowFail: true });
+if (!freeOnly) run("Doctor", "npm", doctorArgs, { allowFail: true });
 
 const settings = omniRouteSettings();
 const launch = await prepareHermes(settings, root);
@@ -211,7 +230,7 @@ console.log(`  hermes:    HERMES_HOME=${launch.env.HERMES_HOME}`);
 console.log("\nDone. Next command:\n  npm start");
 
 if (wantStart) {
-  run("Start control UI", "npm", ["start"]);
+  run("Start control UI", "npm", ["run", "control"]);
 }
 } finally {
   await launch.close();

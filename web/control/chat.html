@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="/chat-usage.css" />
   <link rel="stylesheet" href="/xterm.css" />
   <link rel="stylesheet" href="/chat-v5.css?v=5" />
+  <link rel="stylesheet" href="/chat-router.css?v=1" />
 </head>
 <body class="workspace-v5">
   <div class="v5-shell">
@@ -23,7 +24,7 @@
         <a class="v5-nav-item" href="/releases" title="Releases" aria-label="Releases"><span>◫</span></a>
       </nav>
       <div class="v5-rail-foot">
-        <span id="versionLabel">v0.4.0</span>
+        <span id="versionLabel">V5 · app v0.4.0</span>
         <span id="sidebarEnv" class="visually-hidden">LOCAL</span>
       </div>
     </aside>
@@ -108,7 +109,7 @@
               <div class="composer-actions v5-composer-actions">
                 <label class="model-picker composer-model v5-model-picker">
                   <span class="visually-hidden">AI model</span>
-                  <select id="modelSelect" aria-label="AI model" disabled><option value="" selected>Loading…</option></select>
+                  <select id="modelSelect" aria-label="AI model"><option value="" selected>Loading…</option></select>
                 </label>
                 <button class="attach-button v5-attach" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
                 <button class="stop-button hidden v5-stop" id="stopButton" type="button" aria-label="Stop generation">■</button>
@@ -166,6 +167,27 @@
     <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
   </aside>
 
+  <dialog class="github-chat-consent-dialog stage-zero-dialog" id="stageZeroDialog" aria-labelledby="stageZeroTitle">
+    <form method="dialog">
+      <header>
+        <div><div class="chat-kicker">ETAP 0</div><strong id="stageZeroTitle">Wybierz zakres rozmowy</strong></div>
+        <button value="cancel" aria-label="Zamknij wybór zakresu">×</button>
+      </header>
+      <p>Kliknij pierwszą, a następnie ostatnią wiadomość zakresu. Załączniki z wybranych wiadomości również trafią do analizy.</p>
+      <div class="stage-zero-range-toolbar">
+        <button type="button" id="stageZeroAllButton">Cała rozmowa</button>
+        <span id="stageZeroScopePreview" role="status" aria-live="polite"></span>
+      </div>
+      <input type="hidden" id="stageZeroFrom" value="0" />
+      <input type="hidden" id="stageZeroTo" value="0" />
+      <ol class="stage-zero-range-list" id="stageZeroRangeList" aria-label="Wiadomości do analizy"></ol>
+      <footer>
+        <button value="cancel">Anuluj</button>
+        <button type="button" class="github-chat-approve" id="stageZeroRunButton">Uruchom Etap 0</button>
+      </footer>
+    </form>
+  </dialog>
+
   <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
     <form method="dialog">
       <header>
@@ -193,5 +215,6 @@
   <script src="/chat-github.js?v=5" defer></script>
   <script src="/chat-usage.js?v=5" defer></script>
   <script src="/chat-v5.js?v=5" defer></script>
+  <script src="/chat-router.js?v=1" defer></script>
 </body>
 </html>

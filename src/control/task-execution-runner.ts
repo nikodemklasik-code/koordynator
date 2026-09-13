@@ -147,6 +147,7 @@ export class TaskExecutionRunner {
         }
       }
       const settings = omniRouteSettings();
+      if (!settings.apiKey) throw new TaskExecutionError("OMNIROUTE_API_KEY_REQUIRED", 503);
       const resolved = resolveWorkerAgent(this.options.role,
         this.options.workerPathPrefix ? { pathPrefix: this.options.workerPathPrefix } : {});
       roleAgent = async (context) => resolved.agent({

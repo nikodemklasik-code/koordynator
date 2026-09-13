@@ -555,3 +555,165 @@ button { color: inherit; }
   .v5-welcome { width: calc(100% - 24px); }
   .v5-welcome-grid { grid-template-columns: 1fr; }
 }
+
+/* LIVE_WORKSPACE_V5_READABLE_SCALE */
+/* Desktop-readable scale. Preserve layout, increase legibility and click targets. */
+.v5-rail-foot { font-size: 10px !important; }
+.v5-main { grid-template-rows: 64px 54px minmax(0, 1fr) 32px !important; }
+.v5-brand-title { font-size: 14px !important; }
+.v5-brand-subtitle { font-size: 10px !important; }
+.v5-route-kicker { font-size: 9px !important; }
+#primaryRouteLabel { font-size: 12px !important; }
+.v5-fallbacks { font-size: 10px !important; }
+.v5-env { min-height: 32px; padding: 6px 11px !important; font-size: 10px !important; }
+.v5-env strong, .v5-operator { font-size: 11px !important; }
+.v5-toolbar-left, .v5-toolbar-right { gap: 8px !important; }
+.v5-action { min-height: 38px !important; height: 38px !important; padding: 0 13px !important; font-size: 11px !important; }
+.v5-icon-button { width: 40px !important; height: 38px !important; font-size: 17px !important; }
+.v5-more summary { width: 42px !important; height: 38px !important; font-size: 14px !important; }
+.v5-more-menu { top: 44px !important; width: 190px !important; }
+.v5-more-menu button { min-height: 38px !important; height: 38px !important; font-size: 11px !important; }
+.v5-chat-pane { grid-template-rows: 46px minmax(0, 1fr) auto !important; }
+.v5-routebar { min-height: 46px !important; gap: 9px !important; }
+.v5-connection strong { font-size: 11px !important; }
+.chat-status-dot { width: 8px !important; height: 8px !important; }
+.billing-badge, .usage-24h, .runtime-route-badge { min-height: 26px !important; padding: 4px 9px !important; font-size: 9px !important; }
+.v5-github { height: 34px !important; padding: 0 10px !important; font-size: 10px !important; }
+.v5-github-mark { font-size: 9px !important; }
+.session-id { max-width: 125px !important; flex-basis: 125px !important; font-size: 9px !important; }
+.v5-welcome { width: min(820px, calc(100% - 56px)) !important; }
+.v5-welcome h2 { font-size: 24px !important; }
+.v5-welcome p { font-size: 14px !important; }
+.v5-welcome-grid { font-size: 11px !important; gap: 10px 22px !important; }
+.chat-message { width: min(920px, calc(100% - 54px)) !important; }
+.message-meta { min-height: 32px; gap: 7px !important; font-size: 10.5px !important; }
+.message-model { padding: 4px 9px !important; }
+.message-bubble { font-size: 15px !important; line-height: 1.65 !important; }
+.message-copy, .code-copy, .message-materialise { min-height: 30px !important; padding: 0 9px !important; font-size: 10px !important; cursor: pointer !important; }
+.v5-composer { width: min(920px, 100%) !important; }
+.v5-composer textarea { min-height: 66px !important; padding: 16px 17px 8px !important; font-size: 15px !important; }
+.v5-composer-actions { padding: 5px 9px 9px !important; gap: 8px !important; }
+.v5-model-picker { min-width: 260px !important; max-width: 650px !important; }
+.v5-model-picker select { height: 40px !important; padding: 0 34px 0 12px !important; font-size: 12px !important; }
+.v5-attach, .v5-stop, .v5-send { min-height: 40px !important; height: 40px !important; }
+.v5-attach { width: 40px !important; font-size: 18px !important; }
+.v5-send { width: 42px !important; font-size: 18px !important; }
+.v5-route-note { width: min(920px, 100%) !important; font-size: 9.5px !important; }
+.v5-terminal-pane { grid-template-rows: 50px minmax(0, 1fr) auto auto !important; }
+.v5-terminal-head { min-height: 50px !important; padding: 0 12px !important; }
+.v5-terminal-title strong { font-size: 12px !important; }
+.v5-terminal-title small { font-size: 9px !important; }
+.hermes-state { padding: 4px 8px !important; font-size: 9px !important; }
+.v5-mini-button { min-height: 34px !important; height: 34px !important; padding: 0 10px !important; font-size: 10px !important; }
+.v5-terminal-composer { grid-template-columns: minmax(0, 1fr) 42px !important; gap: 8px !important; padding: 9px !important; }
+.v5-terminal-composer textarea { min-height: 44px !important; padding: 11px 12px !important; font-size: 12px !important; }
+.v5-terminal-send { width: 42px !important; height: 44px !important; font-size: 18px !important; }
+.hermes-hint { font-size: 10px !important; }
+.v5-statusbar { min-height: 32px !important; height: 32px !important; font-size: 9px !important; }
+.ci-status, .v5-runtime-meta, .status-badge { font-size: 9px !important; }
+.status-ring { width: 21px !important; height: 21px !important; }
+.history-panel { width: min(440px, 94vw) !important; }
+.history-item { min-height: 58px !important; }
+.history-item-title { font-size: 13px !important; }
+.history-item-meta, .history-empty { font-size: 10.5px !important; }
+.github-chat-consent-dialog { font-size: 13px !important; }
+.github-chat-consent-dialog button { min-height: 38px; font-size: 11px; }
+.router-toggle { min-height: 38px !important; font-size: 11px !important; }
+.router-kicker, .router-label, .router-live { font-size: 9px !important; }
+.router-title-row h2 { font-size: 18px !important; }
+.router-action { min-height: 36px !important; height: 36px !important; font-size: 10px !important; }
+.router-request { font-size: 14px !important; }
+.router-chip { font-size: 10px !important; padding: 5px 8px !important; }
+.router-signal { font-size: 11px !important; padding: 9px 10px !important; }
+.router-signal strong, .router-agent strong { font-size: 10px !important; }
+.router-agent span { font-size: 9px !important; }
+.router-event { font-size: 10px !important; }
+.router-disclaimer { font-size: 10px !important; }
+
+@media (max-width: 900px) {
+  .v5-main { grid-template-rows: 60px 52px minmax(0, 1fr) 30px !important; }
+  .v5-action { min-height: 36px !important; height: 36px !important; padding: 0 10px !important; }
+}
+
+/* LIVE_WORKSPACE_V5_FINAL */
+/* Final V5 desktop geometry + interaction recovery. */
+:root { --v5-input-stack-height: 122px; }
+.v5-main { grid-template-rows: 64px 54px minmax(0,1fr) 32px !important; }
+.v5-toolbar { position: relative; z-index: 60; }
+.v5-brand-title { font-size: 14px !important; }
+.v5-brand-subtitle { font-size: 10px !important; }
+.v5-route-kicker { font-size: 9px !important; }
+#primaryRouteLabel { font-size: 12px !important; }
+.v5-fallbacks { font-size: 10px !important; }
+.v5-env { min-height: 32px; font-size: 10px !important; }
+.v5-env strong,.v5-operator { font-size: 11px !important; }
+.v5-action { min-height: 38px !important; height: 38px !important; padding: 0 13px !important; font-size: 11px !important; }
+.v5-icon-button,.v5-more summary { min-height: 38px !important; height: 38px !important; }
+.v5-more-menu button { min-height: 38px !important; font-size: 11px !important; }
+.v5-chat-pane { grid-template-rows: 46px minmax(0,1fr) auto !important; }
+.v5-routebar { min-height: 46px !important; }
+.v5-connection strong { font-size: 11px !important; }
+.billing-badge,.usage-24h,.runtime-route-badge { min-height: 26px !important; font-size: 9px !important; }
+.v5-github { height: 34px !important; font-size: 10px !important; }
+.session-id { font-size: 9px !important; max-width: 125px !important; }
+.v5-welcome h2 { font-size: 24px !important; }
+.v5-welcome p { font-size: 14px !important; }
+.v5-welcome-grid { font-size: 11px !important; }
+.message-meta { min-height: 32px; font-size: 10.5px !important; }
+.message-bubble { font-size: 15px !important; line-height: 1.65 !important; }
+.message-copy,.code-copy,.message-materialise { min-height: 30px !important; font-size: 10px !important; cursor: pointer !important; }
+
+/* Composer uses the previously empty bottom band without growing. */
+.v5-composer-zone {
+  bottom: 0 !important;
+  height: var(--v5-input-stack-height) !important;
+  padding: 0 6px 0 14px !important;
+  pointer-events: none !important;
+}
+.v5-composer {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  height: var(--v5-input-stack-height) !important;
+  pointer-events: auto !important;
+}
+.v5-composer textarea { min-height: 66px !important; font-size: 15px !important; pointer-events: auto !important; }
+.v5-composer-actions { pointer-events: auto !important; }
+.v5-model-picker select { height: 40px !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-attach,.v5-stop,.v5-send { min-height: 40px !important; height: 40px !important; pointer-events: auto !important; }
+.v5-route-note { display: none !important; }
+.attachment-error,.github-chat-notice,.stage-zero-notice,#exportReceipt { pointer-events: auto !important; }
+
+/* Hermes gets about one third of the workspace and an explicit right edge. */
+.v5-terminal-pane {
+  border-right: 1px solid #26313a !important;
+  box-shadow: inset -1px 0 0 rgba(255,255,255,.025) !important;
+  pointer-events: auto !important;
+}
+.v5-terminal-composer {
+  min-height: var(--v5-input-stack-height) !important;
+  height: var(--v5-input-stack-height) !important;
+  padding: 8px 6px !important;
+  margin-bottom: 0 !important;
+  pointer-events: auto !important;
+}
+.v5-terminal-composer textarea { min-height: 0 !important; height: 100% !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-terminal-send { align-self: end !important; }
+.v5-terminal-send,.v5-mini-button { pointer-events: auto !important; }
+.hermes-hint { display: none !important; }
+
+/* Closed overlays must never make the workspace inert. */
+.history-backdrop.hidden,
+.router-backdrop:not(.open),
+.chat-drop-overlay { pointer-events: none !important; }
+.history-panel:not(.open),
+.router-drawer:not(.open) { pointer-events: none !important; }
+.history-panel.open,
+.router-backdrop.open,
+.router-drawer.open,
+.github-chat-consent-dialog[open] { pointer-events: auto !important; }
+.v5-toolbar-left,.v5-toolbar-right,.v5-action,.v5-icon-button,.router-toggle { pointer-events: auto !important; }
+
+.v5-statusbar { min-height: 32px !important; height: 32px !important; font-size: 9px !important; }
+.ci-status,.v5-runtime-meta,.status-badge { font-size: 9px !important; }
+.v5-rail-foot { font-size: 10px !important; }
