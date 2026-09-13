@@ -9,6 +9,8 @@ import { startTicketProxy, type TicketProxy } from "../security/ticket-proxy.js"
 import { omniRouteSettings } from "./local-config.js";
 import { freeRouteGuard } from "./free-routes.js";
 
+const HERMES_TASK_TICKET_TTL_MS = 24 * 60 * 60_000;
+
 async function privateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   const stat = await lstat(path);
@@ -121,7 +123,11 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   await privateDirectory(home);
 
   const secret = randomBytes(32).toString("hex");
-  const { token } = mintTaskTicket(secret, { aud: "hermes", model: settings.model });
+  const { token } = mintTaskTicket(secret, {
+    aud: "hermes",
+    model: settings.model,
+    ttlMs: HERMES_TASK_TICKET_TTL_MS
+  });
   let proxy: TicketProxy | undefined;
   try {
     proxy = await startTicketProxy({ upstream: settings.endpoint, apiKey: settings.apiKey, secret, audience: "hermes",
