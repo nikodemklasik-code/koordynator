@@ -261,6 +261,96 @@
     }).observe(modelSelect, { childList: true, subtree: true });
   }
 
+  function installHermesReadableSanitizer() {
+    const transcript = document.getElementById("hermesTranscript");
+    if (!transcript || transcript.dataset.tuiSanitizer === "1") return Boolean(transcript);
+    transcript.dataset.tuiSanitizer = "1";
+
+    const style = document.createElement("style");
+    style.id = "hermesReadableSanitizerStyles";
+    style.textContent = `
+      #hermesTranscript .terminal-tui-hidden{display:none!important}
+      #hermesTranscript .terminal-tui-meta{color:#46555f!important;font-size:7.5px!important;line-height:1.35!important;opacity:.82!important}
+      #hermesTranscript .terminal-tui-meta.warning{color:#8d7651!important}
+    `;
+    document.head.appendChild(style);
+
+    let inReasoningFrame = false;
+    const rowsSelector = ".terminal-answer-line,.terminal-noise";
+
+    function hide(row) {
+      row.classList.add("terminal-tui-hidden");
+      row.setAttribute("aria-hidden", "true");
+    }
+
+    function meta(row, warning = false) {
+      row.classList.remove("terminal-answer-line");
+      row.classList.add("terminal-noise", "terminal-tui-meta");
+      if (warning) row.classList.add("warning");
+    }
+
+    function sanitizeRow(row) {
+      if (!(row instanceof HTMLElement) || row.dataset.tuiSanitized === "1") return;
+      row.dataset.tuiSanitized = "1";
+      const text = String(row.textContent || "").replace(/\s+/g, " ").trim();
+      if (!text) { hide(row); return; }
+
+      if (/[┌╭].*\bReasoning\b/i.test(text)) {
+        inReasoningFrame = true;
+        hide(row);
+        return;
+      }
+      if (inReasoningFrame) {
+        hide(row);
+        if (/^[└╰][─━-]{3,}/.test(text)) inReasoningFrame = false;
+        return;
+      }
+
+      if (/^Plan a feature, then build it step by step$/i.test(text) ||
+          /^Window too small\.{0,3}$/i.test(text) ||
+          /^\[?0m\]?$/i.test(text) ||
+          /^\d+(?:\s+[a-z])?$/i.test(text) ||
+          /^[╭╰┌└├┤│─━\s]+$/.test(text)) {
+        hide(row);
+        return;
+      }
+
+      if (/^(?:The user (?:wants|asked|is asking|requested)|I (?:need to|should|have all the facts|will now)|We need to|Need to)\b/i.test(text) ||
+          /\bI have all the facts\. Reply in Polish\b/i.test(text)) {
+        hide(row);
+        return;
+      }
+
+      if (/^(?:⚕\s*)?(?:❯\s*)?msg=interrupt\b/i.test(text) ||
+          /^⚕\s+.+(?:ctx\s+--|\d+(?:\.\d+)?K\/\d+[KM]).*[│┤]/i.test(text) ||
+          /^(?:Initializing agent|Welcome to Hermes Agent|Tip:|Available Tools|Available Skills)\b/i.test(text) ||
+          /(?:contemplating|processing|mulling|reflecting|preparing terminal)/i.test(text) ||
+          /^💻\s*/.test(text)) {
+        meta(row);
+        return;
+      }
+
+      if (/^⚠️?\s*Model fallback:/i.test(text) || /authentication failed/i.test(text)) {
+        meta(row, true);
+      }
+    }
+
+    function sanitizeTree(node) {
+      if (!(node instanceof HTMLElement)) return;
+      if (node.matches(rowsSelector)) sanitizeRow(node);
+      for (const row of node.querySelectorAll(rowsSelector)) sanitizeRow(row);
+    }
+
+    sanitizeTree(transcript);
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) sanitizeTree(node);
+      }
+    });
+    observer.observe(transcript, { childList: true, subtree: true });
+    return true;
+  }
+
   document.addEventListener("koordynator:billing-change", () => {
     if (!routeHealth) return;
     renderRouteSummary(routeHealth);
@@ -268,5 +358,11 @@
   window.addEventListener("focus", () => void ensureBackendPrimary());
   Promise.resolve(window.koordynatorChatModelsReady || true).finally(() => ensureModelExplorer());
   setTimeout(ensureModelExplorer, 1200);
+  if (!installHermesReadableSanitizer()) {
+    const sanitizerTimer = setInterval(() => {
+      if (installHermesReadableSanitizer()) clearInterval(sanitizerTimer);
+    }, 250);
+    setTimeout(() => clearInterval(sanitizerTimer), 10_000);
+  }
   void ensureBackendPrimary();
 })();
