@@ -175,6 +175,11 @@ if (!freeOnly && !selected.primary && !wantLogin) {
 if (freeOnly) {
   const { selectWorkingFreeRoutes } = await import(pathToFileURL(resolve(root, "dist/runtime/free-routes.js")).href);
   const result = await selectWorkingFreeRoutes(omniRouteSettings());
+  console.log(`Catalog: ${result.diagnostics.modelCount} models; ${result.diagnostics.freeCandidateCount} confirmed free candidates; pricing endpoint: ${result.diagnostics.pricingAvailable ? "available" : "unavailable"}`);
+  if (result.diagnostics.freeCandidateCount === 0) {
+    console.log(`Billing evidence: ${JSON.stringify(result.diagnostics.billingSources)}`);
+    console.log("No inference attempted: the live catalog/pricing did not confirm a free route. Check provider connections and pricing access in OmniRoute.");
+  }
   for (const probe of result.probes) console.log(`  ${probe.status} ${probe.model}: ${probe.detail}`);
   selected = result;
 }

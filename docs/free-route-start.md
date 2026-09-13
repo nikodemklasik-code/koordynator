@@ -42,3 +42,19 @@ but require live pricing evidence before they qualify as confirmed free.
 Validation: `npm run verify` passed with 110 test files and 439 tests, plus
 typecheck, build, e2e, golden and provider-golden checks. This is fixture-based
 verification; live Mac account quotas and browser geometry still need local checks.
+
+## OmniRoute 3.8.50 pricing
+
+The adapter accepts the provider-scoped `/api/pricing` response:
+`{ "oc": { "big-pickle": { "input": 0, "output": 0 } } }`.
+It resolves aliases from `/api/pricing/models` and matches exact provider/model
+routes; it never transfers a free price to the same model at a different provider.
+Missing output prices do not confirm free access. This matches the upstream
+[pricing handler](https://github.com/diegosouzapw/OmniRoute/blob/091589089cd134a94df9f6cdab9ba562b2cefd18/src/app/api/pricing/route.ts)
+and [pricing catalog](https://github.com/diegosouzapw/OmniRoute/blob/091589089cd134a94df9f6cdab9ba562b2cefd18/src/app/api/pricing/models/route.ts).
+
+Startup reports catalog size, free candidate count and pricing endpoint availability.
+Zero candidates means no inference was attempted, not that all model probes failed.
+An unavailable pricing endpoint can reflect management permissions or connectivity;
+the adapter does not bypass that access control. Existing credentials and route
+settings remain unchanged when free selection fails. Validation: 441 tests passed.

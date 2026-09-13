@@ -34,6 +34,7 @@ export type ChatModelCatalog = {
     subscriptionHarnessPath: "OMNIROUTE_OAUTH_MODEL_ROUTES" | "NOT_AVAILABLE" | "NOT_WIRED_TO_LIVE_CHAT";
     modelSources: Record<string, ChatModelBillingSource>;
     modelRoutes?: Record<string, ChatModelRoute>;
+    pricingAvailable?: boolean;
     budget?: { exhausted: boolean; remaining?: number; limit?: number; used?: number };
   };
 };
@@ -336,6 +337,37 @@ function applyBillingEvidence(sources: Record<string, ChatModelBillingSource>, m
   });
 }
 
+/** OmniRoute 3.8.50 prices are keyed by provider, then the unprefixed model ID. */
+function applyScopedPricing(sources: Record<string, ChatModelBillingSource>, models: Set<string>, pricing: unknown, pricingCatalog: unknown): void {
+  if (!isObject(pricing)) return;
+  const aliases = new Map<string, Set<string>>();
+  const addAlias = (provider: string, alias: string) => {
+    if (!PROVIDER_RE.test(provider) || !PROVIDER_RE.test(alias)) return;
+    const values = aliases.get(provider) ?? new Set<string>();
+    values.add(alias);
+    aliases.set(provider, values);
+  };
+  for (const [alias, route] of Object.entries(ROUTE_PREFIXES)) addAlias(route.provider, alias);
+  walk(pricingCatalog, record => {
+    if (typeof record.id === "string" && typeof record.alias === "string" && Array.isArray(record.models)) {
+      addAlias(record.id, record.alias);
+    }
+  });
+  for (const [provider, prices] of Object.entries(pricing)) {
+    if (!isObject(prices)) continue;
+    const prefixes = new Set([provider, ...(aliases.get(provider) ?? [])]);
+    for (const [model, price] of Object.entries(prices)) {
+      if (!isObject(price)) continue;
+      const signal = explicitBillingSignal(price);
+      if (!signal) continue;
+      for (const prefix of prefixes) {
+        const route = `${prefix}/${model}`;
+        if (models.has(route) && !PROTECTED_ROUTE_SOURCES.has(sources[route] ?? "UNKNOWN")) sources[route] = signal;
+      }
+    }
+  }
+}
+
 function modelBillingSources(models: string[], records: Map<string, Record<string, unknown>>, catalog: unknown, pricing: unknown): Record<string, ChatModelBillingSource> {
   const sources: Record<string, ChatModelBillingSource> = {};
   for (const model of models) {
@@ -519,6 +551,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     const pricingEvidence = [pricingModels, pricing];
     const combinedCatalogEvidence = [payload, managementCatalog, ...synced.map((item) => item.payload)];
     const sources = modelBillingSources(models, records, combinedCatalogEvidence, pricingEvidence);
+    applyScopedPricing(sources, new Set(models), pricing, pricingModels);
     const entries = buildEntries(models, records, sources);
     const modelRoutes = Object.fromEntries(entries.map((entry) => [entry.id, {
       provider: entry.provider,
@@ -541,6 +574,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
         subscriptionHarnessPath: harnessAvailable ? "OMNIROUTE_OAUTH_MODEL_ROUTES" : "NOT_AVAILABLE",
         modelSources: sources,
         modelRoutes,
+        pricingAvailable: pricing !== undefined,
         ...(budget === undefined ? {} : { budget })
       }
     };

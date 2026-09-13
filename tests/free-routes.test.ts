@@ -48,6 +48,40 @@ describe("Shared free routes", () => {
     expect(result.fallbacks).toEqual([]);
   });
 
+  it("maps OmniRoute 3.8.50 provider-scoped prices to exact routes without leaking them across providers", async () => {
+    const service = new ChatModelCatalogService({ endpoint: "http://gateway/v1", apiKey: "secret", fetchImpl: (async url => {
+      if (String(url) === "http://gateway/v1/models") return Response.json({ data: [
+        { id: "oc/big-pickle" }, { id: "other/big-pickle" }, { id: "oc/paid" },
+        { id: "oc/input-only" }, { id: "customx/vendor/model" }, { id: "customx/absent" }
+      ] });
+      if (String(url).endsWith("/api/pricing/models")) return Response.json({
+        oc: { id: "opencode-free", alias: "oc", models: [{ id: "big-pickle" }] },
+        customx: { id: "custom-provider", alias: "customx", models: [{ id: "vendor/model" }] }
+      });
+      if (String(url).endsWith("/api/pricing")) return Response.json({
+        "opencode-free": { "big-pickle": { input: 0, output: 0 }, paid: { input: 0, output: 1 }, "input-only": { input: 0 } },
+        "custom-provider": { "vendor/model": { input: "0", output: "0" } }
+      });
+      return new Response("", { status: 404 });
+    }) as typeof fetch });
+    const result = await service.list();
+    expect(freeRouteCandidates(result)).toEqual(["oc/big-pickle", "customx/vendor/model"]);
+    expect(result.billing?.modelSources["other/big-pickle"]).toBe("UNKNOWN");
+    expect(result.billing?.modelSources["oc/paid"]).toBe("PAID_API");
+    expect(result.billing?.pricingAvailable).toBe(true);
+  });
+
+  it("does not probe unpriced provider aliases and explains the missing evidence", async () => {
+    let probes = 0;
+    const result = await selectWorkingFreeRoutes({ endpoint: "http://gateway/v1", apiKey: "secret", model: "oc/big-pickle" }, {
+      catalog: { list: async () => ({ ...catalog, models: ["oc/big-pickle"] }) },
+      fetchImpl: (async () => { probes++; return new Response("unexpected"); }) as typeof fetch
+    });
+    expect(probes).toBe(0);
+    expect(result.primary).toBeNull();
+    expect(result.diagnostics).toEqual({ modelCount: 1, freeCandidateCount: 0, pricingAvailable: false, billingSources: { UNKNOWN: 1 } });
+  });
+
   it("recognizes nested zero pricing, but not a free name or input-only zero", async () => {
     const service = new ChatModelCatalogService({ endpoint: "http://gateway/v1", apiKey: "secret", fetchImpl: (async url => {
       if (String(url) === "http://gateway/v1/models") return Response.json({ data: [

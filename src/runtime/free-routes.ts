@@ -29,9 +29,16 @@ export async function selectWorkingFreeRoutes(settings: { endpoint: string; apiK
   catalog?: ChatModelCatalogPort;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
-} = {}): Promise<{ primary: string | null; fallbacks: string[]; probes: FreeRouteProbe[] }> {
+} = {}): Promise<{ primary: string | null; fallbacks: string[]; probes: FreeRouteProbe[];
+  diagnostics: { modelCount: number; freeCandidateCount: number; pricingAvailable: boolean; billingSources: Record<string, number> } }> {
   const catalog = await (options.catalog ?? new ChatModelCatalogService(settings)).list();
-  const candidates = freeRouteCandidates(catalog, settings.model).slice(0, 6);
+  const allCandidates = freeRouteCandidates(catalog, settings.model);
+  const candidates = allCandidates.slice(0, 6);
+  const billingSources: Record<string, number> = {};
+  for (const model of catalog.models) {
+    const source = catalog.billing?.modelSources[model] ?? "UNKNOWN";
+    billingSources[source] = (billingSources[source] ?? 0) + 1;
+  }
   const fetchImpl = options.fetchImpl ?? fetch;
   const probes: FreeRouteProbe[] = [];
   const working: string[] = [];
@@ -63,5 +70,7 @@ export async function selectWorkingFreeRoutes(settings: { endpoint: string; apiK
       probes.push({ model, status: "FAIL", detail: "timeout, connection failure or invalid response" });
     }
   }
-  return { primary: working[0] ?? null, fallbacks: working.slice(1), probes };
+  return { primary: working[0] ?? null, fallbacks: working.slice(1), probes,
+    diagnostics: { modelCount: catalog.models.length, freeCandidateCount: allCandidates.length,
+      pricingAvailable: catalog.billing?.pricingAvailable === true, billingSources } };
 }
