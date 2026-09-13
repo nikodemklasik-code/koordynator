@@ -147,6 +147,66 @@ describe("Harmonia — samotne poznanie", () => {
       .rejects.toThrow(/HARMONIA_HTTP_503/);
   });
 
+  it("504/503/429 nie zamyka poznania — skacze na kolejny model w łańcuchu tokenów", async () => {
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      models.push(String(body.model ?? ""));
+      if (body.model === "cc/claude-opus-5") {
+        return new Response(JSON.stringify({ error: { message: "gateway timeout" } }), { status: 504 });
+      }
+      if (body.model === "cx/gpt-5.5") {
+        return new Response(JSON.stringify({ error: { message: "overloaded" } }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: CLEAN } }] }), {
+        status: 200, headers: { "content-type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    const reading = await new HarmoniaCognition({
+      apiKey: "k",
+      model: "cc/claude-opus-5",
+      fallbackModels: ["cx/gpt-5.5", "gc/grok-4.6"],
+      fetchImpl
+    }).read("Chcę tryb ciemny w panelu.");
+
+    expect(models).toEqual(["cc/claude-opus-5", "cx/gpt-5.5", "gc/grok-4.6"]);
+    expect(reading.model).toBe("gc/grok-4.6");
+    expect(reading.understanding).toContain("tryb ciemny");
+    expect(reading.decision.status).toBe("allow");
+  });
+
+  it("timeout albo proza na pinie nie zamyka poznania, gdy następny model czyta", async () => {
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      models.push(String(body.model ?? ""));
+      if (body.model === "slow") {
+        const error = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        throw error;
+      }
+      if (body.model === "prose") {
+        return new Response(JSON.stringify({ choices: [{ message: { content: "Nie umiem tego odczytać." } }] }), {
+          status: 200, headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: CLEAN } }] }), {
+        status: 200, headers: { "content-type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    const reading = await new HarmoniaCognition({
+      apiKey: "k",
+      model: "slow",
+      fallbackModels: ["prose", "gc/grok-4.6"],
+      fetchImpl
+    }).read("Chcę tryb ciemny w panelu.");
+
+    expect(models).toEqual(["slow", "prose", "gc/grok-4.6"]);
+    expect(reading.model).toBe("gc/grok-4.6");
+    expect(reading.understanding).toContain("tryb ciemny");
+  });
+
   it("wymaga rzeczywistego projektu zamiast czytać pustkę", async () => {
     const { fetchImpl } = gateway(CLEAN);
     await expect(new HarmoniaCognition({ apiKey: "k", model: "m", fetchImpl }).read("   "))

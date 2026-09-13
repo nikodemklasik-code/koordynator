@@ -38,6 +38,8 @@ export type StageZeroOptions = {
    * zawsze jedzie na modelu sesji: to ręka, nie poznanie.
    */
   harmoniaModel?: string;
+  /** Same OmniRoute chain as Live Chat — 504/timeout on the pin must not close Etap 0. */
+  fallbackModels?: string[];
   endpoint?: string;
   apiKey?: string;
   apiKeyEnv?: string;
@@ -57,17 +59,45 @@ function attachmentText(attachments: ChatAttachment[] | undefined): string {
     .join("\n\n");
 }
 
-/** Składa transkrypt sesji w materiał poznania. Puste / error-turny odpadają. */
-export function sessionToProject(session: ChatSession): string {
+export type StageZeroRange = { fromIndex: number; toIndex: number };
+
+/** Składa transkrypt sesji w materiał poznania. Puste / error-turny odpadają.
+ *  Z opcjonalnym zakresem — tylko wiadomości od fromIndex do toIndex (włącznie). */
+export function sessionToProject(session: ChatSession, range?: StageZeroRange): string {
   const parts: string[] = [];
-  for (const message of session.messages) {
-    if (message.state === "error" || message.state === "streaming") continue;
+  session.messages.forEach((message, index) => {
+    if (range && (index < range.fromIndex || index > range.toIndex)) return;
+    if (message.state === "error" || message.state === "streaming") return;
     const role = message.role === "user" ? "Użytkownik" : "Koordynator";
     const body = [message.content.trim(), attachmentText(message.attachments)].filter(Boolean).join("\n\n");
-    if (!body) continue;
+    if (!body) return;
     parts.push(`${role}:\n${body}`);
-  }
+  });
   return parts.join("\n\n").trim();
+}
+
+/** Co dokładnie wejdzie w poznanie — dla UI (ile wiadomości, ile załączników). */
+export function stageZeroScope(session: ChatSession, range?: StageZeroRange): {
+  messageCount: number;
+  attachmentCount: number;
+  total: number;
+  fromIndex: number;
+  toIndex: number;
+} {
+  let messageCount = 0;
+  let attachmentCount = 0;
+  const from = range?.fromIndex ?? 0;
+  const to = range?.toIndex ?? session.messages.length - 1;
+  session.messages.forEach((message, index) => {
+    if (index < from || index > to) return;
+    if (message.state === "error" || message.state === "streaming") return;
+    const body = message.content.trim();
+    const attachments = message.attachments?.length ?? 0;
+    if (!body && attachments === 0) return;
+    messageCount += 1;
+    attachmentCount += attachments;
+  });
+  return { messageCount, attachmentCount, total: session.messages.length, fromIndex: from, toIndex: to };
 }
 
 function runFile(root: string, sessionId: string): string {
@@ -76,6 +106,13 @@ function runFile(root: string, sessionId: string): string {
 
 export class StageZeroService {
   constructor(private readonly options: StageZeroOptions) {}
+
+  /** What Etap 0 would read right now — for the UI to show scope before running. */
+  async scope(sessionId: string, range?: StageZeroRange): Promise<ReturnType<typeof stageZeroScope>> {
+    const session = await this.options.chat.getSession(sessionId);
+    if (!session) throw new StageZeroError("CHAT_SESSION_NOT_FOUND", 404);
+    return stageZeroScope(session, range);
+  }
 
   async get(sessionId: string): Promise<StageZeroRun | null> {
     const session = await this.options.chat.getSession(sessionId);
@@ -89,14 +126,14 @@ export class StageZeroService {
     }
   }
 
-  async run(sessionId: string): Promise<StageZeroRun> {
+  async run(sessionId: string, range?: StageZeroRange): Promise<StageZeroRun> {
     const session = await this.options.chat.getSession(sessionId);
     if (!session) throw new StageZeroError("CHAT_SESSION_NOT_FOUND", 404);
     if (session.messages.some((message) => message.state === "streaming")) {
       throw new StageZeroError("STAGE_ZERO_CHAT_BUSY", 409);
     }
 
-    const project = sessionToProject(session);
+    const project = sessionToProject(session, range);
     if (!project) throw new StageZeroError("STAGE_ZERO_NEEDS_INPUT", 400);
 
     const sessionModel = session.model;
@@ -108,11 +145,20 @@ export class StageZeroService {
       ...(this.options.timeoutMs === undefined ? {} : { timeoutMs: this.options.timeoutMs })
     };
     // Harmonia poznaje na najsilniejszym modelu (pin przez env), fallback na sesję.
+    // Capacity/timeout on that pin is not a closed reading — skip onto the token chain.
     const harmoniaModel = this.options.harmoniaModel?.trim() || sessionModel;
+    const fallbackModels = [
+      ...(this.options.fallbackModels ?? []),
+      sessionModel
+    ].filter((model) => model.trim() && model !== harmoniaModel);
 
     let reading: HarmoniaReading;
     try {
-      reading = await new HarmoniaCognition({ ...shared, model: harmoniaModel }).read(project);
+      reading = await new HarmoniaCognition({
+        ...shared,
+        model: harmoniaModel,
+        fallbackModels
+      }).read(project);
     } catch (error) {
       if (error instanceof HarmoniaError) throw error;
       throw error;

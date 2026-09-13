@@ -79,7 +79,11 @@ const ROUTE_PREFIXES: Record<string, { provider: string; family: string; source:
   if: { provider: "qoder", family: "QODER", source: "FREE_OAUTH" },
   qoder: { provider: "qoder", family: "QODER", source: "FREE_OAUTH" },
   qw: { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" },
-  "qwen-oauth": { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" }
+  "qwen-oauth": { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" },
+  oc: { provider: "opencode-free", family: "OPENCODE FREE", source: "FREE_CONFIRMED" },
+  ddgw: { provider: "duckduckgo-free", family: "DUCKDUCKGO FREE", source: "FREE_CONFIRMED" },
+  unc: { provider: "uncloseai-free", family: "UNCLOSEAI FREE", source: "FREE_CONFIRMED" },
+  horde: { provider: "aihorde-free", family: "AI HORDE FREE", source: "FREE_CONFIRMED" }
 };
 
 const KNOWN_PROVIDER_ALIASES: Record<string, string[]> = {

@@ -2,6 +2,9 @@
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
 import { loadOrCreateControlSigningKey } from "./control-signing-key.js";
+import { ChatService } from "./chat-service.js";
+import { ChatExportService } from "./chat-export-service.js";
+import { installChatExportHttp } from "./chat-export-http.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -20,7 +23,6 @@ const controlToken = process.env.KOORDYNATOR_CONTROL_TOKEN?.trim() || undefined;
 if (!loopback && !controlToken) throw new Error("CONTROL_TOKEN_REQUIRED_FOR_NON_LOOPBACK");
 
 const stateDir = resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator");
-// Chat→Tasks materialisation is on by default; set KOORDYNATOR_CHAT_MATERIALISE=0 to disable.
 const materialisationEnabled = process.env.KOORDYNATOR_CHAT_MATERIALISE !== "0";
 const signing = materialisationEnabled ? await loadOrCreateControlSigningKey(stateDir) : null;
 
@@ -50,6 +52,15 @@ const server = createControlServer({
   }),
   version: VERSION
 });
+
+const exportChat = new ChatService({ stateDir });
+const chatExports = new ChatExportService({
+  stateDir,
+  chat: exportChat,
+  ...(process.env.KOORDYNATOR_EXPORT_ROOT === undefined ? {} : { exportRoot: resolve(process.env.KOORDYNATOR_EXPORT_ROOT) })
+});
+installChatExportHttp(server, chatExports, controlToken);
+server.on("close", () => exportChat.close());
 
 server.listen(port(), host, () => {
   process.stdout.write(`KOORDYNATOR_CONTROL http://${host}:${port()}\n`);

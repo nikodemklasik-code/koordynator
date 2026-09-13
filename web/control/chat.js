@@ -7,6 +7,10 @@ const state = {
   connected: false,
   preparingAttachments: false,
   stageZeroRunning: false,
+  stageZeroFrom: 0,
+  stageZeroTo: 0,
+  stageZeroPick: "start",
+  stageZeroMessages: [],
   hermesMuted: false,
   hermesSessionId: null,
   hermesSource: null,
@@ -19,8 +23,8 @@ const urlParams = new URLSearchParams(window.location.search);
 const pinnedSessionId = urlParams.get("session");
 const isPopoutWindow = urlParams.get("popout") === "1" || Boolean(pinnedSessionId);
 const MAX_ATTACHMENTS = 5;
-const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-const MAX_ATTACHMENT_TOTAL_BYTES = 20 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 128 * 1024 * 1024;
+const MAX_ATTACHMENT_TOTAL_BYTES = 192 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -118,6 +122,13 @@ const exportPdfButton = $("exportPdfButton");
 const exportZipButton = $("exportZipButton");
 const stageZeroButton = $("stageZeroButton");
 const stageZeroNotice = $("stageZeroNotice");
+const stageZeroDialog = $("stageZeroDialog");
+const stageZeroRangeList = $("stageZeroRangeList");
+const stageZeroScopePreview = $("stageZeroScopePreview");
+const stageZeroRunButton = $("stageZeroRunButton");
+const stageZeroAllButton = $("stageZeroAllButton");
+const stageZeroFromInput = $("stageZeroFrom");
+const stageZeroToInput = $("stageZeroTo");
 const muteHermesButton = $("muteHermesButton");
 const startHermesButton = $("startHermesButton");
 const stopHermesButton = $("stopHermesButton");
@@ -278,12 +289,12 @@ async function addFiles(fileList) {
   let nextTotal = totalPendingBytes();
   for (const file of files) {
     if (file.size > MAX_ATTACHMENT_BYTES) {
-      showAttachmentError(`${file.name} is larger than 10 MB.`);
+      showAttachmentError(`${file.name} is larger than 128 MB.`);
       return;
     }
     nextTotal += file.size;
     if (nextTotal > MAX_ATTACHMENT_TOTAL_BYTES) {
-      showAttachmentError("Attachments exceed the 20 MB total limit.");
+      showAttachmentError("Attachments exceed the 192 MB total limit.");
       return;
     }
   }
@@ -952,25 +963,187 @@ function stageZeroSummary(run) {
   return `Etap 0: ${status}`;
 }
 
+function stageZeroSnippet(message) {
+  const text = String(message?.content || "").replace(/\s+/g, " ").trim();
+  const files = (message?.attachments || []).map((item) => item.name).filter(Boolean);
+  const bits = [text, files.length ? `[${files.join(", ")}]` : ""].filter(Boolean);
+  return bits.join(" ").slice(0, 140) || "(pusta)";
+}
+
+function stageZeroEligible(message) {
+  if (!message) return false;
+  if (message.state === "error" || message.state === "streaming") return false;
+  const body = String(message.content || "").trim();
+  const attachments = message.attachments?.length ?? 0;
+  return Boolean(body || attachments);
+}
+
+function stageZeroRangePayload() {
+  const fromIndex = Number(state.stageZeroFrom);
+  const toIndex = Number(state.stageZeroTo);
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex < 0 || toIndex < fromIndex) return { range: null };
+  return { range: { fromIndex, toIndex } };
+}
+
+function paintStageZeroRange() {
+  if (!stageZeroRangeList) return;
+  const from = state.stageZeroFrom;
+  const to = state.stageZeroTo;
+  stageZeroRangeList.querySelectorAll(".stage-zero-range-item").forEach((item) => {
+    const index = Number(item.dataset.index);
+    const selected = index >= from && index <= to;
+    item.classList.toggle("selected", selected);
+    item.classList.toggle("start", index === from);
+    item.classList.toggle("end", index === to);
+  });
+  if (stageZeroFromInput) stageZeroFromInput.value = String(from);
+  if (stageZeroToInput) stageZeroToInput.value = String(to);
+}
+
+function localStageZeroScope() {
+  const messages = state.stageZeroMessages;
+  const from = state.stageZeroFrom;
+  const to = state.stageZeroTo;
+  let messageCount = 0;
+  let attachmentCount = 0;
+  messages.forEach((message, index) => {
+    if (index < from || index > to) return;
+    if (!stageZeroEligible(message)) return;
+    messageCount += 1;
+    attachmentCount += message.attachments?.length ?? 0;
+  });
+  return { messageCount, attachmentCount, total: messages.length, fromIndex: from, toIndex: to };
+}
+
+function describeStageZeroScope(scope) {
+  if (!scope) return "Harmonia przeczyta tę rozmowę.";
+  const files = scope.attachmentCount ? `, ${scope.attachmentCount} zał.` : "";
+  return `Harmonia przeczyta ${scope.messageCount} wiad. (${scope.fromIndex}–${scope.toIndex} z ${scope.total})${files}`;
+}
+
+async function refreshStageZeroScope() {
+  paintStageZeroRange();
+  const local = localStageZeroScope();
+  if (stageZeroScopePreview) stageZeroScopePreview.textContent = describeStageZeroScope(local);
+  if (stageZeroRunButton) stageZeroRunButton.disabled = local.messageCount === 0 || state.stageZeroRunning;
+  if (!state.sessionId) return;
+  try {
+    const url = new URL(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/stage-zero`, window.location.origin);
+    url.searchParams.set("scope", "1");
+    url.searchParams.set("from", String(state.stageZeroFrom));
+    url.searchParams.set("to", String(state.stageZeroTo));
+    const response = await fetch(url, { headers: { accept: "application/json" } });
+    if (!response.ok) return;
+    const scope = await response.json();
+    if (stageZeroScopePreview && typeof scope.messageCount === "number") {
+      stageZeroScopePreview.textContent = describeStageZeroScope(scope);
+    }
+    if (stageZeroRunButton && typeof scope.messageCount === "number") {
+      stageZeroRunButton.disabled = scope.messageCount === 0 || state.stageZeroRunning;
+    }
+  } catch {
+    /* local preview already shown */
+  }
+}
+
+function pickStageZeroIndex(index) {
+  if (!Number.isInteger(index) || index < 0) return;
+  if (state.stageZeroPick !== "end") {
+    state.stageZeroFrom = index;
+    state.stageZeroTo = index;
+    state.stageZeroPick = "end";
+  } else {
+    const start = Math.min(state.stageZeroFrom, index);
+    const end = Math.max(state.stageZeroFrom, index);
+    state.stageZeroFrom = start;
+    state.stageZeroTo = end;
+    state.stageZeroPick = "start";
+  }
+  void refreshStageZeroScope();
+}
+
+function selectWholeStageZeroRange() {
+  const last = Math.max(0, state.stageZeroMessages.length - 1);
+  state.stageZeroFrom = 0;
+  state.stageZeroTo = last;
+  state.stageZeroPick = "start";
+  void refreshStageZeroScope();
+}
+
+function renderStageZeroRangeList(messages) {
+  if (!stageZeroRangeList) return;
+  stageZeroRangeList.textContent = "";
+  messages.forEach((message, index) => {
+    const item = document.createElement("li");
+    item.className = `stage-zero-range-item${stageZeroEligible(message) ? "" : " skipped"}`;
+    item.dataset.index = String(index);
+    const number = document.createElement("span");
+    number.className = "stage-zero-range-index";
+    number.textContent = String(index + 1);
+    const role = document.createElement("span");
+    role.className = "stage-zero-range-role";
+    role.textContent = message.role === "user" ? "TY" : "KOORDYNATOR";
+    const text = document.createElement("span");
+    text.className = "stage-zero-range-text";
+    text.textContent = stageZeroSnippet(message);
+    item.append(number, role, text);
+    if (stageZeroEligible(message)) {
+      item.addEventListener("click", () => pickStageZeroIndex(index));
+    }
+    stageZeroRangeList.appendChild(item);
+  });
+}
+
+async function openStageZeroDialog() {
+  if (!state.sessionId || state.generating || state.stageZeroRunning) return;
+  if (!stageZeroDialog) {
+    await runStageZero();
+    return;
+  }
+  try {
+    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}`, { headers: { accept: "application/json" } });
+    const session = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(session.error || `HTTP_${response.status}`);
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    state.stageZeroMessages = messages;
+    state.stageZeroFrom = 0;
+    state.stageZeroTo = Math.max(0, messages.length - 1);
+    state.stageZeroPick = "start";
+    renderStageZeroRangeList(messages);
+    await refreshStageZeroScope();
+    if (typeof stageZeroDialog.showModal === "function") stageZeroDialog.showModal();
+    else await runStageZero();
+  } catch (error) {
+    setStageZeroNotice("error", error instanceof Error ? error.message : "STAGE_ZERO_FAILED");
+  }
+}
+
 async function runStageZero() {
   if (!state.sessionId || state.generating || state.stageZeroRunning) return;
+  const body = stageZeroRangePayload();
   state.stageZeroRunning = true;
   updateControls();
-  setStageZeroNotice("pending", "Etap 0: Harmonia czyta tę rozmowę…");
+  if (stageZeroRunButton) stageZeroRunButton.disabled = true;
+  const from = body.range?.fromIndex;
+  const to = body.range?.toIndex;
+  const rangeLabel = Number.isInteger(from) && Number.isInteger(to) ? `wiad. ${from + 1}–${to + 1}` : "tę rozmowę";
+  setStageZeroNotice("pending", `Etap 0: Harmonia czyta ${rangeLabel}…`);
   try {
     const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/stage-zero`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: "{}"
+      body: JSON.stringify(body)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+    stageZeroDialog?.close();
     setStageZeroNotice(payload.reading?.decision?.status === "allow" ? "ok" : "warn", stageZeroSummary(payload));
   } catch (error) {
     setStageZeroNotice("error", error instanceof Error ? error.message : "STAGE_ZERO_FAILED");
   } finally {
     state.stageZeroRunning = false;
     updateControls();
+    if (stageZeroRunButton) stageZeroRunButton.disabled = false;
   }
 }
 
@@ -980,7 +1153,7 @@ function setHermesState(label) {
 
 function applyHermesMute() {
   document.body.classList.toggle("chat-hermes-muted", state.hermesMuted);
-  if (muteHermesButton) muteHermesButton.textContent = state.hermesMuted ? "Pokaż terminal" : "Wycisz terminal";
+  if (muteHermesButton) muteHermesButton.textContent = state.hermesMuted ? "Show terminal" : "Hide terminal";
   if (!state.hermesMuted) {
     requestAnimationFrame(() => {
       try { hermesFit?.fit(); } catch { /* ignore */ }
@@ -1008,9 +1181,33 @@ function ensureHermesTerminal() {
     convertEol: true,
     cursorBlink: true,
     disableStdin: false,
-    fontSize: 12,
-    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-    theme: { background: "#070b0e", foreground: "#d7e8f4", cursor: "#8ac5ff" }
+    fontSize: 15,
+    lineHeight: 1.35,
+    letterSpacing: 0.4,
+    fontFamily: "SF Mono, Menlo, Monaco, ui-monospace, monospace",
+    theme: {
+      background: "#05070a",
+      foreground: "#eef5fa",
+      cursor: "#5eead4",
+      cursorAccent: "#05070a",
+      selectionBackground: "rgba(94,234,212,.28)",
+      black: "#0b1116",
+      red: "#ff6b78",
+      green: "#69e3a3",
+      yellow: "#f0c674",
+      blue: "#69b7ff",
+      magenta: "#d4a5ff",
+      cyan: "#5eead4",
+      white: "#edf2f5",
+      brightBlack: "#8b9aa6",
+      brightRed: "#ff8b95",
+      brightGreen: "#8ad6a4",
+      brightYellow: "#ffe08a",
+      brightBlue: "#8ac5ff",
+      brightMagenta: "#e0b8ff",
+      brightCyan: "#7ef0de",
+      brightWhite: "#ffffff"
+    }
   });
   hermesFit = hermesFitAddon();
   if (hermesFit) hermesXterm.loadAddon(hermesFit);
@@ -1020,15 +1217,24 @@ function ensureHermesTerminal() {
   return hermesXterm;
 }
 
+function colorizeHermesOutput(text) {
+  return String(text)
+    .replace(/\b(ERROR|FAIL(?:ED)?|DENIED|DENY|TIMEOUT|HARMONIA_HTTP_\d+|CHAT_UPSTREAM_\d+|WORKER_PROCESS_FAILED)\b/gi, "\x1b[1;31m$1\x1b[0m")
+    .replace(/\b(ALLOW|PASS|LIVE|COMPLETE)\b/g, "\x1b[1;32m$1\x1b[0m")
+    .replace(/\b(PAUSE|WARN(?:ING)?|RETRY|FALLBACK|504|503|429)\b/gi, "\x1b[1;33m$1\x1b[0m")
+    .replace(/(^|\n)([❯➜$]\s)/g, "$1\x1b[1;36m$2\x1b[0m");
+}
+
 function appendHermesOutput(text) {
   if (!text) return;
+  const painted = colorizeHermesOutput(text);
   const term = ensureHermesTerminal();
   if (term) {
-    term.write(text);
+    term.write(painted);
     return;
   }
   if (!hermesTerm) return;
-  hermesTerm.textContent += text;
+  hermesTerm.textContent += painted;
 }
 
 async function sendHermesInput(data) {
@@ -1051,6 +1257,9 @@ async function sendHermesLine() {
     return;
   }
   hermesInput.value = "";
+  const term = ensureHermesTerminal();
+  const shown = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+  term?.write(`\r\n\x1b[1;36m▶\x1b[0m \x1b[1;97m${shown}\x1b[0m \x1b[1;36m◀\x1b[0m\r\n`);
   await sendHermesInput(`${text}\r`);
 }
 
@@ -1080,8 +1289,8 @@ function hermesDimensions() {
   try { hermesFit?.fit(); } catch { /* ignore */ }
   if (term?.cols && term?.rows) return { cols: term.cols, rows: term.rows };
   return {
-    cols: Math.max(40, Math.floor((hermesTerm?.clientWidth || 480) / 8)),
-    rows: Math.max(12, Math.floor((hermesTerm?.clientHeight || 240) / 16))
+    cols: Math.max(40, Math.floor((hermesTerm?.clientWidth || 480) / 9)),
+    rows: Math.max(12, Math.floor((hermesTerm?.clientHeight || 240) / 20))
   };
 }
 
@@ -1240,7 +1449,7 @@ async function loadHealth() {
   $("operatorLabel").textContent = health.operator;
   $("regionLabel").textContent = health.region;
   $("zoneLabel").textContent = health.zone;
-  $("versionLabel").textContent = `v${health.version}`;
+  $("versionLabel").textContent = `V5 · app v${health.version}`;
   $("ciStatus").textContent = health.ciVerify;
   $("ciStatus").className = `status-badge ${health.ciVerify === "PASS" ? "pass" : health.ciVerify === "FAIL" ? "fail" : "neutral"}`;
   $("ciRing").className = `status-ring ${health.ciVerify === "PASS" ? "pass" : health.ciVerify === "FAIL" ? "fail" : ""}`;
@@ -1299,7 +1508,9 @@ sendButton.addEventListener("click", () => void sendMessage());
 stopButton.addEventListener("click", () => void stopGeneration());
 newChatButton.addEventListener("click", () => void newConversation());
 popoutChatButton?.addEventListener("click", () => openPopoutChat());
-stageZeroButton?.addEventListener("click", () => void runStageZero());
+stageZeroButton?.addEventListener("click", () => void openStageZeroDialog());
+stageZeroRunButton?.addEventListener("click", () => void runStageZero());
+stageZeroAllButton?.addEventListener("click", () => selectWholeStageZeroRange());
 muteHermesButton?.addEventListener("click", () => toggleHermesMute());
 startHermesButton?.addEventListener("click", () => void startHermesPty());
 stopHermesButton?.addEventListener("click", () => void stopHermesPty());
@@ -1324,7 +1535,14 @@ exportMdButton?.addEventListener("click", () => exportConversation("md"));
 exportPdfButton?.addEventListener("click", () => exportConversation("pdf"));
 exportZipButton?.addEventListener("click", () => exportConversation("zip"));
 
-try { state.hermesMuted = localStorage.getItem(MUTE_KEY) === "1"; } catch { state.hermesMuted = false; }
+try {
+  const migrationKey = "koordynator.liveChat.v5TerminalVisible";
+  if (localStorage.getItem(migrationKey) !== "1") {
+    localStorage.setItem(MUTE_KEY, "0");
+    localStorage.setItem(migrationKey, "1");
+  }
+  state.hermesMuted = localStorage.getItem(MUTE_KEY) === "1";
+} catch { state.hermesMuted = false; }
 applyHermesMute();
 
 Promise.all([loadHealth(), restoreSession()]).catch((error) => {

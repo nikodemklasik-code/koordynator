@@ -17,9 +17,9 @@ const chatModelGate = new Promise((resolve) => {
 window.koordynatorChatModelsReady = chatModelGate;
 
 const SOURCE_ORDER = {
-  SUBSCRIPTION_HARNESS: 0,
+  FREE_CONFIRMED: 0,
   FREE_OAUTH: 1,
-  FREE_CONFIRMED: 2,
+  SUBSCRIPTION_HARNESS: 2,
   FREE_REQUESTED: 3,
   PAID_API: 4,
   UNKNOWN: 5
@@ -234,14 +234,14 @@ function familyRank(family) {
 
 function sortEntries(entries) {
   return [...entries].sort((a, b) => {
+    const sourceDelta = (SOURCE_ORDER[a.billingSource] ?? 99) - (SOURCE_ORDER[b.billingSource] ?? 99);
+    if (sourceDelta) return sourceDelta;
     const familyDelta = familyRank(a.family) - familyRank(b.family);
     if (familyDelta) return familyDelta;
     if (familyRank(a.family) === FAMILY_ORDER.length) {
       const familyName = a.family.localeCompare(b.family);
       if (familyName) return familyName;
     }
-    const sourceDelta = (SOURCE_ORDER[a.billingSource] ?? 99) - (SOURCE_ORDER[b.billingSource] ?? 99);
-    if (sourceDelta) return sourceDelta;
     return shortName(a).localeCompare(shortName(b));
   });
 }
@@ -366,11 +366,17 @@ async function loadChatModels() {
     if (!usable.length) throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
 
     const usableIds = usable.map((entry) => entry.id);
-    const preferred = usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
-      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+    const configuredDefault = typeof health.chatDefaultModel === "string" && usableIds.includes(health.chatDefaultModel)
+      ? health.chatDefaultModel
+      : null;
+    const preferred = configuredDefault
       || usable.find((entry) => entry.billingSource === "FREE_CONFIRMED")?.id
+      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+      || usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
       || (usableIds.includes(previous) ? previous : usableIds[0]);
-    const desired = await desiredSessionModel(usableIds, preferred);
+    // The startup swarm has already live-probed chatDefaultModel. Honor that exact
+    // route even when an older persistent session remembers a subscription model.
+    const desired = configuredDefault || await desiredSessionModel(usableIds, preferred);
     rebuildOptions(usable);
     chatModelSelect.value = usableIds.includes(desired) ? desired : preferred;
     chatModelSelect.dataset.catalog = "omniroute";

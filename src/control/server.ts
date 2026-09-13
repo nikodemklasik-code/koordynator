@@ -15,6 +15,8 @@ import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitH
 import { WorkspaceRepositoryContextService, type WorkspaceRepositoryContextPort } from "./workspace-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
 import { OmniRouteLiveStatusService } from "./omniroute-live-status.js";
+import { ProviderAutoconnectError, ProviderAutoconnectService } from "./provider-autoconnect.js";
+import { buildMaterialisationReadiness } from "./materialisation-readiness.js";
 import { ProjectPackService } from "./project-pack-service.js";
 import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
 import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
@@ -82,7 +84,7 @@ const FILTERS = new Set<TaskFilter>(["all", "building", "frozen", "validating", 
 const CHAT_SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CHAT_MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
 const SSE_HEARTBEAT_MS = 15_000;
-const CHAT_MESSAGE_MAX_BYTES = 21 * 1024 * 1024;
+const CHAT_MESSAGE_MAX_BYTES = 272 * 1024 * 1024;
 
 function sendJson(response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
@@ -119,6 +121,7 @@ function isControlPost(pathname: string): boolean {
   return pathname === "/api/chat/sessions" ||
     pathname === "/api/integrations/github/connect" ||
     pathname === "/api/integrations/hermes-grants" ||
+    pathname === "/api/providers/connect-existing" ||
     pathname === "/api/tasks/project-pack" ||
     pathname === "/api/repositories" ||
     pathname === "/api/repositories/remove" ||
@@ -224,6 +227,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   });
   const projectPacks = options.projectPack ?? new ProjectPackService(stateDir);
   const repositories = new RepositoryRegistry(stateDir);
+  const providerAutoconnect = new ProviderAutoconnectService(projectRoot);
   const materialisation = options.materialisationPrivateKeyPem
     ? new MaterialisationService(options.materialisationPrivateKeyPem, options.materialisationKeyId ?? "control-plane", stateDir)
     : null;
@@ -263,7 +267,8 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
-    ...(options.chatHarmoniaModel === undefined ? {} : { harmoniaModel: options.chatHarmoniaModel })
+    ...(options.chatHarmoniaModel === undefined ? {} : { harmoniaModel: options.chatHarmoniaModel }),
+    ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels })
   });
   const hermesPty = new HermesPtySession({
     stateDir,
@@ -364,8 +369,26 @@ export function createControlServer(options: ControlServerOptions): Server {
         const sessionId = safeSessionId(stageZeroMatch[1]);
         if (method === "POST") {
           const payload = await readJsonBody(request, 1024);
-          assertExactKeys(payload, []);
-          return sendJson(response, 200, await stageZero.run(sessionId));
+          assertExactKeys(payload, ["range"]);
+          let range: { fromIndex: number; toIndex: number } | undefined;
+          if (payload.range !== undefined && payload.range !== null) {
+            const r = payload.range as { fromIndex?: unknown; toIndex?: unknown };
+            if (typeof r.fromIndex !== "number" || typeof r.toIndex !== "number" || r.fromIndex < 0 || r.toIndex < r.fromIndex) {
+              return sendJson(response, 400, { error: "STAGE_ZERO_RANGE_INVALID" });
+            }
+            range = { fromIndex: r.fromIndex, toIndex: r.toIndex };
+          }
+          return sendJson(response, 200, await stageZero.run(sessionId, range));
+        }
+        // GET ?scope=1 → what would be read now (for the range preview), else the last run.
+        if (url.searchParams.get("scope") === "1") {
+          const fromRaw = url.searchParams.get("from");
+          const toRaw = url.searchParams.get("to");
+          const from = fromRaw === null ? NaN : Number(fromRaw);
+          const to = toRaw === null ? NaN : Number(toRaw);
+          const range = Number.isInteger(from) && Number.isInteger(to) && from >= 0 && to >= from
+            ? { fromIndex: from, toIndex: to } : undefined;
+          return sendJson(response, 200, await stageZero.scope(sessionId, range));
         }
         const run = await stageZero.get(sessionId);
         return run ? sendJson(response, 200, run) : sendJson(response, 404, { error: "STAGE_ZERO_NOT_RUN" });
@@ -494,11 +517,26 @@ export function createControlServer(options: ControlServerOptions): Server {
           operator: options.operator ?? "operator@koordynator.local",
           ciVerify: options.ciVerify ?? "UNKNOWN",
           version: options.version ?? VERSION,
+          materialisationEnabled: materialisation !== null,
+          chatDefaultModel: options.chatDefaultModel ?? null,
+          chatFallbackModels: options.chatFallbackModels ?? [],
           liveChatBillingPolicy: "STRICT_PROVENANCE",
           paidApiAllowedByDefault: options.chatBillingPolicy?.allowPaidApi === true,
           unknownBillingAllowedByDefault: options.chatBillingPolicy?.allowUnknown === true,
           unconfirmedFreeAllowedByDefault: options.chatBillingPolicy?.allowFreeRequested === true
         });
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/readiness/materialisation") {
+        const force = url.searchParams.get("refresh") === "1";
+        return sendJson(response, 200, await buildMaterialisationReadiness({
+          projectRoot,
+          materialisationEnabled: materialisation !== null,
+          ...(options.chatDefaultModel === undefined ? {} : { primaryModel: options.chatDefaultModel }),
+          ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
+          routes: await omniLive.list(force),
+          hermesGrant: await hermesGrants.status()
+        }));
       }
 
       if (url.pathname === "/api/releases") return sendJson(response, 200, await releases.list());
@@ -511,6 +549,12 @@ export function createControlServer(options: ControlServerOptions): Server {
         return release ? sendJson(response, 200, release) : sendJson(response, 404, { error: "RELEASE_NOT_FOUND" });
       }
 
+      if (method === "POST" && url.pathname === "/api/providers/connect-existing") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["approved"]);
+        const result = await providerAutoconnect.connectExisting(payload.approved === true);
+        return sendJson(response, 200, { ...result, omniRoutes: await omniLive.list(true) });
+      }
       if (url.pathname === "/api/providers") {
         const force = url.searchParams.get("refresh") === "1";
         const omniRoutes = await omniLive.list(force);
@@ -693,12 +737,16 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/control-ui.css": { name: "control-ui.css", type: "text/css; charset=utf-8" },
         "/chat.css": { name: "chat.css", type: "text/css; charset=utf-8" },
         "/chat-usage.css": { name: "chat-usage.css", type: "text/css; charset=utf-8" },
+        "/chat-router.css": { name: "chat-router.css", type: "text/css; charset=utf-8" },
+        "/chat-v5.css": { name: "chat-v5.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
         "/chat-history.js": { name: "chat-history.js", type: "text/javascript; charset=utf-8" },
         "/chat-github.js": { name: "chat-github.js", type: "text/javascript; charset=utf-8" },
         "/chat-models.js": { name: "chat-models.js", type: "text/javascript; charset=utf-8" },
         "/chat-usage.js": { name: "chat-usage.js", type: "text/javascript; charset=utf-8" },
+        "/chat-router.js": { name: "chat-router.js", type: "text/javascript; charset=utf-8" },
+        "/chat-v5.js": { name: "chat-v5.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },
@@ -722,7 +770,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       const stageZeroHttp = asStageZeroHttpError(error);
       if (stageZeroHttp) return sendJson(response, stageZeroHttp.status, { error: stageZeroHttp.code });
-      if (error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError) {
+      if (error instanceof ProviderAutoconnectError || error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError) {
         return sendJson(response, error.status, { error: error.code });
       }
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });

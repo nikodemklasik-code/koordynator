@@ -19,13 +19,14 @@
 .hermes-pane-actions{display:flex;align-items:center;gap:8px}
 .hermes-pane-head .chat-action-button,.chat-workspace .github-chat-button{height:28px;min-width:0;padding:0 10px;font-size:10px}
 .hermes-state{font-size:10px;letter-spacing:.08em;color:#7f93a6;white-space:nowrap}
-.hermes-term{margin:0;min-height:0;overflow:hidden;background:#070b0e}
-.hermes-term .xterm{height:100%;padding:8px}
+.hermes-term{margin:0;min-height:0;overflow:hidden;background:#05070a}
+.hermes-term .xterm{height:100%;padding:10px;font-size:15px;line-height:1.35}
 .chat-workspace .composer-wrap,.hermes-composer{height:88px;min-height:88px;max-height:88px;box-sizing:border-box;margin:0;padding:10px 12px;border-top:1px solid #23303a;background:#0b1217;position:relative}
 .hermes-composer{display:grid;grid-template-columns:minmax(0,1fr) 40px;gap:8px;align-items:center}
 .chat-workspace .composer-wrap{display:flex;align-items:center}
 .chat-workspace .composer{width:100%;margin:0;height:68px;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:1fr;align-items:center;gap:8px;padding:0 8px 0 0;border-radius:10px}
-.chat-workspace .composer textarea,#hermesInput,#messageInput{display:block;width:100%;height:44px;min-height:44px;max-height:44px;resize:none;border:0;background:transparent;color:#edf2f5;padding:10px 12px;font:inherit;line-height:1.35;overflow:hidden}
+.chat-workspace .composer textarea,#messageInput{display:block;width:100%;height:44px;min-height:44px;max-height:44px;resize:none;border:0;background:transparent;color:#edf2f5;padding:10px 12px;font:inherit;line-height:1.35;overflow:hidden}
+#hermesInput{display:block;width:100%;height:44px;min-height:44px;max-height:44px;resize:none;border:0;background:transparent;color:#eef5fa;padding:10px 12px;font:15px/1.35 "SF Mono",Menlo,Monaco,ui-monospace,monospace;overflow:hidden}
 .chat-workspace .composer:focus-within,#hermesInput:focus{border-color:#4f8dbb;outline:none}
 .chat-workspace .composer-actions{padding:0;gap:6px}
 .chat-workspace .send-button,.hermes-composer .send-button{height:40px;width:40px;flex:none}
@@ -37,3 +38,19 @@
 .chat-workspace .strict-policy{display:none}
 .chat-hermes-muted .chat-workspace{grid-template-columns:minmax(0,1fr)}
 .chat-hermes-muted .hermes-pane{display:none}
+.stage-zero-dialog{width:min(720px,calc(100vw - 32px));max-height:min(80vh,720px)}
+.stage-zero-dialog form{display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;max-height:min(80vh,720px)}
+.stage-zero-dialog p{margin:0;padding:0 16px 10px;color:#9dacb8;font-size:12px;line-height:1.45}
+.stage-zero-range-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 16px 10px}
+.stage-zero-range-toolbar button{height:28px;padding:0 10px;border:1px solid #3b4953;border-radius:6px;background:#172129;color:#e6edf1;font:inherit;font-size:11px;cursor:pointer}
+#stageZeroScopePreview{color:#8ac5ff;font-size:11px;line-height:1.35}
+.stage-zero-range-list{list-style:none;margin:0;padding:0 10px 12px;overflow:auto;min-height:120px;max-height:42vh}
+.stage-zero-range-item{display:grid;grid-template-columns:28px 92px minmax(0,1fr);gap:8px;align-items:center;padding:8px 10px;margin:0 0 4px;border:1px solid #24323c;border-radius:8px;background:#0e151b;color:#d7e8f4;cursor:pointer;font-size:12px}
+.stage-zero-range-item.skipped{opacity:.45;cursor:default}
+.stage-zero-range-item.selected{border-color:rgba(77,163,255,.55);background:rgba(77,163,255,.12)}
+.stage-zero-range-item.start{box-shadow:inset 0 2px 0 #4da3ff}
+.stage-zero-range-item.end{box-shadow:inset 0 -2px 0 #4da3ff}
+.stage-zero-range-item.start.end{box-shadow:inset 0 0 0 1px #4da3ff}
+.stage-zero-range-index{color:#7f93a6;font-size:10px;font-weight:700}
+.stage-zero-range-role{color:#b9c5ce;font-size:10px;letter-spacing:.04em;font-weight:700}
+.stage-zero-range-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#d7e8f4}

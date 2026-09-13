@@ -273,6 +273,41 @@ describe("Live Chat service", () => {
     expect(restored?.messages.at(-1)?.model).toBe("gc/grok-4.6");
     service.close();
   });
+
+  it("skips a 504 model and continues on the next fallback", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-504-"));
+    roots.push(root);
+    const models: string[] = [];
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body || "{}")) as { model?: string };
+      models.push(String(body.model || ""));
+      if (body.model === "cc/claude-opus-5") {
+        return new Response(JSON.stringify({ error: { message: "gateway timeout" } }), { status: 504 });
+      }
+      return streamingFetch(["ok-from-grok"])(_input, init);
+    }) as typeof fetch;
+    const service = new ChatService({
+      stateDir: root,
+      apiKey: "super-secret-key",
+      defaultModel: "cc/claude-opus-5",
+      fallbackModels: ["gc/grok-4.6"],
+      fetchImpl
+    });
+    const session = await service.createSession("cc/claude-opus-5");
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done" || event.type === "error") resolvePromise();
+      });
+    });
+    await service.startMessage(session.sessionId, "ping");
+    await done;
+    expect(models).toEqual(["cc/claude-opus-5", "gc/grok-4.6"]);
+    const restored = await service.getSession(session.sessionId);
+    expect(restored?.messages.at(-1)?.state).toBe("complete");
+    expect(restored?.messages.at(-1)?.content).toBe("ok-from-grok");
+    expect(restored?.messages.at(-1)?.model).toBe("gc/grok-4.6");
+    service.close();
+  });
 });
 
 describe("Live Chat HTTP boundary and UI", () => {

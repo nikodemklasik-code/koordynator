@@ -4,118 +4,151 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
-  <title>Live Chat · Koordynator Control</title>
+  <title>Koordynator · Live Workspace</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/control-ui.css" />
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/chat-usage.css" />
   <link rel="stylesheet" href="/xterm.css" />
+  <link rel="stylesheet" href="/chat-v5.css?v=5" />
+  <link rel="stylesheet" href="/chat-router.css?v=1" />
 </head>
-<body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand-block">
-        <div class="brand-mark" aria-hidden="true">◇</div>
-        <div><div class="brand-title">KOORDYNATOR CONTROL</div><div class="brand-subtitle">AUTONOMOUS ORCHESTRATION</div></div>
-      </div>
-      <div class="building-block" aria-label="Current environment"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
-      <div class="operator-block"><span class="operator-icon" aria-hidden="true">●</span><span id="operatorLabel">operator@koordynator.local</span></div>
-    </header>
-
-    <aside class="sidebar" aria-label="Primary navigation">
-      <nav class="nav-list">
-        <a class="nav-item" href="/"><span>☷</span><span>Tasks</span></a>
-        <a class="nav-item active" href="/chat" aria-current="page"><span>◉</span><span>Live Chat</span></a>
-        <a class="nav-item" href="/providers"><span>⬡</span><span>Providers</span></a>
-        <a class="nav-item" href="/releases"><span>◫</span><span>Releases</span></a>
+<body class="workspace-v5">
+  <div class="v5-shell">
+    <aside class="v5-rail" aria-label="Primary navigation">
+      <a class="v5-logo" href="/" title="Koordynator Control" aria-label="Koordynator Control">◇</a>
+      <nav class="v5-nav">
+        <a class="v5-nav-item" href="/" title="Tasks" aria-label="Tasks"><span>☷</span></a>
+        <a class="v5-nav-item active" href="/chat" title="Live Chat" aria-label="Live Chat" aria-current="page"><span>◉</span></a>
+        <a class="v5-nav-item" href="/providers" title="Providers" aria-label="Providers"><span>⬡</span></a>
+        <a class="v5-nav-item" href="/releases" title="Releases" aria-label="Releases"><span>◫</span></a>
       </nav>
-      <div class="sidebar-foot"><div><span id="versionLabel">v0.1.0</span> <span class="dot-sep">•</span> <span id="sidebarEnv">LOCAL</span></div><div class="muted">OmniRoute executable routes</div></div>
+      <div class="v5-rail-foot">
+        <span id="versionLabel">V5 · app v0.4.0</span>
+        <span id="sidebarEnv" class="visually-hidden">LOCAL</span>
+      </div>
     </aside>
 
-    <main class="content chat-content">
-      <section class="chat-head">
-        <div class="chat-action-group" role="group" aria-label="Chat actions">
-          <button class="secondary-button chat-action-button history-button" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
-          <button class="secondary-button chat-action-button new-chat-button" id="newChatButton" type="button">New</button>
-          <button class="secondary-button chat-action-button" id="popoutChatButton" type="button" title="Open another chat window">Pop-out</button>
-          <button class="secondary-button chat-action-button" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
-          <button class="secondary-button chat-action-button" id="muteHermesButton" type="button" title="Schowaj lub pokaż terminal Hermesa">Wycisz</button>
-          <button class="secondary-button chat-action-button" id="exportMdButton" type="button" title="Download conversation as Markdown">MD</button>
-          <button class="secondary-button chat-action-button" id="exportPdfButton" type="button" title="Download conversation as PDF">PDF</button>
-          <button class="secondary-button chat-action-button" id="exportZipButton" type="button" title="Download conversation as ZIP">ZIP</button>
+    <main class="v5-main">
+      <header class="v5-topbar">
+        <div class="v5-brand-block">
+          <div class="v5-brand-title">KOORDYNATOR</div>
+          <div class="v5-brand-subtitle">LIVE WORKSPACE</div>
+        </div>
+
+        <div class="v5-route-summary" aria-label="Routing summary">
+          <span class="v5-route-kicker">PRIMARY</span>
+          <strong id="primaryRouteLabel">resolving…</strong>
+          <span class="v5-fallbacks" id="fallbackRoutesLabel">fallbacks resolving…</span>
+        </div>
+
+        <div class="v5-topbar-right">
+          <div class="v5-env" aria-label="Current environment"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
+          <div class="v5-operator"><span class="v5-online-dot" aria-hidden="true"></span><span id="operatorLabel">operator@koordynator.local</span></div>
+        </div>
+      </header>
+
+      <section class="v5-toolbar" aria-label="Workspace actions">
+        <div class="v5-toolbar-left">
+          <button class="v5-action" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
+          <button class="v5-action primary" id="newChatButton" type="button">New chat</button>
+          <button class="v5-action" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
+          <button class="v5-action" id="muteHermesButton" type="button" title="Hide or show Hermes PTY">Hide terminal</button>
+        </div>
+        <div class="v5-toolbar-right">
+          <button class="v5-icon-button" id="popoutChatButton" type="button" title="Open another chat window" aria-label="Pop out chat">↗</button>
+          <details class="v5-more">
+            <summary aria-label="More actions">•••</summary>
+            <div class="v5-more-menu">
+              <button id="exportMdButton" type="button">Export Markdown</button>
+              <button id="exportPdfButton" type="button">Export PDF</button>
+              <button id="exportZipButton" type="button">Export ZIP</button>
+            </div>
+          </details>
         </div>
       </section>
 
-      <section class="chat-workspace" id="chatWorkspace">
-      <section class="chat-frame" id="chatFrame" aria-label="Live conversation">
-        <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
-        <div class="chat-connection-bar pane-head">
-          <div class="connection-state"><span class="chat-status-dot" id="statusDot"></span><strong id="statusText">Connecting</strong></div>
-          <span class="billing-badge checking" id="billingBadge" title="Billing route">ROUTE</span>
-          <span class="usage-24h" id="usage24h" title="24h token provenance">24H</span>
-          <button class="github-chat-button github-chat-icon" id="githubChatButton" type="button" aria-label="GitHub repository connection" title="GitHub checking…"><span class="github-chat-dot checking" id="githubChatDot"></span><span class="github-mark" aria-hidden="true">⌥</span><span id="githubChatLabel" class="visually-hidden">GitHub checking…</span></button>
-          <code id="sessionLabel" class="session-id" title="Session">…</code>
-        </div>
+      <section class="v5-workspace" id="chatWorkspace">
+        <section class="v5-chat-pane chat-frame" id="chatFrame" aria-label="Live conversation">
+          <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
 
-        <div class="chat-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
-          <div class="chat-welcome" id="chatWelcome">
-            <div class="welcome-mark">◇</div>
-            <h2>Start a conversation</h2>
-            <p>Ask normally. Drop files into this window, or drop a GitHub repo link to request repository access.</p>
-            <div class="welcome-hints"><span>Sticky menus</span><span>Scrollable thread</span><span>Drag &amp; drop files</span><span>Code &amp; docs</span><span>GitHub consent</span></div>
+          <div class="v5-routebar chat-connection-bar chat-usage-bar">
+            <div class="v5-connection connection-state">
+              <span class="chat-status-dot" id="statusDot"></span>
+              <strong id="statusText">Connecting</strong>
+            </div>
+            <span class="billing-badge checking" id="billingBadge" title="Billing route">ROUTE</span>
+            <span class="usage-24h" id="usage24h" title="24h token provenance">USED 24H</span>
+            <button class="github-chat-button v5-github" id="githubChatButton" type="button" aria-label="GitHub repository connection" title="GitHub checking…">
+              <span class="github-chat-dot checking" id="githubChatDot"></span>
+              <span class="v5-github-mark" aria-hidden="true">GH</span>
+              <span id="githubChatLabel">GitHub checking…</span>
+            </button>
+            <code id="sessionLabel" class="session-id" title="Session">…</code>
           </div>
-        </div>
 
-        <div class="composer-wrap">
-          <div class="composer" id="composer">
-            <input
-              id="fileInput"
-              class="visually-hidden-file"
-              type="file"
-              multiple
-              accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip"
-              aria-label="Attach files"
-            />
-            <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
-            <textarea title="Załącz pliki przyciskiem +. ZIP, PDF, TXT, DOCX, XLSX i PPTX są rozpoznawane; obrazy wymagają modelu z obsługą obrazów." id="messageInput" rows="1" maxlength="32768" placeholder="Napisz wiadomość lub /repo https://github.com/owner/repo zadanie" aria-label="Message"></textarea>
-            <div class="composer-actions">
-              <label class="model-picker composer-model">
-                <select id="modelSelect" aria-label="AI model" disabled>
-                  <option value="" selected>Loading…</option>
-                </select>
-              </label>
-              <button class="attach-button" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
-              <button class="stop-button hidden" id="stopButton" type="button">■</button>
-              <button class="send-button" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
+          <div class="chat-thread v5-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
+            <div class="chat-welcome v5-welcome" id="chatWelcome">
+              <div class="v5-welcome-mark">◇</div>
+              <h2>Start working</h2>
+              <p>Chat, files, repository access and execution share one workspace. The active route is shown above and the terminal stays visible beside the conversation.</p>
+              <div class="v5-welcome-grid">
+                <span>Drop files anywhere in chat</span>
+                <span>Paste a GitHub repository link</span>
+                <span>Use Etap 0 for Harmonia reading</span>
+                <span>Hermes PTY remains independent</span>
+              </div>
             </div>
           </div>
-          <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
-          <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
-          <div class="stage-zero-notice hidden" id="stageZeroNotice" role="status" aria-live="polite"></div>
-          <div class="composer-note">Loading route provenance. Models that cannot execute under the active billing policy are not shown.</div>
-        </div>
-      </section>
-      <aside class="hermes-pane" id="hermesPane" aria-label="Hermes terminal">
-        <div class="hermes-pane-head pane-head">
-          <div class="connection-state"><span class="chat-status-dot" id="hermesHeadDot"></span><strong id="hermesPaneTitle">Hermes</strong></div>
-          <span class="hermes-state" id="hermesState">OFF</span>
-          <div class="hermes-pane-actions">
-            <button class="secondary-button chat-action-button" id="startHermesButton" type="button">Start</button>
-            <button class="secondary-button chat-action-button" id="stopHermesButton" type="button">Stop</button>
+
+          <div class="v5-composer-zone composer-wrap">
+            <div class="composer v5-composer" id="composer">
+              <input id="fileInput" class="visually-hidden-file" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip" aria-label="Attach files" />
+              <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
+              <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message" title="Attach files with +. ZIP, PDF, TXT, DOCX, XLSX and PPTX are recognised; images require a vision-capable model."></textarea>
+              <div class="composer-actions v5-composer-actions">
+                <label class="model-picker composer-model v5-model-picker">
+                  <span class="visually-hidden">AI model</span>
+                  <select id="modelSelect" aria-label="AI model"><option value="" selected>Loading…</option></select>
+                </label>
+                <button class="attach-button v5-attach" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
+                <button class="stop-button hidden v5-stop" id="stopButton" type="button" aria-label="Stop generation">■</button>
+                <button class="send-button v5-send" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
+              </div>
+            </div>
+            <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
+            <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
+            <div class="stage-zero-notice hidden" id="stageZeroNotice" role="status" aria-live="polite"></div>
+            <div class="composer-note v5-route-note">Models that cannot execute under the active billing policy are not shown.</div>
           </div>
-        </div>
-        <div class="hermes-term" id="hermesTerm" tabindex="0" aria-label="Hermes terminal"></div>
-        <div class="hermes-composer">
-          <textarea id="hermesInput" rows="1" maxlength="8000" placeholder="Napisz do Hermesa…" aria-label="Hermes message"></textarea>
-          <button class="send-button" id="sendHermesButton" type="button" aria-label="Send to Hermes">↑</button>
-        </div>
-        <p class="hermes-hint hidden" id="hermesHint" role="status"></p>
-      </aside>
+        </section>
+
+        <div class="v5-splitter" id="workspaceSplitter" role="separator" aria-orientation="vertical" aria-label="Resize Hermes terminal" tabindex="0"></div>
+
+        <aside class="v5-terminal-pane hermes-pane" id="hermesPane" aria-label="Hermes terminal">
+          <header class="v5-terminal-head hermes-pane-head">
+            <div class="v5-terminal-title">
+              <span class="chat-status-dot" id="hermesHeadDot"></span>
+              <div><strong id="hermesPaneTitle">Hermes PTY</strong><small>local execution terminal</small></div>
+            </div>
+            <span class="hermes-state" id="hermesState">OFF</span>
+            <div class="v5-terminal-actions hermes-pane-actions">
+              <button class="v5-mini-button" id="startHermesButton" type="button">Start</button>
+              <button class="v5-mini-button" id="stopHermesButton" type="button">Stop</button>
+            </div>
+          </header>
+          <div class="hermes-term v5-terminal" id="hermesTerm" tabindex="0" aria-label="Hermes terminal"></div>
+          <div class="hermes-composer v5-terminal-composer">
+            <textarea id="hermesInput" rows="1" maxlength="8000" placeholder="Send command or message to Hermes…" aria-label="Hermes message"></textarea>
+            <button class="send-button v5-terminal-send" id="sendHermesButton" type="button" aria-label="Send to Hermes">↑</button>
+          </div>
+          <p class="hermes-hint hidden" id="hermesHint" role="status"></p>
+        </aside>
       </section>
 
-      <footer class="statusbar chat-statusbar">
-        <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI VERIFY <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
-        <div class="runtime-meta"><span id="regionLabel">local</span> • <span id="zoneLabel">local</span> • <span class="connection-dot"></span> <span id="footerConnection">CONNECTING</span></div>
+      <footer class="v5-statusbar chat-statusbar">
+        <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
+        <div class="v5-runtime-meta runtime-meta"><span id="regionLabel">local</span><span>•</span><span id="zoneLabel">local</span><span>•</span><span class="connection-dot"></span><span id="footerConnection">CONNECTING</span></div>
       </footer>
     </main>
   </div>
@@ -136,19 +169,31 @@
 
   <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
     <form method="dialog">
-      <header><div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div><button value="cancel" aria-label="Close GitHub permission dialog">×</button></header>
+      <header>
+        <div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div>
+        <button value="cancel" aria-label="Close GitHub permission dialog">×</button>
+      </header>
       <p>This message appears to require a GitHub repository. Koordynator first reuses a working local Git credential path when one already exists. If GitHub CLI authentication is required, the official browser sign-in starts only after your approval. Koordynator does not collect your GitHub password, browser cookies or token.</p>
-      <div class="github-chat-consent-points"><span>✓ Existing local Git credentials are reused when repository access already works.</span><span>✓ No new GitHub CLI sign-in starts before approval.</span><span>✓ GitHub controls which account and repository permissions you grant.</span></div>
-      <footer><button value="cancel" id="githubChatConsentCancel">Cancel</button><button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button></footer>
+      <div class="github-chat-consent-points">
+        <span>✓ Existing local Git credentials are reused when repository access already works.</span>
+        <span>✓ No new GitHub CLI sign-in starts before approval.</span>
+        <span>✓ GitHub controls which account and repository permissions you grant.</span>
+      </div>
+      <footer>
+        <button value="cancel" id="githubChatConsentCancel">Cancel</button>
+        <button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button>
+      </footer>
     </form>
   </dialog>
 
   <script src="/xterm.js" defer></script>
   <script src="/xterm-addon-fit.js" defer></script>
-  <script src="/chat-models.js" defer></script>
-  <script src="/chat.js" defer></script>
-  <script src="/chat-history.js" defer></script>
-  <script src="/chat-github.js" defer></script>
-  <script src="/chat-usage.js" defer></script>
+  <script src="/chat-models.js?v=5" defer></script>
+  <script src="/chat.js?v=5" defer></script>
+  <script src="/chat-history.js?v=5" defer></script>
+  <script src="/chat-github.js?v=5" defer></script>
+  <script src="/chat-usage.js?v=5" defer></script>
+  <script src="/chat-v5.js?v=5" defer></script>
+  <script src="/chat-router.js?v=1" defer></script>
 </body>
 </html>

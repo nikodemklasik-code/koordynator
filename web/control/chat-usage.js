@@ -85,3 +85,215 @@ async function loadUsage24h() {
 void loadUsage24h();
 setInterval(() => void loadUsage24h(), 10_000);
 window.addEventListener("focus", () => void loadUsage24h());
+
+/*
+ * Readable Hermes mirror.
+ * Raw xterm remains the execution surface. This layer only mirrors visible PTY
+ * output into selectable semantic question/answer blocks and never changes the
+ * bytes sent to Hermes.
+ */
+(() => {
+  const term = document.getElementById("hermesTerm");
+  const pane = document.getElementById("hermesPane");
+  const input = document.getElementById("hermesInput");
+  const send = document.getElementById("sendHermesButton");
+  const stateBadge = document.getElementById("hermesState");
+  if (!term || !pane || !input || !send || document.getElementById("hermesTranscript")) return;
+
+  const stack = document.createElement("div");
+  stack.className = "terminal-output-stack";
+  const bar = document.createElement("div");
+  bar.className = "terminal-viewbar";
+  bar.innerHTML = '<span class="terminal-viewbar-label">Hermes context</span><button class="terminal-view-button active" id="hermesReadableButton" type="button">Readable</button><button class="terminal-view-button" id="hermesRawButton" type="button">Raw PTY</button><button class="terminal-view-button" id="hermesExpandButton" type="button" aria-pressed="false">Expand</button><button class="terminal-view-button copy" id="hermesCopyButton" type="button">Copy</button>';
+  const transcript = document.createElement("div");
+  transcript.className = "terminal-readable";
+  transcript.id = "hermesTranscript";
+  transcript.setAttribute("tabindex", "0");
+  transcript.setAttribute("role", "log");
+  transcript.setAttribute("aria-label", "Readable Hermes transcript. Text is selectable, scrollable and copyable.");
+  const systemLog = document.createElement("div");
+  systemLog.className = "terminal-system-log";
+  transcript.appendChild(systemLog);
+
+  term.parentNode.insertBefore(stack, term);
+  stack.append(bar, transcript, term);
+
+  const readableButton = bar.querySelector("#hermesReadableButton");
+  const rawButton = bar.querySelector("#hermesRawButton");
+  const expandButton = bar.querySelector("#hermesExpandButton");
+  const copyButton = bar.querySelector("#hermesCopyButton");
+
+  let currentAnswer = null;
+  let lastQuestion = "";
+  let buffer = "";
+  let partialTimer = null;
+  let followTail = true;
+
+  function stripAnsi(value) {
+    return String(value || "")
+      .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+      .replace(/\x1b\[[0-?]*[ -\/]*[@-~]/g, "")
+      .replace(/\x1b[@-_]/g, "")
+      .replace(/\u0000/g, "");
+  }
+
+  function normalized(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function isNoise(line) {
+    const text = line.trim();
+    if (!text) return true;
+    if (/^(?:info|debug|trace|warn(?:ing)?|notice|system|tool|provider|model|session|context|tokens?|cost|usage|loaded|loading|connected|starting|using|route|fallback|config|hermes agent)\b[:\s-]*/i.test(text)) return true;
+    if (/^[✓✔⚠●◆◇▶▷·•#>]+\s*/.test(text)) return true;
+    if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+.*[%$#]\s*$/.test(text)) return true;
+    if (/^(?:\[.*?\]\s*)?(?:tool|status|event|thinking|reasoning)[:>]/i.test(text)) return true;
+    if (/^[-_=]{3,}$/.test(text)) return true;
+    return false;
+  }
+
+  function isNearTranscriptBottom() {
+    return transcript.scrollHeight - transcript.scrollTop - transcript.clientHeight < 70;
+  }
+
+  function scrollTranscriptBottom(force = false) {
+    if (force || followTail || isNearTranscriptBottom()) transcript.scrollTop = transcript.scrollHeight;
+  }
+
+  transcript.addEventListener("scroll", () => {
+    followTail = isNearTranscriptBottom();
+  }, { passive: true });
+
+  function ensureAnswer() {
+    if (currentAnswer) return currentAnswer;
+    const exchange = document.createElement("section");
+    exchange.className = "terminal-exchange terminal-system-exchange";
+    currentAnswer = document.createElement("div");
+    currentAnswer.className = "terminal-answer";
+    exchange.appendChild(currentAnswer);
+    transcript.appendChild(exchange);
+    return currentAnswer;
+  }
+
+  function startExchange(question) {
+    const text = String(question || "").trim();
+    if (!text) return;
+    lastQuestion = text;
+    followTail = true;
+    const exchange = document.createElement("section");
+    exchange.className = "terminal-exchange";
+    const q = document.createElement("div");
+    q.className = "terminal-question";
+    q.textContent = text;
+    currentAnswer = document.createElement("div");
+    currentAnswer.className = "terminal-answer";
+    exchange.append(q, currentAnswer);
+    transcript.appendChild(exchange);
+    scrollTranscriptBottom(true);
+  }
+
+  function appendLine(line) {
+    const clean = line.replace(/[\u0001-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trimEnd();
+    if (!clean.trim()) return;
+    const compact = normalized(clean);
+    const question = normalized(lastQuestion);
+    if (question && (compact === question || compact.endsWith(` ${question}`))) return;
+
+    const shouldFollow = followTail || isNearTranscriptBottom();
+    const target = currentAnswer || systemLog;
+    const row = document.createElement("div");
+    const noise = isNoise(clean);
+    row.className = noise ? `terminal-noise${/warn|error|fail|denied/i.test(clean) ? " warning" : ""}` : "terminal-answer-line";
+    row.textContent = clean;
+    target.appendChild(row);
+    if (shouldFollow) scrollTranscriptBottom(true);
+  }
+
+  function flushPartial() {
+    partialTimer = null;
+    if (!buffer.trim()) return;
+    appendLine(buffer);
+    buffer = "";
+  }
+
+  function mirrorOutput(value) {
+    const clean = stripAnsi(value).replace(/\r(?!\n)/g, "\n");
+    if (!clean) return;
+    buffer += clean;
+    const parts = buffer.split(/\n/);
+    buffer = parts.pop() || "";
+    for (const line of parts) appendLine(line);
+    if (partialTimer) clearTimeout(partialTimer);
+    partialTimer = setTimeout(flushPartial, 180);
+  }
+
+  const originalAppend = window.appendHermesOutput;
+  if (typeof originalAppend === "function") {
+    window.appendHermesOutput = function readableHermesOutput(text) {
+      mirrorOutput(text);
+      return originalAppend(text);
+    };
+  }
+
+  function captureQuestion() {
+    const text = input.value.trim();
+    if (!text || String(stateBadge?.textContent || "").toUpperCase() !== "LIVE") return;
+    startExchange(text);
+  }
+
+  send.addEventListener("click", captureQuestion, true);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) captureQuestion();
+  }, true);
+
+  function setRaw(raw) {
+    stack.classList.toggle("terminal-raw-mode", raw);
+    readableButton.classList.toggle("active", !raw);
+    rawButton.classList.toggle("active", raw);
+    requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+  }
+  readableButton.addEventListener("click", () => setRaw(false));
+  rawButton.addEventListener("click", () => setRaw(true));
+
+  function setExpanded(expanded) {
+    pane.classList.toggle("terminal-fullscreen", expanded);
+    expandButton.textContent = expanded ? "Collapse" : "Expand";
+    expandButton.setAttribute("aria-pressed", expanded ? "true" : "false");
+    document.body.classList.toggle("terminal-fullscreen-open", expanded);
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+      scrollTranscriptBottom(false);
+      transcript.focus({ preventScroll: true });
+    });
+  }
+  expandButton.addEventListener("click", () => setExpanded(!pane.classList.contains("terminal-fullscreen")));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && pane.classList.contains("terminal-fullscreen")) setExpanded(false);
+  });
+
+  async function copyTranscript() {
+    const selection = window.getSelection();
+    const selected = selection && selection.anchorNode && transcript.contains(selection.anchorNode)
+      ? selection.toString().trim()
+      : "";
+    const text = selected || transcript.innerText.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      copyButton.textContent = "Copied";
+      copyButton.classList.add("terminal-copy-flash");
+      setTimeout(() => {
+        copyButton.textContent = "Copy";
+        copyButton.classList.remove("terminal-copy-flash");
+      }, 1000);
+    } catch {
+      copyButton.textContent = "Select + ⌘C";
+      setTimeout(() => { copyButton.textContent = "Copy"; }, 1400);
+    }
+  }
+  copyButton.addEventListener("click", () => void copyTranscript());
+
+  // Existing boot noise stays small and gray until the first real question.
+  ensureAnswer();
+  currentAnswer = null;
+})();

@@ -41,6 +41,8 @@ export class HermesPtyError extends Error {
 }
 
 const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HERMES_MIN_COLS = 100;
+const HERMES_MIN_ROWS = 32;
 
 function boundSize(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? value : Number(value);
@@ -48,15 +50,48 @@ function boundSize(value: unknown, fallback: number): number {
   return Math.min(300, Math.max(8, n));
 }
 
+function hermesSize(size: { cols?: unknown; rows?: unknown }): { cols: number; rows: number } {
+  return {
+    cols: Math.max(HERMES_MIN_COLS, boundSize(size.cols, 120)),
+    rows: Math.max(HERMES_MIN_ROWS, boundSize(size.rows, 40))
+  };
+}
+
+function shellQuote(value: string): string {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Build the `script` argv used by the pipe-backed PTY adapter.
+ * `script` gives Hermes a slave PTY, but because Control owns pipes rather than
+ * the master fd, later ioctl resize is unavailable. Set the slave dimensions
+ * from inside the PTY before exec so rich/TUI rendering never starts at 80x24
+ * (or smaller) and emits `Window too small...`.
+ */
+export function buildScriptPtyArgs(
+  spec: HermesLaunchSpec & { cols?: number; rows?: number },
+  platform: NodeJS.Platform = process.platform
+): { args: string[]; cols: number; rows: number } {
+  const size = hermesSize(spec);
+  const command = [spec.command, ...spec.args].map(shellQuote).join(" ");
+  const wrapped = `stty cols ${size.cols} rows ${size.rows} 2>/dev/null || true; exec ${command}`;
+  const args = platform === "darwin"
+    ? ["-q", "/dev/null", "/bin/sh", "-lc", wrapped]
+    : ["-q", "-f", "-c", wrapped, "/dev/null"];
+  return { args, ...size };
+}
+
 /** macOS `script` allocates a PTY for the child. Linux uses `script -c`. */
-export function spawnScriptPty(spec: HermesLaunchSpec): PtyHandle {
-  const isDarwin = process.platform === "darwin";
-  const args = isDarwin
-    ? ["-q", "/dev/null", spec.command, ...spec.args]
-    : ["-q", "-f", "-c", [spec.command, ...spec.args].join(" "), "/dev/null"];
-  const child = spawn("script", args, {
+export function spawnScriptPty(spec: HermesLaunchSpec & { cols?: number; rows?: number }): PtyHandle {
+  const launch = buildScriptPtyArgs(spec);
+  const child = spawn("script", launch.args, {
     cwd: spec.cwd,
-    env: { ...spec.env, TERM: spec.env.TERM || "xterm-256color" },
+    env: {
+      ...spec.env,
+      TERM: spec.env.TERM || "xterm-256color",
+      COLUMNS: String(launch.cols),
+      LINES: String(launch.rows)
+    },
     stdio: ["pipe", "pipe", "pipe"]
   });
   const listeners: Array<(chunk: Buffer) => void> = [];
@@ -70,7 +105,7 @@ export function spawnScriptPty(spec: HermesLaunchSpec): PtyHandle {
   return {
     ...(child.pid === undefined ? {} : { pid: child.pid }),
     write(data) { child.stdin?.write(data); },
-    resize() { /* pipe-wrapped script has no master fd to ioctl */ },
+    resize() { /* pipe-wrapped script has no master fd to ioctl; initial stty is authoritative */ },
     onData(listener) { listeners.push(listener); },
     onExit(listener) { exitListeners.push(listener); },
     kill() {
@@ -85,8 +120,8 @@ export class HermesPtySession {
   private sessionId: string | null = null;
   private launch: HermesLaunchSpec | null = null;
   private readonly subscribers = new Map<string, Set<(event: HermesPtyEvent) => void>>();
-  private cols = 80;
-  private rows = 24;
+  private cols = HERMES_MIN_COLS;
+  private rows = HERMES_MIN_ROWS;
 
   constructor(
     private readonly options: {
@@ -102,8 +137,9 @@ export class HermesPtySession {
     const grant = await this.grants.status();
     if (!grant.terminal) throw new HermesPtyError("HERMES_TERMINAL_REQUIRED", 403);
     this.stop();
-    this.cols = boundSize(size.cols, 80);
-    this.rows = boundSize(size.rows, 24);
+    const bounded = hermesSize(size);
+    this.cols = bounded.cols;
+    this.rows = bounded.rows;
     const spec = await this.options.prepare();
     const spawnPty = this.options.spawn ?? ((launch: HermesLaunchSpec & { cols: number; rows: number }) => spawnScriptPty(launch));
     const handle = spawnPty({ ...spec, cols: this.cols, rows: this.rows });
@@ -136,8 +172,9 @@ export class HermesPtySession {
 
   resize(sessionId: string, cols: unknown, rows: unknown): { cols: number; rows: number } {
     const handle = this.require(sessionId);
-    this.cols = boundSize(cols, this.cols);
-    this.rows = boundSize(rows, this.rows);
+    const bounded = hermesSize({ cols, rows });
+    this.cols = bounded.cols;
+    this.rows = bounded.rows;
     handle.resize(this.cols, this.rows);
     return { cols: this.cols, rows: this.rows };
   }
