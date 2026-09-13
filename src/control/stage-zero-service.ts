@@ -44,6 +44,7 @@ export type StageZeroOptions = {
   apiKey?: string;
   apiKeyEnv?: string;
   fetchImpl?: typeof fetch;
+  authorizeModel?: (model: string) => Promise<boolean>;
   timeoutMs?: number;
 };
 
@@ -152,11 +153,16 @@ export class StageZeroService {
       sessionModel
     ].filter((model) => model.trim() && model !== harmoniaModel);
 
+    for (const model of new Set([harmoniaModel, sessionModel])) {
+      if (this.options.authorizeModel && !await this.options.authorizeModel(model)) throw new StageZeroError("FREE_ROUTE_DENIED", 403);
+    }
+
     let reading: HarmoniaReading;
     try {
       reading = await new HarmoniaCognition({
         ...shared,
         model: harmoniaModel,
+        ...(this.options.authorizeModel ? { authorizeModel: this.options.authorizeModel } : {}),
         fallbackModels
       }).read(project);
     } catch (error) {

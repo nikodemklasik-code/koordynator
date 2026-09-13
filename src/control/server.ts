@@ -45,6 +45,7 @@ export type ControlServerOptions = {
   chatAllowGithubContext?: boolean;
   chatAllowWorkspaceContext?: boolean;
   chatAllowRepositoryExecution?: boolean;
+  chatHermesSkillsEveryTurn?: boolean;
   chatEndpoint?: string;
   chatApiKey?: string;
   chatApiKeyEnv?: string;
@@ -250,6 +251,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
   const chat = new ChatService({
     stateDir,
+    authorizeModel: async model => evaluateChatBilling(model, await modelCatalog.list(), options.chatBillingPolicy),
     ...(options.chatAllowRepositoryExecution ? { repositoryExecutor: createRepositoryExecutor(stateDir) } : {}),
     ...(materialisation ? { materialiser: (consensus) => materialisation.materialise(consensus) } : {}),
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
@@ -257,11 +259,13 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
     ...(options.chatDefaultModel === undefined ? {} : { defaultModel: options.chatDefaultModel }),
     ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
+    ...(options.chatHermesSkillsEveryTurn === undefined ? {} : { hermesSkillsEveryTurn: options.chatHermesSkillsEveryTurn }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
     projectContextProvider: () => loadChatProjectContext(projectRoot)
   });
   const stageZero = new StageZeroService({
     stateDir,
+    ...(options.chatBillingPolicy?.freeOnly ? { authorizeModel: async (model: string) => evaluateChatBilling(model, await modelCatalog.list(), options.chatBillingPolicy).allowed } : {}),
     chat,
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
@@ -373,7 +377,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           let range: { fromIndex: number; toIndex: number } | undefined;
           if (payload.range !== undefined && payload.range !== null) {
             const r = payload.range as { fromIndex?: unknown; toIndex?: unknown };
-            if (typeof r.fromIndex !== "number" || typeof r.toIndex !== "number" || r.fromIndex < 0 || r.toIndex < r.fromIndex) {
+            if (typeof r.fromIndex !== "number" || typeof r.toIndex !== "number" || !Number.isInteger(r.fromIndex) || !Number.isInteger(r.toIndex) || r.fromIndex < 0 || r.toIndex < r.fromIndex) {
               return sendJson(response, 400, { error: "STAGE_ZERO_RANGE_INVALID" });
             }
             range = { fromIndex: r.fromIndex, toIndex: r.toIndex };
@@ -521,6 +525,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           chatDefaultModel: options.chatDefaultModel ?? null,
           chatFallbackModels: options.chatFallbackModels ?? [],
           liveChatBillingPolicy: "STRICT_PROVENANCE",
+          freeOnly: options.chatBillingPolicy?.freeOnly === true,
           paidApiAllowedByDefault: options.chatBillingPolicy?.allowPaidApi === true,
           unknownBillingAllowedByDefault: options.chatBillingPolicy?.allowUnknown === true,
           unconfirmedFreeAllowedByDefault: options.chatBillingPolicy?.allowFreeRequested === true

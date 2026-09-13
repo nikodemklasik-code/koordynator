@@ -65,14 +65,16 @@ async function main(): Promise<void> {
   }
 
   // Reuse only already-persisted OmniRoute sessions. This never starts a fresh login.
-  await bootstrapAi();
+  const freeOnly = process.env.KOORDYNATOR_FREE_ONLY === "1";
+  if (!freeOnly) await bootstrapAi();
 
   // Then discover OmniRoute's explicitly no-auth/free providers and put every
   // route that passes a real inference probe ahead of quota-limited accounts.
   // Failure here is non-fatal: the already-proven subscription route remains active.
   try {
     await bootstrapFreeSwarm();
-  } catch {
+  } catch (error) {
+    if (freeOnly) throw error;
     console.log("FREE_SWARM_UNAVAILABLE; keeping existing AI route");
   }
 

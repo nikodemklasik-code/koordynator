@@ -637,6 +637,7 @@ button { color: inherit; }
 
 /* LIVE_WORKSPACE_V5_FINAL */
 /* Final V5 desktop geometry + interaction recovery. */
+:root { --v5-input-stack-height: 122px; }
 .v5-main { grid-template-rows: 64px 54px minmax(0,1fr) 32px !important; }
 .v5-toolbar { position: relative; z-index: 60; }
 .v5-brand-title { font-size: 14px !important; }
@@ -662,16 +663,18 @@ button { color: inherit; }
 .message-bubble { font-size: 15px !important; line-height: 1.65 !important; }
 .message-copy,.code-copy,.message-materialise { min-height: 30px !important; font-size: 10px !important; cursor: pointer !important; }
 
-/* Composer stays the same practical size, but is lowered and uses the dead space. */
+/* Composer uses the previously empty bottom band without growing. */
 .v5-composer-zone {
-  bottom: -4px !important;
-  padding: 30px 6px 0 14px !important;
+  bottom: 0 !important;
+  height: var(--v5-input-stack-height) !important;
+  padding: 0 6px 0 14px !important;
   pointer-events: none !important;
 }
 .v5-composer {
   width: 100% !important;
   max-width: none !important;
   margin: 0 !important;
+  height: var(--v5-input-stack-height) !important;
   pointer-events: auto !important;
 }
 .v5-composer textarea { min-height: 66px !important; font-size: 15px !important; pointer-events: auto !important; }
@@ -681,19 +684,23 @@ button { color: inherit; }
 .v5-route-note { display: none !important; }
 .attachment-error,.github-chat-notice,.stage-zero-notice,#exportReceipt { pointer-events: auto !important; }
 
-/* Hermes gets more room: splitter moves left, both inputs hug the centre edge. */
+/* Hermes gets about one third of the workspace and an explicit right edge. */
 .v5-terminal-pane {
   border-right: 1px solid #26313a !important;
   box-shadow: inset -1px 0 0 rgba(255,255,255,.025) !important;
   pointer-events: auto !important;
 }
 .v5-terminal-composer {
-  padding: 15px 6px 2px 6px !important;
-  margin-bottom: -4px !important;
+  min-height: var(--v5-input-stack-height) !important;
+  height: var(--v5-input-stack-height) !important;
+  padding: 8px 6px !important;
+  margin-bottom: 0 !important;
   pointer-events: auto !important;
 }
-.v5-terminal-composer textarea { min-height: 44px !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-terminal-composer textarea { min-height: 0 !important; height: 100% !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-terminal-send { align-self: end !important; }
 .v5-terminal-send,.v5-mini-button { pointer-events: auto !important; }
+.hermes-hint { display: none !important; }
 
 /* Closed overlays must never make the workspace inert. */
 .history-backdrop.hidden,

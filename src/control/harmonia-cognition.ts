@@ -67,6 +67,7 @@ export type HarmoniaOptions = {
   model: string;
   /** Capacity/timeout on the pin must not close cognition — skip onto the next live token. */
   fallbackModels?: string[];
+  authorizeModel?: (model: string) => Promise<boolean>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 };
@@ -199,6 +200,10 @@ export class HarmoniaCognition {
     const chain = uniqueModels(this.options.model, this.fallbackModels);
     let lastError: unknown;
     for (const [index, model] of chain.entries()) {
+      if (this.options.authorizeModel && !await this.options.authorizeModel(model)) {
+        lastError = new HarmoniaError("FREE_ROUTE_DENIED", 403);
+        continue;
+      }
       try {
         return await this.readWithModel(source, readingPlan, userContent, model);
       } catch (error) {

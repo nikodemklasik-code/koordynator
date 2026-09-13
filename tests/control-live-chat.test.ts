@@ -1,3 +1,4 @@
+import { evaluateChatBilling } from "../src/control/chat-billing-policy.js";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -202,6 +203,35 @@ describe("Live Chat service", () => {
     release();
     await done;
     service.close();
+  });
+
+  it("never sends a denied fallback to the provider and records the successful route's billing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-free-fallback-"));
+    roots.push(root);
+    const models: string[] = [];
+    const sources = { "oc/first": "FREE_CONFIRMED", "cx/plan": "SUBSCRIPTION_HARNESS", "qw/next": "FREE_OAUTH" } as const;
+    const service = new ChatService({ stateDir: root, apiKey: "fixture", defaultModel: "oc/first", fallbackModels: ["cx/plan", "qw/next"],
+      authorizeModel: async model => evaluateChatBilling(model, { source: "OMNIROUTE", checkedAt: new Date().toISOString(), models: Object.keys(sources),
+        billing: { liveChatTransport: "OMNIROUTE_API", subscriptionHarnessUsed: false, subscriptionHarnessPath: "NOT_AVAILABLE", modelSources: sources } }, { freeOnly: true }),
+      fetchImpl: (async (url, init) => {
+        const { model } = JSON.parse(String(init?.body));
+        models.push(model);
+        return model === "oc/first" ? new Response("quota", { status: 429 }) : streamingFetch(["ok"])(url, init);
+      }) as typeof fetch
+    });
+    try {
+      const session = await service.createSession();
+      const done = new Promise<void>(resolve => service.subscribe(session.sessionId, event => {
+        if (event.type === "assistant_done" || event.type === "error") resolve();
+      }));
+      await service.startMessage(session.sessionId, "hello");
+      await done;
+      expect(models).toEqual(["oc/first", "qw/next"]);
+      const last = (await service.getSession(session.sessionId))?.messages.at(-1);
+      expect(last?.state).toBe("complete");
+      expect(last?.billing?.source).toBe("FREE_OAUTH");
+      expect(last?.model).toBe("qw/next");
+    } finally { service.close(); }
   });
 
   it("skips a 429 model and continues on the next fallback", async () => {

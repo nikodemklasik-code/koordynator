@@ -1,3 +1,4 @@
+import { beforeEach, vi } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,7 +9,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createControlServer } from "../src/control/server.js";
 
 const roots: string[] = [];
+beforeEach(() => vi.stubEnv("OMNIROUTE_API_KEY", "fixture-gateway-key"));
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 

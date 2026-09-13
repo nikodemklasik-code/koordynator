@@ -207,6 +207,21 @@ describe("Harmonia — samotne poznanie", () => {
     expect(reading.understanding).toContain("tryb ciemny");
   });
 
+  it("checks billing on each fallback while preserving capacity recovery", async () => {
+    const models: string[] = [];
+    const reading = await new HarmoniaCognition({ apiKey: "fixture", model: "free/primary", fallbackModels: ["subscription/blocked", "free/next"],
+      authorizeModel: async model => model.startsWith("free/"),
+      fetchImpl: (async (_url, init) => {
+        const { model } = JSON.parse(String(init?.body));
+        models.push(model);
+        if (model === "free/primary") return new Response("timeout", { status: 504 });
+        return Response.json({ choices: [{ message: { content: CLEAN } }] });
+      }) as typeof fetch
+    }).read("Chcę tryb ciemny w panelu.");
+    expect(models).toEqual(["free/primary", "free/next"]);
+    expect(reading.model).toBe("free/next");
+  });
+
   it("wymaga rzeczywistego projektu zamiast czytać pustkę", async () => {
     const { fetchImpl } = gateway(CLEAN);
     await expect(new HarmoniaCognition({ apiKey: "k", model: "m", fetchImpl }).read("   "))
