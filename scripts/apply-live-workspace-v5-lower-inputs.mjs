@@ -20,6 +20,10 @@ ${MARKER}
 .v5-route-note {
   display: none !important;
 }
+.v5-terminal-pane {
+  border-right: 1px solid #26313a !important;
+  box-shadow: inset -1px 0 0 rgba(255,255,255,.02) !important;
+}
 .v5-terminal-composer {
   padding: 15px 6px 2px 6px !important;
   margin-bottom: -3px !important;
@@ -65,7 +69,7 @@ async function patchRepository(root = process.cwd()) {
     await writeFile(jsPath, jsAfter, "utf8");
     changed.push("web/control/chat-v5.js");
   }
-  console.log("LIVE_WORKSPACE_V5_LOWER_INPUTS=PASS chat_gap=6px hermes_gap=6px terminal_default=320px sizes=unchanged");
+  console.log("LIVE_WORKSPACE_V5_LOWER_INPUTS=PASS chat_gap=6px hermes_gap=6px terminal_default=320px hermes_right_edge=on sizes=unchanged");
   console.log(`PATCHED=${changed.length ? changed.join(",") : "already-applied"}`);
 }
 
@@ -76,6 +80,7 @@ function selfTest() {
   if (!cssOnce.includes("padding: 30px 6px 0 14px !important")) throw new Error("V5_LOWER_INPUTS_CHAT_GEOMETRY_FAILED");
   if (!cssOnce.includes("width: 100% !important")) throw new Error("V5_LOWER_INPUTS_CHAT_WIDTH_FAILED");
   if (!cssOnce.includes("padding: 15px 6px 2px 6px !important")) throw new Error("V5_LOWER_INPUTS_HERMES_GEOMETRY_FAILED");
+  if (!cssOnce.includes("border-right: 1px solid #26313a !important")) throw new Error("V5_LOWER_INPUTS_HERMES_RIGHT_EDGE_FAILED");
   if (cssOnce !== cssTwice) throw new Error("V5_LOWER_INPUTS_CSS_NOT_IDEMPOTENT");
 
   const js = 'const STORAGE_WIDTH = "koordynator.liveChat.v5.terminalWidth";\nconst DEFAULT_WIDTH = 420;\nconst MIN_WIDTH = 300;';
