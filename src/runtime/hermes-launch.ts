@@ -7,6 +7,7 @@ import { loadHermesGrants, type HermesGrantStatus } from "../control/hermes-gran
 import { mintTaskTicket } from "../security/task-ticket.js";
 import { startTicketProxy, type TicketProxy } from "../security/ticket-proxy.js";
 import { omniRouteSettings } from "./local-config.js";
+import { freeRouteGuard } from "./free-routes.js";
 
 async function privateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
@@ -112,6 +113,8 @@ export type HermesLaunch = {
 /** Managed, repo-local profile: global Nous/OpenRouter configuration is never edited. */
 export async function prepareHermes(settings: ReturnType<typeof omniRouteSettings>, root = process.cwd(), env: NodeJS.ProcessEnv = process.env): Promise<HermesLaunch> {
   if (!settings.apiKey) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
+  const authorizeModel = env.KOORDYNATOR_FREE_ONLY === "1" ? freeRouteGuard(settings) : undefined;
+  if (authorizeModel && !await authorizeModel(settings.model)) throw new Error("FREE_ROUTE_DENIED");
   const state = resolve(root, ".orchestrator");
   await privateDirectory(state);
   const home = join(state, "hermes-omniroute");
@@ -121,8 +124,12 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   const { token } = mintTaskTicket(secret, { aud: "hermes", model: settings.model });
   let proxy: TicketProxy | undefined;
   try {
-    proxy = await startTicketProxy({ upstream: settings.endpoint, apiKey: settings.apiKey, secret, audience: "hermes" });
-    const fallbacks = fallbackProviders(proxy.url, settings, env);
+    proxy = await startTicketProxy({ upstream: settings.endpoint, apiKey: settings.apiKey, secret, audience: "hermes",
+      ...(authorizeModel ? { authorizeModel } : {}) });
+    const fallbacks = [];
+    for (const fallback of fallbackProviders(proxy.url, settings, env)) {
+      if (!authorizeModel || await authorizeModel(fallback.model)) fallbacks.push(fallback);
+    }
     const grants = await loadHermesGrants(join(root, ".orchestrator"));
     await prepareManagedSkills(home);
     await privateFile(join(home, "SOUL.md"), managedSoul(grants));

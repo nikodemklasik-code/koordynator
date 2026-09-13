@@ -17,9 +17,9 @@ const chatModelGate = new Promise((resolve) => {
 window.koordynatorChatModelsReady = chatModelGate;
 
 const SOURCE_ORDER = {
-  SUBSCRIPTION_HARNESS: 0,
+  SUBSCRIPTION_HARNESS: 2,
   FREE_OAUTH: 1,
-  FREE_CONFIRMED: 2,
+  FREE_CONFIRMED: 0,
   FREE_REQUESTED: 3,
   PAID_API: 4,
   UNKNOWN: 5
@@ -104,6 +104,7 @@ function sourceLabel(source) {
 }
 
 function sourceAllowed(source) {
+  if (billingPolicy?.freeOnly === true) return ["FREE_CONFIRMED", "FREE_OAUTH"].includes(source);
   if (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" || source === "FREE_CONFIRMED") return true;
   if (source === "FREE_REQUESTED") return billingPolicy?.unconfirmedFreeAllowedByDefault === true;
   if (source === "PAID_API") return billingPolicy?.paidApiAllowedByDefault === true && catalogBilling?.budget?.exhausted !== true;
@@ -367,9 +368,10 @@ async function loadChatModels() {
     if (!usable.length) throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
 
     const usableIds = usable.map((entry) => entry.id);
-    const preferred = usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
-      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+    const preferred = (usableIds.includes(health.chatDefaultModel) ? health.chatDefaultModel : null)
       || usable.find((entry) => entry.billingSource === "FREE_CONFIRMED")?.id
+      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+      || usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
       || (usableIds.includes(previous) ? previous : usableIds[0]);
     const desired = await desiredSessionModel(usableIds, preferred);
     rebuildOptions(usable);

@@ -42,10 +42,11 @@ const server = createControlServer({
   chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS !== "0",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
+  chatBillingPolicy: { freeOnly: process.env.KOORDYNATOR_FREE_ONLY === "1" },
   ...(process.env.KOORDYNATOR_HARMONIA_MODEL?.trim()
     ? { chatHarmoniaModel: process.env.KOORDYNATOR_HARMONIA_MODEL.trim() }
     : {}),
-  chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "gc/grok-4.6,cx/gpt-5.5,cx/gpt-5.6-sol").split(",").map((model) => model.trim()).filter(Boolean),
+  chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean),
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   ...(signing === null ? {} : {
     materialisationPrivateKeyPem: signing.privateKeyPem,

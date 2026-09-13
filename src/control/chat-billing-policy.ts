@@ -1,6 +1,7 @@
 import type { ChatModelBillingSource, ChatModelCatalog, ChatModelRouteTransport } from "./chat-model-catalog.js";
 
 export type ChatBillingPolicyOptions = {
+  freeOnly?: boolean;
   allowFreeRequested?: boolean;
   allowPaidApi?: boolean;
   allowUnknown?: boolean;
@@ -22,6 +23,7 @@ export type ChatBillingDecision = {
     | "BLOCK_FREE_UNCONFIRMED"
     | "BLOCK_PAID_API"
     | "BLOCK_PAID_API_BUDGET_EXHAUSTED"
+    | "BLOCK_FREE_ONLY"
     | "BLOCK_UNKNOWN";
   checkedAt: string;
 };
@@ -63,6 +65,10 @@ export function evaluateChatBilling(
     checkedAt: catalog.checkedAt
   };
 
+  if (options.freeOnly && (!catalog.models.includes(model) || !["FREE_CONFIRMED", "FREE_OAUTH"].includes(source))) {
+    return { ...base, allowed: false, decision: "BLOCK_FREE_ONLY" };
+  }
+
   if (source === "SUBSCRIPTION_HARNESS") {
     return { ...base, allowed: true, decision: "ALLOW_SUBSCRIPTION_HARNESS" };
   }
@@ -92,6 +98,7 @@ export function evaluateChatBilling(
 
 export function chatBillingErrorCode(decision: ChatBillingDecision): string | null {
   if (decision.allowed) return null;
+  if (decision.decision === "BLOCK_FREE_ONLY") return "CHAT_BILLING_FREE_ONLY";
   if (decision.decision === "BLOCK_FREE_UNCONFIRMED") return "CHAT_BILLING_FREE_UNCONFIRMED";
   if (decision.decision === "BLOCK_PAID_API_BUDGET_EXHAUSTED") return "CHAT_BILLING_BUDGET_EXHAUSTED";
   if (decision.decision === "BLOCK_PAID_API") return "CHAT_BILLING_PAID_API_BLOCKED";

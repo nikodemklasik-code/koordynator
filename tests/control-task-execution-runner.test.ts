@@ -1,3 +1,4 @@
+import { beforeEach, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,7 +13,9 @@ import { FileWriteLeaseStore } from "../src/store/write-lease-store.js";
 import type { TaskId, WorkspaceId } from "../src/domain/ids.js";
 
 const roots: string[] = [];
+beforeEach(() => vi.stubEnv("OMNIROUTE_API_KEY", "fixture-gateway-key"));
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 

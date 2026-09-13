@@ -247,6 +247,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   const webRoot = resolve(options.webRoot ?? resolve(process.cwd(), "web", "control"));
   const chat = new ChatService({
     stateDir,
+    authorizeModel: async model => evaluateChatBilling(model, await modelCatalog.list(), options.chatBillingPolicy),
     ...(options.chatAllowRepositoryExecution ? { repositoryExecutor: createRepositoryExecutor(stateDir) } : {}),
     ...(materialisation ? { materialiser: (consensus) => materialisation.materialise(consensus) } : {}),
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
@@ -260,6 +261,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   });
   const stageZero = new StageZeroService({
     stateDir,
+    ...(options.chatBillingPolicy?.freeOnly ? { authorizeModel: async (model: string) => evaluateChatBilling(model, await modelCatalog.list(), options.chatBillingPolicy).allowed } : {}),
     chat,
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
@@ -499,6 +501,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           chatDefaultModel: options.chatDefaultModel ?? null,
           chatFallbackModels: options.chatFallbackModels ?? [],
           liveChatBillingPolicy: "STRICT_PROVENANCE",
+          freeOnly: options.chatBillingPolicy?.freeOnly === true,
           paidApiAllowedByDefault: options.chatBillingPolicy?.allowPaidApi === true,
           unknownBillingAllowedByDefault: options.chatBillingPolicy?.allowUnknown === true,
           unconfirmedFreeAllowedByDefault: options.chatBillingPolicy?.allowFreeRequested === true

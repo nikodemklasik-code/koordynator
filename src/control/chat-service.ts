@@ -91,6 +91,7 @@ export type ChatServiceOptions = {
   apiKeyEnv?: string;
   defaultModel?: string;
   fallbackModels?: string[];
+  authorizeModel?: (model: string) => Promise<ChatBillingDecision>;
   fetchImpl?: typeof fetch;
   maxMessageBytes?: number;
   maxHistoryMessages?: number;
@@ -210,6 +211,7 @@ export class ChatService {
   private readonly apiKeyEnv: string;
   private readonly defaultModel: string;
   private readonly fallbackModels: string[];
+  private readonly authorizeModel: ChatServiceOptions["authorizeModel"];
   private readonly fetchImpl: typeof fetch;
   private readonly maxMessageBytes: number;
   private readonly maxHistoryMessages: number;
@@ -237,6 +239,7 @@ export class ChatService {
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
     this.defaultModel = safeModel(options.defaultModel ?? "auto/best-free");
     this.fallbackModels = [...new Set((options.fallbackModels ?? []).map((model) => model.trim()).filter(Boolean).filter((model) => model !== this.defaultModel))].slice(0, 6);
+    this.authorizeModel = options.authorizeModel;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
@@ -606,6 +609,8 @@ export class ChatService {
       let response: Response | undefined;
       let lastRateLimit: ChatServiceError | undefined;
       for (const model of chain) {
+        const billing = await this.authorizeModel?.(model);
+        if (billing && !billing.allowed) continue;
         const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
@@ -615,11 +620,13 @@ export class ChatService {
         if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
         if (attempt.status === 429 || attempt.status === 503) {
           lastRateLimit = new ChatServiceError(attempt.status === 429 ? "CHAT_RATE_LIMITED" : "CHAT_UPSTREAM_503", attempt.status === 429 ? 429 : 502);
+          await attempt.body?.cancel();
           continue;
         }
         if (!attempt.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${attempt.status}`, 502);
         response = attempt;
         assistant.model = model;
+        if (billing) assistant.billing = billing;
         session.model = model;
         break;
       }

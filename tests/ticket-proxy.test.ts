@@ -8,6 +8,23 @@ afterEach(async () => {
 });
 
 describe("Ticket proxy (worker never holds the gateway key)", () => {
+  it("blocks paid fallback models and alternate endpoints before calling upstream", async () => {
+    let calls = 0;
+    const proxy = await startTicketProxy({ upstream: "http://gateway/v1", apiKey: "secret", secret: "broker",
+      authorizeModel: async model => model === "oc/free",
+      fetchImpl: (async () => { calls++; return Response.json({ ok: true }); }) as typeof fetch });
+    proxies.push(proxy);
+    const { token } = mintTaskTicket("broker", { aud: "hermes", model: "oc/free" });
+    const headers = { authorization: `Bearer ${token}`, "content-type": "application/json" };
+    for (const path of ["/chat/completions", "/responses", "/images/generations"]) {
+      const response = await fetch(`${proxy.url}${path}`, { method: "POST", headers, body: JSON.stringify({ model: "cx/paid" }) });
+      expect(response.status).toBe(403);
+    }
+    expect(calls).toBe(0);
+    const response = await fetch(`${proxy.url}/chat/completions`, { method: "POST", headers, body: JSON.stringify({ model: "oc/free" }) });
+    expect(response.status).toBe(200);
+    expect(calls).toBe(1);
+  });
   it("exchanges a valid ticket for the upstream call and never forwards the ticket", async () => {
     const calls: Array<{ url: string; authorization: string; body: string }> = [];
     const proxy = await startTicketProxy({

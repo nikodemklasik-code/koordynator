@@ -293,6 +293,20 @@ function explicitBillingSignal(record: Record<string, unknown>): ChatModelBillin
     if (record[key] === true) return "FREE_CONFIRMED";
     if (record[key] === false) return "PAID_API";
   }
+  const prices = isObject(record.pricing) ? record.pricing : record;
+  const priceNumber = (keys: string[]) => {
+    for (const key of keys) {
+      const raw = prices[key];
+      if (typeof raw !== "number" && !(typeof raw === "string" && raw.trim())) continue;
+      const value = Number(raw);
+      if (Number.isFinite(value) && value >= 0) return value;
+    }
+    return undefined;
+  };
+  const inputPrice = priceNumber(["prompt", "input"]);
+  const outputPrice = priceNumber(["completion", "output"]);
+  if ((inputPrice ?? 0) > 0 || (outputPrice ?? 0) > 0) return "PAID_API";
+  if (inputPrice === 0 && outputPrice === 0) return "FREE_CONFIRMED";
   const direct = numberValue(record, ["estimatedCost", "cost", "price"]);
   if (direct !== undefined) return direct === 0 ? "FREE_CONFIRMED" : "PAID_API";
   const input = numberValue(record, ["inputCost", "inputPrice", "promptPrice", "input_cost", "input_price"]);
@@ -498,7 +512,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     );
     if (models.length === 0) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_NO_CHAT_MODELS", 502);
 
-    const pricingEvidence = pricingModels ?? pricing;
+    const pricingEvidence = [pricingModels, pricing];
     const combinedCatalogEvidence = [payload, managementCatalog, ...synced.map((item) => item.payload)];
     const sources = modelBillingSources(models, records, combinedCatalogEvidence, pricingEvidence);
     const entries = buildEntries(models, records, sources);

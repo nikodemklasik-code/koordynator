@@ -480,7 +480,8 @@ function addResponseActions(article, message) {
     meta.appendChild(select);
   }
   select.disabled = !(message.state === "complete" || message.state === "stopped");
-  select.textContent = selectedResponseIds.has(message.id) ? "Selected" : "Select";
+  const selectLabel = selectedResponseIds.has(message.id) ? "Selected" : "Select";
+  if (select.textContent !== selectLabel) select.textContent = selectLabel;
   select.title = selectedResponseIds.has(message.id) ? "Remove this response from document selection" : "Select this response for document creation";
 
   let exportButton = meta.querySelector(".message-export-one");

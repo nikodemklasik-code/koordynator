@@ -42,6 +42,7 @@ export type StageZeroOptions = {
   apiKey?: string;
   apiKeyEnv?: string;
   fetchImpl?: typeof fetch;
+  authorizeModel?: (model: string) => Promise<boolean>;
   timeoutMs?: number;
 };
 
@@ -109,6 +110,10 @@ export class StageZeroService {
     };
     // Harmonia poznaje na najsilniejszym modelu (pin przez env), fallback na sesję.
     const harmoniaModel = this.options.harmoniaModel?.trim() || sessionModel;
+
+    for (const model of new Set([harmoniaModel, sessionModel])) {
+      if (this.options.authorizeModel && !await this.options.authorizeModel(model)) throw new StageZeroError("FREE_ROUTE_DENIED", 403);
+    }
 
     let reading: HarmoniaReading;
     try {

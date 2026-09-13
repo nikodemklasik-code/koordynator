@@ -24,6 +24,7 @@
     "verify": "npm run typecheck && npm test && npm run build && npm run e2e && npm run golden && npm run provider-golden",
     "start": "npm run app",
     "app": "npm run build && node dist/runtime/app-launch.js",
+    "start:free": "node scripts/ai-always-on.mjs --free --start",
     "start:all": "node scripts/start-all.mjs",
     "desktop:install": "node scripts/install-desktop-launcher.mjs",
     "doctor:omniroute": "npm run build && node dist/runtime/main.js doctor",
