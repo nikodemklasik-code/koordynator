@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
 import { createControlServer } from "../src/control/server.js";
-import { HermesPtySession } from "../src/control/hermes-pty.js";
+import { buildScriptPtyArgs, HermesPtySession } from "../src/control/hermes-pty.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -104,6 +104,36 @@ describe("Live Chat + Hermes PTY screen", () => {
   });
 });
 
+describe("script-backed Hermes PTY sizing", () => {
+  it("sets a usable slave PTY size before exec on macOS", () => {
+    const launch = buildScriptPtyArgs({
+      command: "hermes",
+      args: ["chat", "--model", "gc/grok-4.6"],
+      cwd: "/tmp",
+      env: {},
+      cols: 52,
+      rows: 18
+    }, "darwin");
+    expect(launch.cols).toBe(100);
+    expect(launch.rows).toBe(32);
+    expect(launch.args.slice(0, 4)).toEqual(["-q", "/dev/null", "/bin/sh", "-lc"]);
+    expect(launch.args.at(-1)).toContain("stty cols 100 rows 32");
+    expect(launch.args.at(-1)).toContain("exec 'hermes' 'chat' '--model' 'gc/grok-4.6'");
+  });
+
+  it("keeps shell arguments quoted instead of interpolating them", () => {
+    const launch = buildScriptPtyArgs({
+      command: "hermes",
+      args: ["chat", "x'; touch /tmp/should-not-run; echo '"],
+      cwd: "/tmp",
+      env: {},
+      cols: 140,
+      rows: 50
+    }, "darwin");
+    expect(launch.args.at(-1)).toContain("'x'\\''; touch /tmp/should-not-run; echo '\\'''");
+  });
+});
+
 describe("Hermes PTY HTTP", () => {
   it("refuses to start without a terminal grant", async () => {
     const root = await mkdtemp(join(tmpdir(), "hermes-pty-deny-"));
@@ -130,7 +160,7 @@ describe("Hermes PTY HTTP", () => {
     }
   });
 
-  it("starts a PTY after grant, echoes input, resizes and stops", async () => {
+  it("starts a PTY after grant, enforces usable dimensions, echoes input, resizes and stops", async () => {
     const root = await mkdtemp(join(tmpdir(), "hermes-pty-ok-"));
     roots.push(root);
     await grantTerminal(root);
@@ -152,8 +182,9 @@ describe("Hermes PTY HTTP", () => {
       expect(started.status).toBe(201);
       const session = await started.json() as { sessionId: string; cols: number; rows: number };
       expect(session.sessionId).toMatch(/^[0-9a-f-]{36}$/i);
-      expect(session.cols).toBe(80);
-      expect(session.rows).toBe(24);
+      expect(session.cols).toBe(100);
+      expect(session.rows).toBe(32);
+      expect(fake.resizes.at(-1)).toEqual({ cols: 100, rows: 32 });
 
       const events = await fetch(`${base}/api/hermes/pty/${session.sessionId}/events`);
       expect(events.status).toBe(200);
