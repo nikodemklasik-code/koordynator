@@ -10,13 +10,18 @@ export async function listConversationRoles(root: string): Promise<ConversationR
   const home = homedir();
   const dirs = [join(root, "roles"), join(root, "contracts"), join(root, "skills"), join(root, ".agents", "skills"), join(home, ".agents", "skills"), join(home, ".hermes", "skills"), join(home, ".codex", "skills")];
   const seen = new Set<string>();
+  const visitedDirs = new Set<string>();
   async function walk(dir: string, depth: number): Promise<void> {
     if (depth > 5 || roles.length >= 500) return;
+    let canonicalDir: string;
+    try { canonicalDir = await realpath(dir); } catch { return; }
+    if (visitedDirs.has(canonicalDir)) return;
+    visitedDirs.add(canonicalDir);
     let entries;
     try { entries = await readdir(dir, { withFileTypes: true }); } catch { return; }
     for (const entry of entries.sort((a,b) => a.name.localeCompare(b.name))) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules") await walk(path, depth + 1);
+      if ((entry.isDirectory() || entry.isSymbolicLink()) && !entry.name.startsWith(".") && entry.name !== "node_modules") await walk(path, depth + 1);
       else if (entry.isFile() && /^(?:SKILL|AGENT|CONTRACT|ROLE)\.md$|(?:contract|role|kontrakt).*\.md$/i.test(entry.name)) {
         const canonical = await realpath(path);
         if (seen.has(canonical)) continue;

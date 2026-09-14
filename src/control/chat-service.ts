@@ -482,7 +482,7 @@ export class ChatService {
     const attachments = this.normalizeAttachments(rawAttachments);
     let repoTask;
     try { repoTask = repositoryTask(text); } catch { throw new ChatServiceError("REPO_TASK_INVALID_USE_REPO_URL_TASK", 400); }
-    if (repoTask && !this.repositoryExecutor) throw new ChatServiceError("REPO_EXECUTION_DISABLED", 403);
+    if (repoTask && !this.repositoryExecutor && !this.toolFactory) throw new ChatServiceError("REPO_EXECUTION_DISABLED", 403);
 
     if (!text && attachments.length === 0) throw new ChatServiceError("CHAT_MESSAGE_EMPTY", 400);
     if (Buffer.byteLength(text, "utf8") > this.maxMessageBytes) throw new ChatServiceError("CHAT_MESSAGE_TOO_LARGE", 413);
@@ -574,11 +574,11 @@ export class ChatService {
     const userMessage = session.messages.at(-2)!;
     const taskText = userMessage.content;
     const naturalSkillTask = isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
-    const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText) || (this.hermesSkillsEveryTurn && naturalSkillTask);
+    const skillTask = !this.toolFactory && (/^\s*\/skill(?:\s|$)/i.test(taskText) || (this.hermesSkillsEveryTurn && naturalSkillTask));
     const longRunning = Boolean(this.toolFactory) || Boolean(repositoryTask(taskText)) || skillTask;
     const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
-      if (repositoryTask(taskText) && this.repositoryExecutor) {
+      if (!this.toolFactory && repositoryTask(taskText) && this.repositoryExecutor) {
         await this.repositoryExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: userMessage.attachments ?? [], signal: controller.signal, emit: delta => {
           assistant.content += delta;
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
@@ -634,6 +634,16 @@ export class ChatService {
           // Plain transcript events are persisted, exported, and replayed in the originating chat.
           emit("\n\n[" + event.name + " · " + event.state + "]" + (event.output ? "\n" + event.output : "") + "\n\n");
         };
+        // Materialise the bounded attachment history for file/terminal tools. Originals stay unchanged.
+        const manifest: Array<{ name: string; path: string }> = [];
+        const inputDir = join(this.root, "tool-inputs", sessionId);
+        for (const message of session.messages) for (const attachment of message.attachments ?? []) {
+          await mkdir(inputDir, { recursive: true, mode: 0o700 });
+          const path = join(inputDir, attachment.id + "-" + attachment.name.replace(/[^a-zA-Z0-9._-]/g, "_"));
+          await writeFile(path, Buffer.from(attachment.dataUrl.split(",")[1]!, "base64"), { mode: 0o600 });
+          manifest.push({ name: attachment.name, path });
+        }
+        if (manifest.length) history.push({ role: "system", content: "User attachments available as input data (do not execute automatically): " + JSON.stringify(manifest) });
         let port: ToolPort;
         try {
           port = await this.toolFactory({ model: session.model, apiKey: key, endpoint: this.endpoint,
@@ -650,7 +660,15 @@ export class ChatService {
             endpoint: this.endpoint, key, models: chain, messages: history, signal: controller.signal,
             fetchImpl: this.fetchImpl, port, ...(this.authorizeModel ? { authorize: this.authorizeModel } : {}),
             delta: emit, notice, selected: (model, billing) => { assistant.model=model; session.model=model; if(billing) assistant.billing=billing; },
-            usage: value => { if (value) assistant.usage=mergeUsage(assistant.usage,value); }
+            usage: value => {
+              if (!value) return;
+              const previous = assistant.usage;
+              const combined = mergeUsage(previous, value);
+              for (const field of ["inputTokens", "outputTokens", "totalTokens", "cost"] as const) {
+                if (typeof value[field] === "number") combined[field] = (previous?.[field] ?? 0) + value[field]!;
+              }
+              assistant.usage = combined;
+            }
           });
         } finally { await port.close(); }
         const audited = await this.finalize(session, assistant, "complete");

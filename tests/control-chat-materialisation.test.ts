@@ -206,7 +206,7 @@ describe("Automatic materialisation from chat to Tasks", () => {
     }
   });
 
-  it("materialises from a real chat turn only after the user asks, and never twice", async () => {
+  it.each([true, false])("materialisation is explicitly opt-in (enabled=%s)", async (autoMaterialise) => {
     const root = await mkdtemp(join(tmpdir(), "control-chat-flow-"));
     roots.push(root);
     const { privateKey, publicKey } = keys();
@@ -227,6 +227,7 @@ describe("Automatic materialisation from chat to Tasks", () => {
       webRoot: resolve("web/control"),
       chatApiKey: "test-key",
       chatFetchImpl: reply(PLAN),
+      chatAutoMaterialise: autoMaterialise,
       chatModelCatalog: { async list() { return freeCatalog; } },
       materialisationPrivateKeyPem: privateKey,
       materialisationKeyId: "control-plane"
@@ -275,7 +276,14 @@ describe("Automatic materialisation from chat to Tasks", () => {
       const beforeAsk = await fetch(`${base}/api/tasks`).then((item) => item.json()) as { tasks: unknown[] };
       expect(beforeAsk.tasks).toHaveLength(0);
 
-      // Now the user explicitly asks. This is the only trigger.
+      if (!autoMaterialise) {
+        await say("Dobra, kieruj do produkcji.");
+        const unchanged = await fetch(`${base}/api/tasks`).then(r => r.json()) as { tasks: unknown[] };
+        expect(unchanged.tasks).toHaveLength(0);
+        return;
+      }
+
+      // Legacy opt-in mode still requires the user to explicitly ask.
       const messages = await say("Dobra, kieruj do produkcji.", true);
       const taskId = messages.filter((m) => m.role === "assistant").at(-1)?.materialisedTaskId;
       expect(taskId).toMatch(/^TASK-/);

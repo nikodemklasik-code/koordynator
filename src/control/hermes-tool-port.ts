@@ -35,7 +35,7 @@ export async function openHermesToolPort(o: {
   // alone are not upgraded to unrestricted terminal/file access.
   if (grants.terminal) {
     allowed.push("read_file", "search_files");
-    if (!o.readOnly) allowed.push("terminal", "process", "write_file", "patch");
+    if (!o.readOnly) allowed.push("terminal", "process_manage", "write_file", "patch");
   }
   const launch = await prepareHermes({ endpoint: o.endpoint, apiKey: o.apiKey, model: o.model }, o.root);
   const script = fileURLToPath(new URL("../../scripts/hermes-tools-bridge.py", import.meta.url));
@@ -58,6 +58,8 @@ export async function openHermesToolPort(o: {
   async function close() {
     if (closed) return; closed = true;
     o.signal.removeEventListener("abort", abort);
+    const pid = child.pid;
+    if (pid) { const hardStop = setTimeout(() => { if (child.exitCode === null && child.signalCode === null) { try { process.kill(process.platform === "win32" ? pid : -pid, "SIGKILL"); } catch { /* exited */ } } }, 1500); hardStop.unref(); }
     if (child.pid) { try { process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGTERM"); } catch { /* exited */ } }
     child.stdin.destroy(); await launch.close();
   }

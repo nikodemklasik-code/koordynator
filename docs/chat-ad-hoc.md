@@ -10,4 +10,4 @@ Install: npm ci && npm run build. Start: npm run start:all.
 If Hermes Python cannot be detected, set KOORDYNATOR_HERMES_PYTHON to its venv/bin/python. This Python environment must import model_tools. API compatibility was inspected against NousResearch/hermes-agent commit de2d6a1b. Installed extensions and credentials still need a local smoke test.
 
 Validation: npm run verify. New tests cover procedural-contract adaptation, tool/result continuation, incomplete-stream side-effect rejection, and session-local error persistence. CI results, not this document, determine test status.
-Limitations: direct bridge exposes installed skills_list/skill_view and granted core file/terminal tools, not all Hermes integrations. It does not claim terminal parity for image tool results or attachment path materialisation. These are remaining live integration cases.
+Limitations: direct bridge exposes installed skills_list/skill_view and granted core file/terminal tools, not all Hermes integrations. It does not claim terminal parity for image tool results. These are remaining live integration cases.

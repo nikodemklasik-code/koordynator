@@ -31,6 +31,7 @@ export async function runChatToolLoop(o: {
     if (!response?.body) throw new Error("CHAT_ROUTE_UNAVAILABLE");
     const calls = new Map<number, { id: string; type: "function"; function: { name: string; arguments: string } }>();
     let content = "", buffer = "", ended = false;
+    let roundUsage: ReturnType<typeof extractProviderReportedUsage>;
     const reader = response.body.getReader(), decoder = new TextDecoder();
     function line(s: string) {
       if (!s.startsWith("data:")) return;
@@ -39,7 +40,8 @@ export async function runChatToolLoop(o: {
       if (raw === "[DONE]") { ended = true; return; }
       const data = JSON.parse(raw);
       if (data.error) throw new Error("CHAT_PROVIDER_STREAM_ERROR");
-      o.usage(extractProviderReportedUsage(data));
+      const usage = extractProviderReportedUsage(data);
+      if (usage) roundUsage = usage;
       const choice = data.choices?.[0];
       if (choice?.finish_reason) ended = true;
       const d = choice?.delta;
@@ -64,6 +66,7 @@ export async function runChatToolLoop(o: {
         if (r.done) { if (buffer) line(buffer); break; }
       }
     } finally { reader.releaseLock(); }
+    o.usage(roundUsage);
     if (!ended) throw new Error("CHAT_STREAM_INTERRUPTED");
     if (!calls.size) return;
     const ordered = [...calls].sort((a,b) => a[0]-b[0]).map(([,v]) => v);
