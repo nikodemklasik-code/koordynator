@@ -54,8 +54,8 @@ export async function installRouterInspector() {
   const html = await patchFile(htmlPath, patchChatHtml);
   const server = await patchFile(serverPath, patchServer);
   const checks = [
-    ["HTML_CSS", html.includes('/chat-router.css?v=1')],
-    ["HTML_JS", html.includes('/chat-router.js?v=1')],
+    ["HTML_CSS", html.includes('href="/chat-router.css')],
+    ["HTML_JS", html.includes('src="/chat-router.js')],
     ["SERVER_CSS", server.includes('"/chat-router.css"')],
     ["SERVER_JS", server.includes('"/chat-router.js"')],
     ["SERVER_V5_CSS", server.includes('"/chat-v5.css"')],
