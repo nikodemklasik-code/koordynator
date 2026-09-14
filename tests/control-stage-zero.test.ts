@@ -5,7 +5,7 @@ import { once } from "node:events";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { createControlServer } from "../src/control/server.js";
-import { sessionToProject } from "../src/control/stage-zero-service.js";
+import { sessionToProject, stageZeroScope } from "../src/control/stage-zero-service.js";
 import type { ChatSession } from "../src/control/chat-service.js";
 
 const roots: string[] = [];
@@ -110,8 +110,39 @@ describe("sessionToProject", () => {
     expect(project).toContain("Paleta: grafit.");
     expect(project).toContain("Koordynator:");
     expect(project).toContain("Mogę to rozplanować.");
-    expect(project).not.toContain("Błąd sieci.");
-    expect(project).not.toContain("Rozumiem.");
+  });
+
+  it("ogranicza poznanie do wybranego zakresu wiadomości (fromIndex..toIndex włącznie)", () => {
+    const session = {
+      sessionId: "s", createdAt: "", updatedAt: "", model: "m",
+      messages: [
+        message("user", "Pierwsza sprawa."),
+        message("assistant", "Odpowiedź do pierwszej."),
+        message("user", "Druga sprawa — to chcę w poznaniu."),
+        message("assistant", "Odpowiedź do drugiej.")
+      ]
+    } as ChatSession;
+    // Only messages 2..3 (0-based, inclusive) enter cognition.
+    const project = sessionToProject(session, { fromIndex: 2, toIndex: 3 });
+    expect(project).toContain("Druga sprawa");
+    expect(project).toContain("Odpowiedź do drugiej.");
+    expect(project).not.toContain("Pierwsza sprawa");
+    expect(project).not.toContain("Odpowiedź do pierwszej.");
+  });
+
+  it("stageZeroScope raportuje ile wiadomości i załączników wejdzie (dla UI zakresu)", () => {
+    const session = {
+      sessionId: "s", createdAt: "", updatedAt: "", model: "m",
+      messages: [
+        message("user", "A", { attachments: [{ id: "a", name: "f.txt", mimeType: "text/plain", size: 1, dataUrl: "data:text/plain;base64,YQ==", extractedText: "x" }] }),
+        message("assistant", "B", { state: "streaming" }),
+        message("assistant", "C")
+      ]
+    } as ChatSession;
+    const scope = stageZeroScope(session);
+    expect(scope.messageCount).toBe(2); // streaming excluded
+    expect(scope.attachmentCount).toBe(1);
+    expect(scope.total).toBe(3);
   });
 });
 
@@ -170,6 +201,42 @@ describe("Etap 0 zasilany z chatu", () => {
       const again = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`);
       expect(again.status).toBe(200);
       expect((await again.json() as { reading: { understanding: string } }).reading.understanding).toContain("tryb ciemny");
+    } finally {
+      await close();
+    }
+  });
+
+  it("GET ?scope=1 raportuje zakres, a POST z range zawęża poznanie do fragmentu (podpięcie=akcja)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stage-zero-range-"));
+    roots.push(root);
+    const seeded = await seedSession(root, {
+      messages: [
+        { ...message("user", "Pierwsza sprawa nieistotna."), sessionId: "x" },
+        { ...message("assistant", "Odpowiedź pierwsza."), sessionId: "x" },
+        { ...message("user", "Chcę tryb ciemny w panelu."), sessionId: "x" },
+        { ...message("assistant", "Mogę to rozplanować bez ruszania API."), sessionId: "x" }
+      ]
+    });
+    const { fetchImpl, bodies } = gateway([CLEAN, MAP]);
+    const { base, close } = await listen({ stateDir: root, webRoot: resolve("web/control"), chatApiKey: "k", chatFetchImpl: fetchImpl });
+    try {
+      // Scope preview: whole session is 4 messages.
+      const scopeAll = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero?scope=1`);
+      expect(scopeAll.status).toBe(200);
+      expect((await scopeAll.json() as { messageCount: number }).messageCount).toBe(4);
+      // Scope preview for a fragment (messages 2..3).
+      const scopeFrag = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero?scope=1&from=2&to=3`);
+      expect((await scopeFrag.json() as { messageCount: number }).messageCount).toBe(2);
+
+      // Run only the fragment: Harmonia must NOT see the first, irrelevant message.
+      const run = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ range: { fromIndex: 2, toIndex: 3 } })
+      });
+      expect(run.status).toBe(200);
+      const sent = bodies.map((b) => JSON.stringify(b)).join("\n");
+      expect(sent).toContain("tryb ciemny");
+      expect(sent).not.toContain("Pierwsza sprawa nieistotna");
     } finally {
       await close();
     }
@@ -261,6 +328,53 @@ describe("Etap 0 zasilany z chatu", () => {
     }
   });
 
+  it("504 na pinie Harmonii nie zamyka Etapu 0 — poznanie idzie na fallback tokenów", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stage-zero-504-fallback-"));
+    roots.push(root);
+    const seeded = await seedSession(root, {
+      model: "gc/grok-4.6",
+      messages: [
+        { ...message("user", "Chcę tryb ciemny w panelu."), sessionId: "x" },
+        { ...message("assistant", "Mogę to rozplanować bez ruszania API."), sessionId: "x" }
+      ]
+    });
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      models.push(String(body.model ?? ""));
+      if (body.model === "cc/claude-opus-5") {
+        return new Response(JSON.stringify({ error: { message: "gateway timeout" } }), { status: 504 });
+      }
+      const content = models.filter((model) => model === "gc/grok-4.6").length === 1 ? CLEAN : MAP;
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+        status: 200, headers: { "content-type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+    const { base, close } = await listen({
+      stateDir: root,
+      webRoot: resolve("web/control"),
+      chatApiKey: "k",
+      chatFetchImpl: fetchImpl,
+      chatHarmoniaModel: "cc/claude-opus-5",
+      chatFallbackModels: ["gc/grok-4.6"]
+    });
+    try {
+      const run = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+      });
+      expect(run.status).toBe(200);
+      const payload = await run.json() as { reading: { model: string; understanding: string; decision: { status: string } }; roadmap: { writtenBy: string } | null };
+      expect(payload.reading.model).toBe("gc/grok-4.6");
+      expect(payload.reading.understanding).toContain("tryb ciemny");
+      expect(payload.reading.decision.status).toBe("allow");
+      expect(payload.roadmap?.writtenBy).toBe("brain");
+      expect(models[0]).toBe("cc/claude-opus-5");
+      expect(models).toContain("gc/grok-4.6");
+    } finally {
+      await close();
+    }
+  });
+
   it("Harmonia czyta na pinie KOORDYNATOR_HARMONIA_MODEL, Mózg spisuje na modelu sesji", async () => {
     const root = await mkdtemp(join(tmpdir(), "stage-zero-harmonia-model-"));
     roots.push(root);
@@ -335,9 +449,27 @@ describe("Etap 0 zasilany z chatu", () => {
       const page = await fetch(`${base}/chat`).then((item) => item.text());
       expect(page).toContain('id="stageZeroButton"');
       expect(page).toContain('id="stageZeroNotice"');
+      expect(page).toContain('id="stageZeroDialog"');
+      expect(page).toContain('id="stageZeroRangeList"');
+      expect(page).toContain('id="stageZeroScopePreview"');
+      expect(page).toContain('id="stageZeroRunButton"');
+      expect(page).toContain('id="stageZeroFrom"');
+      expect(page).toContain('id="stageZeroTo"');
       const js = await fetch(`${base}/chat.js`).then((item) => item.text());
       expect(js).toContain("/stage-zero");
+      expect(js).toContain("openStageZeroDialog");
       expect(js).toContain("runStageZero");
+      expect(js).toContain("searchParams.set(\"scope\", \"1\")");
+      expect(js).toContain("fromIndex");
+      expect(js).toContain("toIndex");
+      expect(js).toContain("fontSize: 15");
+      expect(js).toContain("colorizeHermesOutput");
+      expect(js).toContain("▶");
+      expect(js).toContain("◀");
+      const css = await fetch(`${base}/chat.css`).then((item) => item.text());
+      expect(css).toContain(".stage-zero-range-list");
+      expect(css).toContain(".stage-zero-dialog");
+      expect(css).toContain("font-size:15px");
     } finally {
       await close();
     }

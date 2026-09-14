@@ -1,3 +1,7 @@
+import { randomBytes } from "node:crypto";
+import { mintTaskTicket } from "../security/task-ticket.js";
+import { startTicketProxy } from "../security/ticket-proxy.js";
+import { freeRouteGuard } from "../runtime/free-routes.js";
 import { spawn } from "node:child_process";
 import { workerForRole, workerCapabilities, assertWorkerAction, type WorkerKind } from "../domain/worker-registry.js";
 import type { TaskRole } from "../domain/task-envelope.js";
@@ -95,63 +99,66 @@ function hermesAgent(options: WorkerAgentOptions): WorkerAgent {
   };
 }
 
-// OpenCode's own free models: tried first (own source), no OmniRoute credential.
-// Verified available without auth; kept short so a dead one falls through fast.
-const OPENCODE_FREE_MODELS = [
-  "opencode/nemotron-3.5-lightning-free",
-  "opencode/mimo-v2.5-free",
-  "opencode/ling-3.0-flash-fin-free"
-];
-
 export type OpencodeModelAttempt = {
   model: string;
-  /** Set only for the OmniRoute fallback leg. */
+  /** Gateway endpoint, authenticated with a short-lived worker ticket. */
   baseURL?: string;
   apiKey?: string;
 };
 
-/**
- * Model plan for the code worker: OpenCode's OWN free models first, then a
- * fallback to OUR gateway (OmniRoute) using the short-lived task ticket — never
- * a raw provider key. Both sources are allowed; ours is the safety net.
- */
+/** Explicit direct models are optional; production uses the shared gateway route. */
 export function opencodeModelPlan(input: {
   model: string;
   endpoint: string;
   ticket: string;
   freeModels?: string[];
 }): OpencodeModelAttempt[] {
-  const free = (input.freeModels ?? OPENCODE_FREE_MODELS).map((model) => ({ model }));
+  const free = (input.freeModels ?? []).map((model) => ({ model }));
   const omniroute: OpencodeModelAttempt = { model: input.model, baseURL: input.endpoint, apiKey: input.ticket };
   return [...free, omniroute];
 }
 
-// OpenCode (code role): the write-capable coding worker. Tries its own free
-// models first, then OmniRoute via the task ticket. First success wins.
+// OpenCode uses the same primary/fallback settings as chat and Hermes.
 function opencodeAgent(options: WorkerAgentOptions): WorkerAgent {
   return async (context) => {
-    const env = childEnv(options);
-    const ticket = context.apiKey;
-    const attempts = opencodeModelPlan({ model: context.model, endpoint: context.endpoint, ticket });
-    let lastError: unknown;
-    for (const attempt of attempts) {
-      const attemptEnv: NodeJS.ProcessEnv = { ...env };
-      const args = ["run", context.prompt, "--model", attempt.model];
-      if (attempt.baseURL) {
-        // OmniRoute leg: point OpenCode's OpenAI-compatible provider at our proxy.
-        attemptEnv.OPENAI_BASE_URL = attempt.baseURL;
-        attemptEnv.OPENAI_API_KEY = attempt.apiKey ?? "";
+    const authorizeModel = process.env.KOORDYNATOR_FREE_ONLY === "1" ? freeRouteGuard(context) : undefined;
+    if (authorizeModel && !await authorizeModel(context.model)) throw new WorkerAgentError("FREE_ROUTE_DENIED", 403);
+    const secret = randomBytes(32).toString("hex");
+    const { token } = mintTaskTicket(secret, { aud: "opencode", model: context.model });
+    const models = [...new Set([context.model, ...(process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",").map(value => value.trim()).filter(Boolean)])].slice(0, 7);
+    const allowedModels = new Set(models);
+    const proxy = await startTicketProxy({ upstream: context.endpoint, apiKey: context.apiKey, secret, audience: "opencode",
+      authorizeModel: async model => allowedModels.has(model) && (!authorizeModel || await authorizeModel(model)) });
+    try {
+      const env = childEnv(options);
+      for (const name of Object.keys(env)) {
+        if (/(?:API_KEY|AUTH_TOKEN|ACCESS_TOKEN)$/.test(name) || (context.apiKey && env[name] === context.apiKey)) delete env[name];
       }
-      try {
-        const output = await runWorker("opencode", args, context, attemptEnv);
-        return { summary: redact(output.trim() || `OpenCode (${attempt.model}) completed`, [ticket, attempt.apiKey]) };
-      } catch (error) {
-        lastError = error;
-        if (error instanceof WorkerAgentError && error.code === "WORKER_BINARY_UNAVAILABLE") throw error;
-        // Otherwise fall through to the next model source.
+      env.OPENAI_API_KEY = token;
+      env.OPENAI_BASE_URL = proxy.url;
+      let lastError: unknown;
+      for (const model of models) {
+        context.signal.throwIfAborted();
+        if (authorizeModel && !await authorizeModel(model)) continue;
+        env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+          enabled_providers: ["koordynator"],
+          model: `koordynator/${model}`, small_model: `koordynator/${model}`,
+          provider: { koordynator: { npm: "@ai-sdk/openai-compatible", name: "Koordynator",
+            options: { baseURL: proxy.url, apiKey: "{env:OPENAI_API_KEY}" },
+            models: { [model]: { name: model } } } }
+        });
+        try {
+          const output = await runWorker("opencode", ["run", context.prompt, "--model", `koordynator/${model}`], context, env);
+          return { summary: redact(output.trim() || `OpenCode (${model}) completed`, [context.apiKey, token]) };
+        } catch (error) {
+          lastError = error;
+          if (context.signal.aborted || (error instanceof WorkerAgentError && error.code !== "WORKER_PROCESS_FAILED")) throw error;
+        }
       }
+      throw lastError instanceof Error ? lastError : new WorkerAgentError("FREE_ROUTE_UNAVAILABLE", 503);
+    } finally {
+      await proxy.close();
     }
-    throw lastError instanceof Error ? lastError : new WorkerAgentError("WORKER_PROCESS_FAILED", 502);
   };
 }
 

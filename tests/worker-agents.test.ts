@@ -27,6 +27,12 @@ describe("Worker agents (role → real process)", () => {
   it("runs the code role through the OpenCode binary and reports its work", async () => {
     const { dir, cwd } = await bin("opencode", `
 import {writeFileSync} from 'node:fs';
+const config = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT);
+const provider = config.provider.koordynator;
+if (config.enabled_providers.join(',') !== 'koordynator') process.exit(2);
+if (!process.env.OPENAI_API_KEY.startsWith('tkt.') || process.env.OMNIROUTE_API_KEY) process.exit(3);
+if (!provider.options.baseURL.startsWith('http://127.0.0.1:')) process.exit(4);
+if (process.argv.at(-1) !== 'koordynator/cx/test') process.exit(5);
 writeFileSync('feature.txt','done');
 process.stdout.write('OpenCode implemented feature');
 `);
@@ -63,18 +69,9 @@ process.stdout.write('OpenCode implemented feature');
     expect(resolveWorkerAgent("research").writes).toBe(false);
   });
 
-  it("plans OpenCode's own free model first, then falls back to OmniRoute", () => {
-    // Own source first: a free OpenCode model with no OmniRoute credential.
-    const own = opencodeModelPlan({ model: "cx/test", endpoint: "http://127.0.0.1:20128/v1", ticket: "tkt.abc" });
-    expect(own[0]!.model).toMatch(/^opencode\/.*free$/);
-    expect(own[0]!.baseURL).toBeUndefined();
-    expect(own[0]!.apiKey).toBeUndefined();
-    // When own models run out, fall back to us (OmniRoute) with the task ticket, never a raw key.
-    const last = own.at(-1)!;
-    expect(last.model).toBe("cx/test");
-    expect(last.baseURL).toBe("http://127.0.0.1:20128/v1");
-    expect(last.apiKey).toBe("tkt.abc");
-    expect(JSON.stringify(own)).not.toContain("OMNIROUTE_API_KEY");
+  it("uses the shared gateway model without a hard-coded free provider list", () => {
+    const plan = opencodeModelPlan({ model: "oc/test", endpoint: "http://127.0.0.1:20128/v1", ticket: "tkt.abc" });
+    expect(plan).toEqual([{ model: "oc/test", baseURL: "http://127.0.0.1:20128/v1", apiKey: "tkt.abc" }]);
   });
 
   it("uses only OmniRoute when no free OpenCode model is offered", () => {

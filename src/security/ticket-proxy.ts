@@ -13,6 +13,7 @@ export type TicketProxyOptions = {
   secret: string;
   audience?: TicketAudience;
   fetchImpl?: typeof fetch;
+  authorizeModel?: (model: string) => Promise<boolean>;
 };
 
 const HOP = new Set(["authorization", "host", "connection", "content-length", "transfer-encoding", "content-encoding"]);
@@ -80,6 +81,22 @@ export async function startTicketProxy(options: TicketProxyOptions): Promise<Tic
         }
         const method = request.method ?? "GET";
         const body = method === "GET" || method === "HEAD" ? undefined : await collect(request);
+        if (options.authorizeModel) {
+          if (method === "GET" && rest === "/models") {
+            // Catalog lookup carries no inference cost.
+          } else if (method === "POST" && ["/chat/completions", "/responses"].includes(rest)) {
+            let model: unknown;
+            try { model = JSON.parse(body?.toString("utf8") ?? "{}").model; }
+            catch { send(response, 400, "TICKET_PROXY_INVALID_BODY"); return; }
+            if (typeof model !== "string" || !await options.authorizeModel(model)) {
+              send(response, 403, "TICKET_MODEL_DENIED");
+              return;
+            }
+          } else {
+            send(response, 403, "TICKET_ENDPOINT_DENIED");
+            return;
+          }
+        }
         const upstreamResponse = await fetchImpl(target, {
           method,
           headers,

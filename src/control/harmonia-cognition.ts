@@ -65,6 +65,9 @@ export type HarmoniaOptions = {
   apiKey?: string;
   apiKeyEnv?: string;
   model: string;
+  /** Capacity/timeout on the pin must not close cognition — skip onto the next live token. */
+  fallbackModels?: string[];
+  authorizeModel?: (model: string) => Promise<boolean>;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 };
@@ -141,12 +144,30 @@ export function decideStageZero(input: { sourceClosed: boolean; findings: Harmon
   return { status: "allow", reason: "stage_zero_closed", action: "handoff_to_brain" };
 }
 
+function uniqueModels(primary: string, fallbacks: string[] | undefined): string[] {
+  return [primary, ...(fallbacks ?? [])]
+    .map((model) => model.trim())
+    .filter(Boolean)
+    .filter((model, index, all) => all.indexOf(model) === index);
+}
+
+/** 504/503/429/timeout/prose on one token must not close cognition — we have a chain. */
+function isCapacityOrReadFailure(error: unknown): boolean {
+  if (error instanceof HarmoniaError) {
+    return /^(HARMONIA_HTTP_(429|502|503|504)|HARMONIA_RESPONSE_NOT_JSON|HARMONIA_RESPONSE_EMPTY|HARMONIA_UNDERSTANDING_REQUIRED|HARMONIA_FINDINGS_INVALID|HARMONIA_FINDING_BUCKET_INVALID|HARMONIA_FINDING_RISK_INVALID|HARMONIA_FINDING_CODE_REQUIRED|HARMONIA_FINDING_DETAIL_REQUIRED|HARMONIA_GUIDANCE_INVALID|HARMONIA_GUIDANCE_SUBJECT_REQUIRED|HARMONIA_GUIDANCE_ADVICE_REQUIRED|HARMONIA_GUIDANCE_RATIONALE_REQUIRED)$/.test(error.code);
+  }
+  if (error instanceof DOMException && (error.name === "TimeoutError" || error.name === "AbortError")) return true;
+  if (error instanceof Error && /timeout|aborted/i.test(error.message)) return true;
+  return false;
+}
+
 export class HarmoniaCognition {
   private readonly endpoint: string;
   private readonly apiKey: string | undefined;
   private readonly apiKeyEnv: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly fallbackModels: string[];
 
   constructor(private readonly options: HarmoniaOptions) {
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
@@ -154,6 +175,7 @@ export class HarmoniaCognition {
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 180_000;
+    this.fallbackModels = uniqueModels("", options.fallbackModels);
   }
 
   private credential(): string {
@@ -175,11 +197,35 @@ export class HarmoniaCognition {
       `PROJEKT (całość, tak jak podał człowiek):\n\n${source}`
     ].join("\n\n");
 
+    const chain = uniqueModels(this.options.model, this.fallbackModels);
+    let lastError: unknown;
+    for (const [index, model] of chain.entries()) {
+      if (this.options.authorizeModel && !await this.options.authorizeModel(model)) {
+        lastError = new HarmoniaError("FREE_ROUTE_DENIED", 403);
+        continue;
+      }
+      try {
+        return await this.readWithModel(source, readingPlan, userContent, model);
+      } catch (error) {
+        lastError = error;
+        const last = index === chain.length - 1;
+        if (last || !isCapacityOrReadFailure(error)) throw error;
+      }
+    }
+    throw lastError instanceof Error ? lastError : new HarmoniaError("HARMONIA_HTTP_504", 502);
+  }
+
+  private async readWithModel(
+    source: string,
+    readingPlan: FirstReadingPlan,
+    userContent: string,
+    model: string
+  ): Promise<HarmoniaReading> {
     const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${this.credential()}` },
       body: JSON.stringify({
-        model: this.options.model,
+        model,
         temperature: 0,
         messages: [
           { role: "system", content: SYSTEM },
@@ -188,6 +234,7 @@ export class HarmoniaCognition {
       }),
       signal: AbortSignal.timeout(this.timeoutMs)
     });
+    if (response.status === 401 || response.status === 403) throw new HarmoniaError("HARMONIA_AUTH_REQUIRED", 503);
     if (!response.ok) throw new HarmoniaError(`HARMONIA_HTTP_${response.status}`, 502);
 
     const payload = await response.json().catch(() => {
@@ -206,7 +253,7 @@ export class HarmoniaCognition {
       sourceClosed,
       readingPlan,
       decision: decideStageZero({ sourceClosed, findings }),
-      model: this.options.model,
+      model,
       readAt: new Date().toISOString()
     };
   }

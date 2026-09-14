@@ -133,7 +133,7 @@ export class HermesPtySession {
     this.grants = new HermesGrantStore(options.stateDir);
   }
 
-  async start(size: { cols?: unknown; rows?: unknown } = {}): Promise<{ sessionId: string; cols: number; rows: number }> {
+  async start(size: { cols?: unknown; rows?: unknown } = {}): Promise<{ sessionId: string; cols: number; rows: number; pid: number | null }> {
     const grant = await this.grants.status();
     if (!grant.terminal) throw new HermesPtyError("HERMES_TERMINAL_REQUIRED", 403);
     this.stop();
@@ -156,11 +156,11 @@ export class HermesPtySession {
       }
     });
     try { handle.resize(this.cols, this.rows); } catch { /* optional */ }
-    return { sessionId, cols: this.cols, rows: this.rows };
+    return { sessionId, cols: this.cols, rows: this.rows, pid: handle.pid ?? null };
   }
 
-  status(): { running: boolean; sessionId: string | null; cols: number; rows: number } {
-    return { running: this.sessionId !== null, sessionId: this.sessionId, cols: this.cols, rows: this.rows };
+  status(): { running: boolean; sessionId: string | null; cols: number; rows: number; pid: number | null } {
+    return { running: this.sessionId !== null, sessionId: this.sessionId, cols: this.cols, rows: this.rows, pid: this.handle?.pid ?? null };
   }
 
   write(sessionId: string, data: string): void {
