@@ -40,7 +40,12 @@ function childEnvironment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return next;
 }
 
-function fallbackProviders(endpoint: string, settings: ReturnType<typeof omniRouteSettings>, env: NodeJS.ProcessEnv = process.env) {
+function fallbackProviders(
+  endpoint: string,
+  settings: ReturnType<typeof omniRouteSettings>,
+  env: NodeJS.ProcessEnv = process.env,
+  apiKey?: string
+) {
   const seen = new Set<string>();
   const models: string[] = [];
   for (const raw of (env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",")) {
@@ -54,6 +59,7 @@ function fallbackProviders(endpoint: string, settings: ReturnType<typeof omniRou
     provider: "custom",
     model,
     base_url: endpoint,
+    ...(apiKey ? { api_key: apiKey } : {}),
     key_env: "OPENAI_API_KEY"
   }));
 }
@@ -117,9 +123,12 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   if (!settings.apiKey) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
   const authorizeModel = env.KOORDYNATOR_FREE_ONLY === "1" ? freeRouteGuard(settings) : undefined;
   if (authorizeModel && !await authorizeModel(settings.model)) throw new Error("FREE_ROUTE_DENIED");
-  const state = resolve(root, ".orchestrator");
-  await privateDirectory(state);
-  const home = join(state, "hermes-omniroute");
+  // Isolated jobs must not inherit a live session's HERMES_HOME — that rotates
+  // the shared ticket and kills the operator PTY.
+  const isolatedHome = env.KOORDYNATOR_HERMES_HOME?.trim();
+  const home = isolatedHome ? resolve(isolatedHome) : join(resolve(root, ".orchestrator"), "hermes-omniroute");
+  if (isolatedHome) await privateDirectory(resolve(home, ".."));
+  else await privateDirectory(resolve(root, ".orchestrator"));
   await privateDirectory(home);
 
   const secret = randomBytes(32).toString("hex");
@@ -133,16 +142,18 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
     proxy = await startTicketProxy({ upstream: settings.endpoint, apiKey: settings.apiKey, secret, audience: "hermes",
       ...(authorizeModel ? { authorizeModel } : {}) });
     const fallbacks = [];
-    for (const fallback of fallbackProviders(proxy.url, settings, env)) {
+    for (const fallback of fallbackProviders(proxy.url, settings, env, token)) {
       if (!authorizeModel || await authorizeModel(fallback.model)) fallbacks.push(fallback);
     }
     const grants = await loadHermesGrants(join(root, ".orchestrator"));
     await prepareManagedSkills(home);
     await privateFile(join(home, "SOUL.md"), managedSoul(grants));
     const externalDirs = dynamicSkillRoots(root, env);
+    // Hermes treats 127.0.0.1 as a no-auth custom host and ignores OPENAI_API_KEY
+    // unless the ticket is also inline on model.api_key / fallback api_key.
     const config: Record<string, unknown> = {
       model: { provider: "custom", default: settings.model, base_url: proxy.url,
-        api_mode: "chat_completions", key_env: "OPENAI_API_KEY" },
+        api_mode: "chat_completions", api_key: token, key_env: "OPENAI_API_KEY" },
       approvals: { mode: grants.terminal ? "off" : "smart" },
       terminal: { cwd: resolve(root) },
       skills: { external_dirs: externalDirs, template_vars: true, inline_shell: false }
@@ -150,7 +161,7 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
     if (!grants.terminal) config.disabled_toolsets = ["terminal"];
     if (fallbacks.length > 0) config.fallback_providers = fallbacks;
     await privateFile(join(home, "config.yaml"), JSON.stringify(config, null, 2) + "\n");
-    await privateFile(join(home, ".env"), "# Credentials are a short-lived task ticket, never the gateway key.\n");
+    await privateFile(join(home, ".env"), `# Credentials are a short-lived task ticket, never the gateway key.\nOPENAI_API_KEY=${token}\n`);
     const held = proxy;
     const localRoots = grants.localFiles ? (grants.localRoots ?? []) : [];
     return {

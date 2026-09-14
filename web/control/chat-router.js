@@ -2,13 +2,14 @@
   const STORAGE_KEY = "koordynator.liveChat.routerReceipt.v1";
   const PIN_KEY = "koordynator.liveChat.routerPinned.v1";
   const MAX_EVENTS = 80;
-  const toolbar = document.querySelector(".v5-toolbar-left");
+  const toolbar = document.querySelector(".v5-toolbar-left") || document.querySelector(".toolbar-group");
   const sendButton = document.getElementById("sendButton");
   const input = document.getElementById("messageInput");
   const thread = document.getElementById("chatThread");
   if (!toolbar || !sendButton || !input || !thread) return;
 
   const rules = [
+    { id: "product-owner", label: "Product Owner", agent: "Product Owner", skills: ["product-owner", "task-pack", "thread-continuity"], re: /./ },
     { id: "research", label: "Research", agent: "Researcher", skills: ["research", "source-search", "repository-search"], re: /\b(znajd|wyszuk|poszuk|sprawd[zź].*źród|research|find|search|investigat|discover|lookup)\w*/i },
     { id: "decomposition", label: "Decomposition", agent: "Planner", skills: ["decomposition", "planning", "scope-map"], re: /(podziel|rozbij|mniejsze element|etap(?:y|ów)?|plan(?:uj|owanie)?|decompos|break down|split into|milestone)/i },
     { id: "repo", label: "Repository", agent: "Repository", skills: ["repository", "git", "github"], re: /(repo(?:zytorium)?|github|branch|commit|pull request|\bPR\b|git\b)/i },
@@ -120,17 +121,20 @@
   }
 
   function analyse(text) {
-    const matches = rules.filter((rule) => rule.re.test(text));
-    if (!matches.length) matches.push({ id: "general", label: "General", agent: "General AI", skills: ["general-reasoning"], re: /.*/ });
+    const matches = rules.filter((rule) => rule.id === "product-owner" || rule.re.test(text));
+    if (!matches.some((rule) => rule.id === "product-owner")) {
+      matches.unshift({ id: "product-owner", label: "Product Owner", agent: "Product Owner", skills: ["product-owner", "task-pack", "thread-continuity"], re: /./ });
+    }
+    if (matches.length === 1) matches.push({ id: "general", label: "General", agent: "General AI", skills: ["general-reasoning"], re: /.*/ });
     const skills = uniq(matches.flatMap((rule) => rule.skills));
     if (matches.some((rule) => rule.id === "implementation")) skills.push(...["tests", "verification"]);
-    const agents = uniq(matches.map((rule) => rule.agent));
+    const agents = uniq(["Product Owner", ...matches.map((rule) => rule.agent)]);
     if (matches.some((rule) => rule.id === "implementation") && !agents.includes("QC")) agents.push("QC");
     const signalRows = matches.map((rule) => {
       const found = String(text).match(rule.re)?.[0] || rule.label;
       return { signal: found.slice(0, 54), route: rule.label };
     });
-    return { intents: matches.map((rule) => rule.label), skills: uniq(skills), agents, signals: signalRows };
+    return { intents: uniq(["Product Owner", ...matches.map((rule) => rule.label)]), skills: uniq(skills), agents, signals: signalRows };
   }
 
   function captureRequest(text) {
@@ -155,6 +159,7 @@
     event(`Intent routing: ${route.intents.join(" · ")}`);
     event(`Skills selected: ${route.skills.join(", ")}`);
     setPhase("running");
+    event("Product Owner packed the request for later roles");
     event(`${route.agents[0]} started`);
     saveReceipt();
     render();
@@ -191,8 +196,20 @@
       <section class="router-section"><span class="router-label">SELECTED SKILL PLAN</span><div class="router-skills">${(r.skills || []).map((v) => `<span class="router-chip">✓ ${esc(v)}</span>`).join("")}</div></section>
       <section class="router-section"><span class="router-label">AGENT ROUTE</span><div class="router-agent-list">${(r.agentStates || []).map((v) => `<div class="router-agent"><strong>${esc(v.name)}</strong><span class="${esc(v.state)}">${esc(String(v.state).toUpperCase())}</span></div>`).join("")}</div></section>
       <section class="router-section"><span class="router-label">EXECUTION EVENTS</span><div class="router-event-list">${(r.events || []).map((v) => `<div class="router-event"><time>${esc(v.at)}</time><strong>${esc(v.text)}</strong></div>`).join("")}</div></section>
+      <section class="router-section"><span class="router-label">OUTCOME</span><p class="router-request">${esc(r.outcome || ((r.events || []).slice().reverse().find((v) => String(v.text).startsWith("OUTCOME "))?.text || ""))}</p></section>
       <div class="router-disclaimer">Inspector receipt shows observable routing decisions and execution lifecycle. It does not expose private model chain-of-thought. “Selected skill plan” is the capability route requested by Koordynator; actual tool execution is evidenced separately by chat/Hermes/task receipts.</div>`;
     body.scrollTop = body.scrollHeight;
+  }
+
+  function finishTurn(finalState, outcome) {
+    if (!state.receipt) return;
+    if (["done", "error", "stopped"].includes(state.receipt.phase)) return;
+    advanceAgents(finalState);
+    setPhase(finalState);
+    state.receipt.outcome = String(outcome || "").trim();
+    event(state.receipt.outcome ? `OUTCOME ${state.receipt.outcome}` : (finalState === "done" ? "Assistant turn completed" : finalState === "error" ? "Assistant generation failed" : "Generation stopped by operator"), finalState === "error" ? "error" : "info");
+    saveReceipt();
+    render();
   }
 
   function assistantLifecycle() {
@@ -201,24 +218,13 @@
     const current = assistants.at(-1);
     if (!current) return;
     const status = current.querySelector(".message-state")?.textContent?.trim() || "";
-    const bubble = current.querySelector(".message-bubble")?.textContent || "";
+    const bubble = current.querySelector(".message-bubble")?.textContent?.trim() || "";
     if (status === "Generation failed") {
-      if (state.receipt.phase !== "error") { advanceAgents("error"); setPhase("error"); event("Assistant generation failed", "error"); saveReceipt(); render(); }
+      finishTurn("error", bubble || "Generation failed");
       return;
     }
     if (status === "Generation stopped") {
-      if (state.receipt.phase !== "stopped") { advanceAgents("stopped"); setPhase("stopped"); event("Generation stopped by operator"); saveReceipt(); render(); }
-      return;
-    }
-    if (bubble && state.receipt.phase === "running") {
-      const hasStreamingMarker = current.querySelector(".message-bubble .streaming-cursor") || document.getElementById("statusText")?.textContent === "Generating";
-      if (!hasStreamingMarker && document.getElementById("statusText")?.textContent === "Connected") {
-        advanceAgents("done");
-        setPhase("done");
-        event("Assistant turn completed");
-        saveReceipt();
-        render();
-      }
+      finishTurn("stopped", bubble || "Generation stopped");
     }
   }
 
@@ -250,12 +256,42 @@
   const observer = new MutationObserver(() => assistantLifecycle());
   observer.observe(thread, { childList: true, subtree: true, characterData: true });
 
+  window.addEventListener("koordynator:chat-event", (ev) => {
+    const event = ev.detail || {};
+    if (!state.receipt) return;
+    if (event.type === "assistant_done") {
+      const content = String(event.message?.content || "").trim();
+      finishTurn("done", content.slice(0, 280) || "Assistant turn completed");
+      return;
+    }
+    if (event.type === "error") {
+      finishTurn("error", String(event.code || event.message || "Generation failed"));
+      return;
+    }
+    if (event.type === "stopped") {
+      finishTurn("stopped", String(event.message?.content || "Generation stopped").slice(0, 280));
+    }
+  });
+
   window.addEventListener("koordynator:routing-event", (ev) => {
     const detail = ev.detail || {};
     if (!state.receipt) return;
     if (detail.text) event(String(detail.text), String(detail.kind || "info"));
     if (detail.phase) setPhase(String(detail.phase));
     saveReceipt(); render();
+  });
+
+  window.addEventListener("koordynator:execution-state", (ev) => {
+    const detail = ev.detail || {};
+    if (!state.receipt) return;
+    if (detail.active) {
+      if (state.receipt.phase !== "running") event("Backend analysis and execution started");
+      setPhase("running");
+      const running = state.receipt.agentStates?.find((agent) => agent.state === "running");
+      if (!running && state.receipt.agentStates?.[0]) state.receipt.agentStates[0].state = "running";
+    }
+    saveReceipt();
+    render();
   });
 
   window.koordynatorRouterInspector = {

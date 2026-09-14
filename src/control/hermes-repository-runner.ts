@@ -91,7 +91,7 @@ export function vitestVerifyArgs(baseSha?: string): { command: string; args: str
   return { command: `npx ${args.join(" ")}`, args };
 }
 
-async function independentVerify(cwd: string, env: NodeJS.ProcessEnv, signal: AbortSignal, baseSha?: string): Promise<{
+export async function independentVerify(cwd: string, env: NodeJS.ProcessEnv, signal: AbortSignal, baseSha?: string): Promise<{
   verifier: "independent";
   command: string;
   exitCode: number;

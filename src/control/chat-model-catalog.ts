@@ -1,3 +1,5 @@
+import { buildModelFamilies } from "./model-family-router.js";
+
 export type ChatModelBillingSource =
   | "FREE_REQUESTED"
   | "FREE_CONFIRMED"
@@ -23,9 +25,20 @@ export type ChatModelEntry = ChatModelRoute & {
   supportsVision?: boolean;
 };
 
+export type ChatModelCatalogFamily = {
+  id: string;
+  key: string;
+  label: string;
+  family: string;
+  billingSource: ChatModelBillingSource;
+  providers: string[];
+  candidates: string[];
+};
+
 export type ChatModelCatalog = {
   models: string[];
   entries?: ChatModelEntry[];
+  families?: ChatModelCatalogFamily[];
   source: "OMNIROUTE";
   checkedAt: string;
   billing?: {
@@ -45,11 +58,56 @@ export type ChatModelCatalogOptions = {
   apiKeyEnv?: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  cacheTtlMs?: number;
   now?: () => string;
 };
 
 export interface ChatModelCatalogPort {
   list(): Promise<ChatModelCatalog>;
+}
+
+/**
+ * Browser picker payload: one row per model family, not tens of thousands of
+ * concrete provider routes. Concrete ids stay on `candidates` so the chat
+ * backend can substitute a free route for the same model on another provider.
+ */
+export function toPickerCatalog(catalog: ChatModelCatalog): ChatModelCatalog {
+  const families = catalog.families ?? [];
+  if (families.length === 0) return catalog;
+  const familyEntries: ChatModelEntry[] = families.map((family) => ({
+    id: family.id,
+    name: family.label,
+    provider: family.providers[0] ?? "omniroute",
+    family: family.family,
+    transport: family.billingSource === "SUBSCRIPTION_HARNESS" || family.billingSource === "FREE_OAUTH"
+      ? "OMNIROUTE_OAUTH"
+      : "OMNIROUTE_API",
+    subscriptionHarnessUsed: family.billingSource === "SUBSCRIPTION_HARNESS",
+    billingSource: family.billingSource
+  }));
+  const modelSources = Object.fromEntries(families.map((family) => [family.id, family.billingSource]));
+  const modelRoutes = Object.fromEntries(familyEntries.map((entry) => [entry.id, {
+    provider: entry.provider,
+    family: entry.family,
+    transport: entry.transport,
+    subscriptionHarnessUsed: entry.subscriptionHarnessUsed,
+    billingSource: entry.billingSource
+  }]));
+  return {
+    ...catalog,
+    models: families.map((family) => family.id),
+    entries: familyEntries,
+    families,
+    ...(catalog.billing
+      ? {
+          billing: {
+            ...catalog.billing,
+            modelSources,
+            modelRoutes
+          }
+        }
+      : {})
+  };
 }
 
 export class ChatModelCatalogError extends Error {
@@ -81,10 +139,34 @@ const ROUTE_PREFIXES: Record<string, { provider: string; family: string; source:
   qoder: { provider: "qoder", family: "QODER", source: "FREE_OAUTH" },
   qw: { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" },
   "qwen-oauth": { provider: "qwen-oauth", family: "QWEN", source: "FREE_OAUTH" },
+  kmc: { provider: "kimi-coding", family: "MOONSHOT / KIMI", source: "SUBSCRIPTION_HARNESS" },
+  cu: { provider: "cursor", family: "CURSOR", source: "SUBSCRIPTION_HARNESS" },
+  kc: { provider: "kilocode", family: "KILO CODE", source: "SUBSCRIPTION_HARNESS" },
+  kilocode: { provider: "kilocode", family: "KILO CODE", source: "SUBSCRIPTION_HARNESS" },
+  cl: { provider: "cline", family: "CLINE", source: "SUBSCRIPTION_HARNESS" },
+  cline: { provider: "cline", family: "CLINE", source: "SUBSCRIPTION_HARNESS" },
+  aq: { provider: "amazon-q", family: "AMAZON Q", source: "FREE_OAUTH" },
+  "amazon-q": { provider: "amazon-q", family: "AMAZON Q", source: "FREE_OAUTH" },
+  agy: { provider: "antigravity", family: "GOOGLE / ANTIGRAVITY", source: "FREE_OAUTH" },
+  antigravity: { provider: "antigravity", family: "GOOGLE / ANTIGRAVITY", source: "FREE_OAUTH" },
+  of: { provider: "openai-free", family: "OPENAI FREE", source: "FREE_OAUTH" },
   oc: { provider: "opencode-free", family: "OPENCODE FREE", source: "FREE_REQUESTED" },
+  opencode: { provider: "opencode-free", family: "OPENCODE FREE", source: "FREE_REQUESTED" },
   ddgw: { provider: "duckduckgo-free", family: "DUCKDUCKGO FREE", source: "FREE_REQUESTED" },
+  "duckduckgo-web": { provider: "duckduckgo-free", family: "DUCKDUCKGO FREE", source: "FREE_REQUESTED" },
   unc: { provider: "uncloseai-free", family: "UNCLOSEAI FREE", source: "FREE_REQUESTED" },
-  horde: { provider: "aihorde-free", family: "AI HORDE FREE", source: "FREE_REQUESTED" }
+  uncloseai: { provider: "uncloseai-free", family: "UNCLOSEAI FREE", source: "FREE_REQUESTED" },
+  horde: { provider: "aihorde-free", family: "AI HORDE FREE", source: "FREE_REQUESTED" },
+  aihorde: { provider: "aihorde-free", family: "AI HORDE FREE", source: "FREE_REQUESTED" },
+  aug: { provider: "auggie", family: "AUGGIE", source: "FREE_REQUESTED" },
+  auggie: { provider: "auggie", family: "AUGGIE", source: "FREE_REQUESTED" },
+  pepper: { provider: "chipotle", family: "CHIPOTLE", source: "FREE_REQUESTED" },
+  cfp: { provider: "cloudflare-playground", family: "CLOUDFLARE PLAYGROUND", source: "FREE_REQUESTED" },
+  cxa: { provider: "codex-app-server", family: "CODEX APP SERVER", source: "FREE_REQUESTED" },
+  dva: { provider: "devin-cli-agentic", family: "DEVIN CLI", source: "FREE_REQUESTED" },
+  felo: { provider: "felo-web", family: "FELO", source: "FREE_REQUESTED" },
+  tllm: { provider: "theoldllm", family: "THE OLD LLM", source: "FREE_REQUESTED" },
+  zc: { provider: "zcode", family: "ZCODE", source: "FREE_REQUESTED" }
 };
 
 const KNOWN_PROVIDER_ALIASES: Record<string, string[]> = {
@@ -117,7 +199,10 @@ function gatewayRoot(endpoint: string): string {
 
 function catalogUrls(endpoint: string): string[] {
   const normalized = normalizeEndpoint(endpoint);
-  const urls = [`${normalized}/models`];
+  const root = gatewayRoot(normalized);
+  // Prefer the compact installed-model list. `/v1/models` is the OpenAI dump of
+  // every imported id and times out once the catalog grows past tens of thousands.
+  const urls = [`${root}/api/models`, `${normalized}/models`];
   if (normalized.endsWith("/v1") && !normalized.endsWith("/api/v1")) urls.push(`${normalized.slice(0, -3)}/api/v1/models`);
   else if (normalized.endsWith("/api/v1")) urls.push(`${normalized.slice(0, -7)}/v1/models`);
   return [...new Set(urls)];
@@ -133,7 +218,7 @@ function modelId(value: unknown): string | null {
     return MODEL_RE.test(id) && !id.toLowerCase().includes("deepseek") ? id : null;
   }
   if (!isObject(value)) return null;
-  for (const key of ["id", "modelId", "model"]) {
+  for (const key of ["fullModel", "id", "modelId", "model"]) {
     const id = modelId(value[key]);
     if (id) return id;
   }
@@ -450,14 +535,20 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
   private readonly apiKeyEnv: string;
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
+  private readonly cacheTtlMs: number;
   private readonly now: () => string;
+  private cached?: { catalog: ChatModelCatalog; expiresAt: number };
+  private inflight?: Promise<ChatModelCatalog>;
 
   constructor(options: ChatModelCatalogOptions = {}) {
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? 5000;
+    // A fully imported gateway catalog is tens of thousands of models; 5s is not
+    // enough to read and enrich it, and a timeout leaves the picker empty.
+    this.timeoutMs = options.timeoutMs ?? 120_000;
+    this.cacheTtlMs = options.cacheTtlMs ?? 300_000;
     this.now = options.now ?? (() => new Date().toISOString());
   }
 
@@ -480,7 +571,9 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
 
   private async optionalJson(url: string, key: string): Promise<unknown | undefined> {
     try {
-      const response = await this.fetchImpl(url, { method: "GET", headers: this.headers(key), signal: AbortSignal.timeout(this.timeoutMs) });
+      // Enrichment must not stall the picker: `/api/models/catalog` and similar
+      // dump endpoints time out once tens of thousands of ids are imported.
+      const response = await this.fetchImpl(url, { method: "GET", headers: this.headers(key), signal: AbortSignal.timeout(Math.min(this.timeoutMs, 3000)) });
       if (!response.ok) return undefined;
       const contentType = response.headers.get("content-type") ?? "";
       if (!contentType.toLowerCase().includes("json")) return undefined;
@@ -504,12 +597,33 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
   }
 
   async list(): Promise<ChatModelCatalog> {
+    const cached = this.cached;
+    if (cached && Date.now() < cached.expiresAt) return cached.catalog;
+    // Reading a 60k-model gateway catalog takes seconds; without coalescing, every
+    // page load would start its own full enrichment pass.
+    if (this.inflight) return this.inflight;
+    const pending = this.fetchCatalog()
+      .then((catalog) => {
+        this.cached = { catalog, expiresAt: Date.now() + this.cacheTtlMs };
+        return catalog;
+      })
+      .finally(() => {
+        if (this.inflight === pending) delete this.inflight;
+      });
+    this.inflight = pending;
+    return pending;
+  }
+
+  private async fetchCatalog(): Promise<ChatModelCatalog> {
     const key = this.credential();
     if (!key) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
 
     const urls = catalogUrls(this.endpoint);
     let response = await this.readCatalog(urls[0]!, key);
-    if ((response.status === 404 || response.status === 405) && urls[1]) response = await this.readCatalog(urls[1], key);
+    for (const url of urls.slice(1)) {
+      if (response.status !== 404 && response.status !== 405) break;
+      response = await this.readCatalog(url, key);
+    }
     if (response.status === 401 || response.status === 403) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
     if (response.status === 429) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_RATE_LIMITED", 429);
     if (!response.ok) throw new ChatModelCatalogError(`CHAT_MODEL_CATALOG_UPSTREAM_${response.status}`, 502);
@@ -562,10 +676,20 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     } satisfies ChatModelRoute]));
     const harnessAvailable = entries.some((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS");
     const budget = budgetFrom(budgetPayload);
+    const families = buildModelFamilies(entries).map((family) => ({
+      id: family.id,
+      key: family.key,
+      label: family.label,
+      family: family.family,
+      billingSource: family.billingSource,
+      providers: family.providers,
+      candidates: family.candidates.map((candidate) => candidate.id)
+    } satisfies ChatModelCatalogFamily));
 
     return {
       models,
       entries,
+      families,
       source: "OMNIROUTE",
       checkedAt: this.now(),
       billing: {

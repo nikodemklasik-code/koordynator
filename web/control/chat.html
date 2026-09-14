@@ -4,217 +4,670 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="color-scheme" content="dark" />
+
   <title>Koordynator · Live Workspace</title>
-  <link rel="stylesheet" href="/styles.css" />
-  <link rel="stylesheet" href="/control-ui.css" />
+
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/chat-usage.css" />
   <link rel="stylesheet" href="/xterm.css" />
-  <link rel="stylesheet" href="/chat-v5.css?v=5" />
-  <link rel="stylesheet" href="/chat-router.css?v=1" />
+  <link rel="stylesheet" href="/chat-v5.css?v=19" />
+  <link rel="stylesheet" href="/chat-router.css?v=4" />
 </head>
+
 <body class="workspace-v5">
-  <div class="v5-shell">
-    <aside class="v5-rail" aria-label="Primary navigation">
-      <a class="v5-logo" href="/" title="Koordynator Control" aria-label="Koordynator Control">◇</a>
-      <nav class="v5-nav">
-        <a class="v5-nav-item" href="/" title="Tasks" aria-label="Tasks"><span>☷</span></a>
-        <a class="v5-nav-item active" href="/chat" title="Live Chat" aria-label="Live Chat" aria-current="page"><span>◉</span></a>
-        <a class="v5-nav-item" href="/providers" title="Providers" aria-label="Providers"><span>⬡</span></a>
-        <a class="v5-nav-item" href="/releases" title="Releases" aria-label="Releases"><span>◫</span></a>
-      </nav>
-      <div class="v5-rail-foot">
-        <span id="versionLabel">V5 · app v0.4.0</span>
-        <span id="sidebarEnv" class="visually-hidden">LOCAL</span>
+  <main class="app-shell">
+
+    <!-- TOP HEADER -->
+    <header class="topbar">
+      <div class="brand">
+        <a class="brand-home" href="/" title="Open Tasks" aria-label="Open Tasks">
+          <div class="brand-mark">◇</div>
+          <div class="brand-copy">
+            <strong>KOORDYNATOR</strong>
+            <small>LIVE WORKSPACE</small>
+          </div>
+        </a>
       </div>
-    </aside>
 
-    <main class="v5-main">
-      <header class="v5-topbar">
-        <div class="v5-brand-block">
-          <div class="v5-brand-title">KOORDYNATOR</div>
-          <div class="v5-brand-subtitle">LIVE WORKSPACE</div>
-        </div>
+      <div class="route-summary">
+        <span class="route-caption">PRIMARY</span>
+        <strong id="primaryRouteLabel">resolving…</strong>
+        <span id="fallbackRoutesLabel">fallbacks resolving…</span>
+      </div>
 
-        <div class="v5-route-summary" aria-label="Routing summary">
-          <span class="v5-route-kicker">PRIMARY</span>
-          <strong id="primaryRouteLabel">resolving…</strong>
-          <span class="v5-fallbacks" id="fallbackRoutesLabel">fallbacks resolving…</span>
-        </div>
+      <div class="topbar-state">
+        <span class="online-dot"></span>
+        <span id="environmentLabel">LOCAL</span>
+        <span id="operatorLabel">operator@koordynator.local</span>
+      </div>
+    </header>
 
-        <div class="v5-topbar-right">
-          <div class="v5-env" aria-label="Current environment"><span>ENV</span><strong id="environmentLabel">LOCAL</strong></div>
-          <div class="v5-operator"><span class="v5-online-dot" aria-hidden="true"></span><span id="operatorLabel">operator@koordynator.local</span></div>
-        </div>
-      </header>
+    <!-- TOOLBAR -->
+    <section class="toolbar">
+      <nav class="workspace-nav" aria-label="Application screens">
+        <a href="/">Tasks</a>
+        <a href="/chat" aria-current="page">Chat</a>
+        <a href="/providers">Providers</a>
+        <a href="/releases">Readiness</a>
+      </nav>
+      <div class="toolbar-group v5-toolbar-left">
+        <button
+          id="historyButton"
+          class="toolbar-button v5-action"
+          type="button"
+          aria-haspopup="dialog"
+          aria-controls="historyPanel"
+        >
+          History
+        </button>
 
-      <section class="v5-toolbar" aria-label="Workspace actions">
-        <div class="v5-toolbar-left">
-          <button class="v5-action" id="historyButton" type="button" aria-haspopup="dialog" aria-controls="historyPanel">History</button>
-          <button class="v5-action primary" id="newChatButton" type="button">New chat</button>
-          <button class="v5-action" id="stageZeroButton" type="button" title="Etap 0: Harmonia czyta tę rozmowę, Mózg spisuje mapę">Etap 0</button>
-          <button class="v5-action" id="muteHermesButton" type="button" title="Hide or show Hermes PTY">Hide terminal</button>
-        </div>
-        <div class="v5-toolbar-right">
-          <button class="v5-icon-button" id="popoutChatButton" type="button" title="Open another chat window" aria-label="Pop out chat">↗</button>
-          <details class="v5-more">
-            <summary aria-label="More actions">•••</summary>
-            <div class="v5-more-menu">
-              <button id="exportMdButton" type="button">Export Markdown</button>
-              <button id="exportPdfButton" type="button">Export PDF</button>
-              <button id="exportZipButton" type="button">Export ZIP</button>
-            </div>
-          </details>
-        </div>
-      </section>
+        <button
+          id="newChatButton"
+          class="toolbar-button v5-action"
+          type="button"
+        >
+          New chat
+        </button>
 
-      <section class="v5-workspace" id="chatWorkspace">
-        <section class="v5-chat-pane chat-frame" id="chatFrame" aria-label="Live conversation">
-          <div class="chat-drop-overlay" id="chatDropOverlay" aria-hidden="true"><strong>Drop files or a GitHub repo link here</strong></div>
+        <button
+          id="createDocumentButton"
+          class="toolbar-button v5-action"
+          type="button"
+          title="Select AI responses and attachments, then create PDF, DOCX or ZIP"
+        >
+          Create document
+        </button>
 
-          <div class="v5-routebar chat-connection-bar chat-usage-bar">
-            <div class="v5-connection connection-state">
-              <span class="chat-status-dot" id="statusDot"></span>
-              <strong id="statusText">Connecting</strong>
-            </div>
-            <span class="billing-badge checking" id="billingBadge" title="Billing route">ROUTE</span>
-            <span class="usage-24h" id="usage24h" title="24h token provenance">USED 24H</span>
-            <button class="github-chat-button v5-github" id="githubChatButton" type="button" aria-label="GitHub repository connection" title="GitHub checking…">
-              <span class="github-chat-dot checking" id="githubChatDot"></span>
-              <span class="v5-github-mark" aria-hidden="true">GH</span>
-              <span id="githubChatLabel">GitHub checking…</span>
+        <button
+          id="stageZeroButton"
+          class="toolbar-button v5-action"
+          type="button"
+        >
+          Etap 0
+        </button>
+
+        <button
+          id="muteHermesButton"
+          class="toolbar-button v5-action"
+          type="button"
+        >
+          Hide terminal
+        </button>
+        <button
+          id="popoutChatButton"
+          class="toolbar-button v5-action"
+          type="button"
+          title="Open workspace in another window"
+        >
+          Pop-out
+        </button>
+
+        <details class="more-menu">
+          <summary>•••</summary>
+
+          <div class="more-menu-content">
+            <button id="exportMdButton" type="button">
+              Export Markdown
             </button>
-            <code id="sessionLabel" class="session-id" title="Session">…</code>
-          </div>
 
-          <div class="chat-thread v5-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
-            <div class="chat-welcome v5-welcome" id="chatWelcome">
-              <div class="v5-welcome-mark">◇</div>
-              <h2>Start working</h2>
-              <p>Chat, files, repository access and execution share one workspace. The active route is shown above and the terminal stays visible beside the conversation.</p>
-              <div class="v5-welcome-grid">
-                <span>Drop files anywhere in chat</span>
-                <span>Paste a GitHub repository link</span>
-                <span>Use Etap 0 for Harmonia reading</span>
-                <span>Hermes PTY remains independent</span>
-              </div>
+            <button id="exportPdfButton" type="button">
+              Export PDF
+            </button>
+
+            <button id="exportZipButton" type="button">
+              Export ZIP
+            </button>
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- MAIN WORKSPACE -->
+    <section id="chatWorkspace" class="workspace">
+
+      <!-- CHAT -->
+      <section
+        id="chatFrame"
+        class="chat-pane chat-frame"
+        aria-label="Live conversation"
+      >
+        <div
+          id="chatDropOverlay"
+          class="chat-drop-overlay"
+          aria-hidden="true"
+        >
+          <strong>Drop files here</strong>
+        </div>
+
+        <!-- CHAT HEADER -->
+        <header class="pane-header chat-pane-header">
+          <div class="pane-title">
+            <span id="statusDot" class="chat-status-dot"></span>
+
+            <div>
+              <strong>Chat</strong>
+              <small id="statusText">Connecting</small>
             </div>
           </div>
 
-          <div class="v5-composer-zone composer-wrap">
-            <div class="composer v5-composer" id="composer">
-              <input id="fileInput" class="visually-hidden-file" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip" aria-label="Attach files" />
-              <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
-              <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message" title="Attach files with +. ZIP, PDF, TXT, DOCX, XLSX and PPTX are recognised; images require a vision-capable model."></textarea>
-              <div class="composer-actions v5-composer-actions">
-                <label class="model-picker composer-model v5-model-picker">
-                  <span class="visually-hidden">AI model</span>
-                  <select id="modelSelect" aria-label="AI model"><option value="" selected>Loading…</option></select>
-                </label>
-                <button class="attach-button v5-attach" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
-                <button class="stop-button hidden v5-stop" id="stopButton" type="button" aria-label="Stop generation">■</button>
-                <button class="send-button v5-send" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
-              </div>
-            </div>
-            <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
-            <div class="github-chat-notice hidden" id="githubChatNotice" role="status" aria-live="polite"></div>
-            <div class="stage-zero-notice hidden" id="stageZeroNotice" role="status" aria-live="polite"></div>
-            <div class="composer-note v5-route-note">Models that cannot execute under the active billing policy are not shown.</div>
+          <div id="executionActivity" class="execution-activity" role="status" aria-live="polite" aria-hidden="true">
+            <span class="execution-spinner" aria-hidden="true"></span>
+            <span id="executionActivityText">ANALYZING</span>
           </div>
-        </section>
 
-        <div class="v5-splitter" id="workspaceSplitter" role="separator" aria-orientation="vertical" aria-label="Resize Hermes terminal" tabindex="0"></div>
+          <div class="chat-meta">
+            <span
+              id="billingBadge"
+              class="billing-badge checking"
+            >
+              ROUTE
+            </span>
 
-        <aside class="v5-terminal-pane hermes-pane" id="hermesPane" aria-label="Hermes terminal">
-          <header class="v5-terminal-head hermes-pane-head">
-            <div class="v5-terminal-title">
-              <span class="chat-status-dot" id="hermesHeadDot"></span>
-              <div><strong id="hermesPaneTitle">Hermes PTY</strong><small>local execution terminal</small></div>
-            </div>
-            <span class="hermes-state" id="hermesState">OFF</span>
-            <div class="v5-terminal-actions hermes-pane-actions">
-              <button class="v5-mini-button" id="startHermesButton" type="button">Start</button>
-              <button class="v5-mini-button" id="stopHermesButton" type="button">Stop</button>
-            </div>
-          </header>
-          <div class="hermes-term v5-terminal" id="hermesTerm" tabindex="0" aria-label="Hermes terminal"></div>
-          <div class="hermes-composer v5-terminal-composer">
-            <textarea id="hermesInput" rows="1" maxlength="8000" placeholder="Send command or message to Hermes…" aria-label="Hermes message"></textarea>
-            <button class="send-button v5-terminal-send" id="sendHermesButton" type="button" aria-label="Send to Hermes">↑</button>
+            <span
+              id="usage24h"
+              class="usage-24h"
+            >
+              USED 24H
+            </span>
+
+            <button
+              id="githubChatButton"
+              class="github-chat-button"
+              type="button"
+            >
+              <span
+                id="githubChatDot"
+                class="github-chat-dot checking"
+              ></span>
+
+              <span>GH</span>
+              <span id="githubChatLabel">GitHub</span>
+            </button>
+
+            <code id="sessionLabel" class="session-id">
+              …
+            </code>
           </div>
-          <p class="hermes-hint hidden" id="hermesHint" role="status"></p>
-        </aside>
+        </header>
+
+        <!-- CHAT THREAD -->
+        <div
+          id="chatThread"
+          class="chat-thread"
+          aria-live="polite"
+          aria-relevant="additions text"
+        >
+          <div id="chatWelcome" class="chat-welcome">
+            <div class="welcome-logo">◇</div>
+
+            <h1>Koordynator</h1>
+
+            <p>
+              Chat, files, repository access and Hermes execution
+              in one workspace.
+            </p>
+          </div>
+        </div>
+
+        <!-- CHAT COMPOSER -->
+        <footer class="composer-zone">
+          <div id="composer" class="composer">
+
+            <input
+              id="fileInput"
+              class="visually-hidden-file"
+              type="file"
+              multiple
+              accept="
+                image/png,
+                image/jpeg,
+                image/webp,
+                image/gif,
+                application/pdf,
+                text/plain,
+                text/markdown,
+                text/csv,
+                application/json,
+                application/xml,
+                text/xml,
+                .txt,
+                .md,
+                .csv,
+                .json,
+                .xml,
+                .yml,
+                .yaml,
+                .toml,
+                .ini,
+                .cfg,
+                .env,
+                .log,
+                .ts,
+                .tsx,
+                .js,
+                .jsx,
+                .mjs,
+                .cjs,
+                .py,
+                .rb,
+                .go,
+                .rs,
+                .java,
+                .kt,
+                .swift,
+                .php,
+                .sql,
+                .html,
+                .css,
+                .scss,
+                .sh,
+                .bash,
+                .zsh,
+                .doc,
+                .docx,
+                .xls,
+                .xlsx,
+                .ppt,
+                .pptx,
+                .zip
+              "
+            />
+
+            <div
+              id="attachmentTray"
+              class="attachment-tray hidden"
+            ></div>
+
+            <textarea
+              id="messageInput"
+              rows="1"
+              maxlength="32768"
+              placeholder="Message Koordynator…"
+              aria-label="Message"
+            ></textarea>
+
+            <div class="composer-controls v5-composer-actions">
+
+              <label class="model-picker v5-model-picker">
+                <select
+                  id="modelSelect"
+                  aria-label="AI model"
+                >
+                  <option value="">
+                    Loading…
+                  </option>
+                </select>
+              </label>
+
+              <button
+                id="attachButton"
+                class="composer-button"
+                type="button"
+                title="Attach files"
+              >
+                ＋
+              </button>
+
+              <button
+                id="stopButton"
+                class="composer-button hidden"
+                type="button"
+              >
+                ■
+              </button>
+
+              <button
+                id="sendButton"
+                class="send-button"
+                type="button"
+                disabled
+              >
+                ↑
+              </button>
+            </div>
+          </div>
+
+          <div
+            id="attachmentError"
+            class="attachment-error hidden"
+            role="alert"
+          ></div>
+
+          <div
+            id="githubChatNotice"
+            class="github-chat-notice hidden"
+          ></div>
+
+          <div
+            id="stageZeroNotice"
+            class="stage-zero-notice hidden"
+          ></div>
+
+          <button
+            id="approveDeliveryButton"
+            class="stage-zero-approve hidden"
+            type="button"
+          >
+            Zatwierdź zakres
+          </button>
+
+          <button
+            id="runDeliveryButton"
+            class="stage-zero-approve hidden"
+            type="button"
+          >
+            Uruchom zadanie
+          </button>
+
+          <div class="composer-note">
+            Models that cannot execute under the active billing policy are not shown.
+          </div>
+        </footer>
       </section>
 
-      <footer class="v5-statusbar chat-statusbar">
-        <div class="ci-status"><span class="status-ring" id="ciRing">✓</span> CI <span class="status-badge neutral" id="ciStatus">UNKNOWN</span></div>
-        <div class="v5-runtime-meta runtime-meta"><span id="regionLabel">local</span><span>•</span><span id="zoneLabel">local</span><span>•</span><span class="connection-dot"></span><span id="footerConnection">CONNECTING</span></div>
-      </footer>
-    </main>
-  </div>
+      <!-- SPLITTER -->
+      <div
+        id="workspaceSplitter"
+        class="workspace-splitter"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize Hermes terminal"
+        tabindex="0"
+      >
+        <div class="splitter-grip"></div>
+      </div>
 
-  <div class="history-backdrop hidden" id="historyBackdrop"></div>
-  <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
-    <div class="history-head">
-      <div><div class="chat-kicker">PERSISTENT SESSIONS</div><h2 id="historyTitle">Chat history</h2></div>
-      <button class="history-close" id="historyCloseButton" type="button" aria-label="Close chat history">×</button>
-    </div>
+      <!-- HERMES -->
+      <aside
+        id="hermesPane"
+        class="terminal-pane hermes-pane"
+        aria-label="Hermes terminal"
+      >
+        <header class="pane-header terminal-header">
+          <div class="pane-title">
+            <span
+              id="hermesHeadDot"
+              class="chat-status-dot"
+            ></span>
+
+            <div>
+              <strong id="hermesPaneTitle">
+                Hermes PTY
+              </strong>
+
+              <small>
+                local execution terminal
+              </small>
+            </div>
+          </div>
+
+          <div class="terminal-actions">
+            <span
+              id="hermesState"
+              class="hermes-state"
+            >
+              OFF
+            </span>
+
+            <button
+              id="startHermesButton"
+              type="button"
+            >
+              Start
+            </button>
+
+            <button
+              id="stopHermesButton"
+              type="button"
+            >
+              Stop
+            </button>
+          </div>
+        </header>
+
+        <div
+          id="hermesTerm"
+          class="hermes-term"
+          tabindex="0"
+          aria-label="Hermes terminal"
+        ></div>
+
+        <footer class="terminal-composer">
+          <textarea
+            id="hermesInput"
+            rows="1"
+            maxlength="8000"
+            placeholder="Send command or message to Hermes…"
+          ></textarea>
+
+          <button
+            id="sendHermesButton"
+            class="send-button terminal-send"
+            type="button"
+          >
+            ↑
+          </button>
+        </footer>
+
+        <p
+          id="hermesHint"
+          class="hermes-hint hidden"
+          role="status"
+        ></p>
+      </aside>
+    </section>
+
+    <!-- STATUS BAR -->
+    <footer class="statusbar">
+      <div>
+        <span id="ciRing">●</span>
+        CI
+        <span id="ciStatus">UNKNOWN</span>
+      </div>
+
+      <div class="statusbar-right">
+        <span id="regionLabel">local</span>
+        <span>•</span>
+        <span id="zoneLabel">local</span>
+        <span>•</span>
+        <span id="footerConnection">
+          CONNECTING
+        </span>
+      </div>
+    </footer>
+  </main>
+
+  <!-- HISTORY -->
+  <div
+    id="historyBackdrop"
+    class="history-backdrop hidden"
+  ></div>
+
+  <aside
+    id="historyPanel"
+    class="history-panel"
+    role="dialog"
+    aria-hidden="true"
+  >
+    <header class="history-head">
+      <div>
+        <small>PERSISTENT SESSIONS</small>
+        <h2 id="historyTitle">
+          Chat history
+        </h2>
+      </div>
+
+      <button
+        id="historyCloseButton"
+        type="button"
+      >
+        ×
+      </button>
+    </header>
+
     <div class="history-toolbar">
-      <button class="secondary-button history-new-button" id="historyNewChatButton" type="button">＋ New chat</button>
-      <button class="history-refresh" id="historyRefreshButton" type="button" aria-label="Refresh chat history" title="Refresh">↻</button>
+      <button
+        id="historyNewChatButton"
+        type="button"
+      >
+        ＋ New chat
+      </button>
+
+      <button
+        id="historyRefreshButton"
+        type="button"
+      >
+        ↻
+      </button>
     </div>
-    <div class="history-list" id="historyList" aria-live="polite"></div>
-    <div class="history-empty hidden" id="historyEmpty">No previous conversations yet.</div>
+
+    <div
+      id="historyList"
+      class="history-list"
+    ></div>
+
+    <div
+      id="historyEmpty"
+      class="history-empty hidden"
+    >
+      No previous conversations yet.
+    </div>
   </aside>
 
-  <dialog class="github-chat-consent-dialog stage-zero-dialog" id="stageZeroDialog" aria-labelledby="stageZeroTitle">
+  <!-- ETAP 0 -->
+  <dialog
+    id="stageZeroDialog"
+    class="app-dialog"
+  >
     <form method="dialog">
       <header>
-        <div><div class="chat-kicker">ETAP 0</div><strong id="stageZeroTitle">Wybierz zakres rozmowy</strong></div>
-        <button value="cancel" aria-label="Zamknij wybór zakresu">×</button>
+        <div>
+          <small>ETAP 0</small>
+          <strong id="stageZeroTitle">
+            Wybierz zakres rozmowy
+          </strong>
+        </div>
+
+        <button value="cancel">
+          ×
+        </button>
       </header>
-      <p>Kliknij pierwszą, a następnie ostatnią wiadomość zakresu. Załączniki z wybranych wiadomości również trafią do analizy.</p>
-      <div class="stage-zero-range-toolbar">
-        <button type="button" id="stageZeroAllButton">Cała rozmowa</button>
-        <span id="stageZeroScopePreview" role="status" aria-live="polite"></span>
+
+      <p>
+        Wybierz zakres wiadomości przekazywany
+        do analizy.
+      </p>
+
+      <div class="dialog-toolbar">
+        <button
+          id="stageZeroAllButton"
+          type="button"
+        >
+          Cała rozmowa
+        </button>
+
+        <span id="stageZeroScopePreview"></span>
       </div>
-      <input type="hidden" id="stageZeroFrom" value="0" />
-      <input type="hidden" id="stageZeroTo" value="0" />
-      <ol class="stage-zero-range-list" id="stageZeroRangeList" aria-label="Wiadomości do analizy"></ol>
+
+      <input
+        id="stageZeroFrom"
+        type="hidden"
+        value="0"
+      />
+
+      <input
+        id="stageZeroTo"
+        type="hidden"
+        value="0"
+      />
+
+      <ol
+        id="stageZeroRangeList"
+        class="stage-zero-range-list"
+      ></ol>
+
       <footer>
-        <button value="cancel">Anuluj</button>
-        <button type="button" class="github-chat-approve" id="stageZeroRunButton">Uruchom Etap 0</button>
+        <button value="cancel">
+          Anuluj
+        </button>
+
+        <button
+          id="stageZeroRunButton"
+          type="button"
+          class="primary"
+        >
+          Uruchom Etap 0
+        </button>
       </footer>
     </form>
   </dialog>
 
-  <dialog class="github-chat-consent-dialog" id="githubChatConsentDialog">
+  <!-- GITHUB CONSENT -->
+  <dialog
+    id="githubChatConsentDialog"
+    class="app-dialog"
+  >
     <form method="dialog">
       <header>
-        <div><div class="chat-kicker">REPOSITORY ACCESS</div><strong>Allow GitHub connection?</strong></div>
-        <button value="cancel" aria-label="Close GitHub permission dialog">×</button>
+        <strong>
+          Allow GitHub connection?
+        </strong>
+
+        <button value="cancel">
+          ×
+        </button>
       </header>
-      <p>This message appears to require a GitHub repository. Koordynator first reuses a working local Git credential path when one already exists. If GitHub CLI authentication is required, the official browser sign-in starts only after your approval. Koordynator does not collect your GitHub password, browser cookies or token.</p>
-      <div class="github-chat-consent-points">
-        <span>✓ Existing local Git credentials are reused when repository access already works.</span>
-        <span>✓ No new GitHub CLI sign-in starts before approval.</span>
-        <span>✓ GitHub controls which account and repository permissions you grant.</span>
-      </div>
+
+      <p>
+        Koordynator może użyć istniejącego
+        lokalnego uwierzytelnienia GitHub.
+      </p>
+
       <footer>
-        <button value="cancel" id="githubChatConsentCancel">Cancel</button>
-        <button type="button" class="github-chat-approve" id="githubChatConsentApprove">Approve &amp; connect</button>
+        <button
+          id="githubChatConsentCancel"
+          value="cancel"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="githubChatConsentApprove"
+          type="button"
+          class="primary"
+        >
+          Approve & connect
+        </button>
       </footer>
     </form>
   </dialog>
 
+  <span
+    id="versionLabel"
+    class="hidden"
+  >
+    V6
+  </span>
+
+  <span
+    id="sidebarEnv"
+    class="hidden"
+  >
+    LOCAL
+  </span>
+
+  <!-- EXISTING APP LOGIC -->
   <script src="/xterm.js" defer></script>
   <script src="/xterm-addon-fit.js" defer></script>
-  <script src="/chat-models.js?v=5" defer></script>
-  <script src="/chat.js?v=5" defer></script>
-  <script src="/chat-history.js?v=5" defer></script>
-  <script src="/chat-github.js?v=5" defer></script>
-  <script src="/chat-usage.js?v=5" defer></script>
-  <script src="/chat-v5.js?v=5" defer></script>
-  <script src="/chat-router.js?v=1" defer></script>
+
+  <script src="/chat-models.js?v=14" defer></script>
+  <script src="/chat.js?v=14" defer></script>
+  <script src="/chat-history.js?v=10" defer></script>
+  <script src="/chat-github.js?v=10" defer></script>
+  <script src="/chat-usage.js?v=10" defer></script>
+
+  <!-- LAYOUT LAST -->
+  <script src="/chat-v5.js?v=14" defer></script>
+  <script src="/chat-router.js?v=4" defer></script>
 </body>
 </html>

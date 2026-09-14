@@ -8,7 +8,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { BrainError, BrainRoadmapWriter, type Roadmap } from "./brain-roadmap.js";
 import type { ChatAttachment, ChatSession } from "./chat-service.js";
-import { ChatService, ChatServiceError } from "./chat-service.js";
+import { ChatService, ChatServiceError, looksLikeToolDump } from "./chat-service.js";
+import { FAMILY_PREFIX } from "./model-family-router.js";
 import { HarmoniaCognition, HarmoniaError, type HarmoniaReading } from "./harmonia-cognition.js";
 
 export type StageZeroRun = {
@@ -46,6 +47,8 @@ export type StageZeroOptions = {
   fetchImpl?: typeof fetch;
   authorizeModel?: (model: string) => Promise<boolean>;
   timeoutMs?: number;
+  /** Expand a `family/*` session model into concrete gateway routes before Harmonia reads. */
+  familyCandidates?: (model: string) => string[] | Promise<string[]>;
 };
 
 function attachmentText(attachments: ChatAttachment[] | undefined): string {
@@ -69,6 +72,7 @@ export function sessionToProject(session: ChatSession, range?: StageZeroRange): 
   session.messages.forEach((message, index) => {
     if (range && (index < range.fromIndex || index > range.toIndex)) return;
     if (message.state === "error" || message.state === "streaming") return;
+    if (message.role === "assistant" && looksLikeToolDump(message.content)) return;
     const role = message.role === "user" ? "Użytkownik" : "Koordynator";
     const body = [message.content.trim(), attachmentText(message.attachments)].filter(Boolean).join("\n\n");
     if (!body) return;
@@ -137,7 +141,10 @@ export class StageZeroService {
     const project = sessionToProject(session, range);
     if (!project) throw new StageZeroError("STAGE_ZERO_NEEDS_INPUT", 400);
 
-    const sessionModel = session.model;
+    const sessionRoutes = session.model.startsWith(FAMILY_PREFIX)
+      ? await this.options.familyCandidates?.(session.model) ?? []
+      : [session.model];
+    const sessionModel = sessionRoutes[0] ?? session.model;
     const shared = {
       ...(this.options.endpoint === undefined ? {} : { endpoint: this.options.endpoint }),
       ...(this.options.apiKey === undefined ? {} : { apiKey: this.options.apiKey }),
@@ -150,8 +157,8 @@ export class StageZeroService {
     const harmoniaModel = this.options.harmoniaModel?.trim() || sessionModel;
     const fallbackModels = [
       ...(this.options.fallbackModels ?? []),
-      sessionModel
-    ].filter((model) => model.trim() && model !== harmoniaModel);
+      ...sessionRoutes
+    ].filter((model) => model.trim() && model !== harmoniaModel && !model.startsWith(FAMILY_PREFIX));
 
     for (const model of new Set([harmoniaModel, sessionModel])) {
       if (this.options.authorizeModel && !await this.options.authorizeModel(model)) throw new StageZeroError("FREE_ROUTE_DENIED", 403);

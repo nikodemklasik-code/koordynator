@@ -107,7 +107,11 @@ export function createSkillExecutor(stateDir: string, projectRoot = process.cwd(
     await writeFile(manifestPath, `${JSON.stringify({ task, conversation: run.context, attachments: materialized }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
 
     run.emit("Skill routing: Hermes dynamic registry · discovering relevant skills…\n");
-    const launch = await prepareHermes({ endpoint: run.endpoint, apiKey: run.apiKey, model: run.model }, workspace);
+    const launch = await prepareHermes(
+      { endpoint: run.endpoint, apiKey: run.apiKey, model: run.model },
+      workspace,
+      { ...process.env, KOORDYNATOR_HERMES_HOME: join(job, "hermes-home") }
+    );
     try {
       const prompt = [
         "You are executing a Koordynator Live Chat task. The user did NOT address the PTY directly; your final result will be streamed back into the normal chat transcript.",

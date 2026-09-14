@@ -1,74 +1,111 @@
 (() => {
-  const root = document.documentElement;
-  const splitter = document.getElementById("workspaceSplitter");
-  const workspace = document.getElementById("chatWorkspace");
-  const modelSelect = document.getElementById("modelSelect");
-  const primaryLabel = document.getElementById("primaryRouteLabel");
-  const fallbackLabel = document.getElementById("fallbackRoutesLabel");
-  const STORAGE_WIDTH = "koordynator.liveChat.v5.terminalWidth.runtime2";
-  const DEFAULT_WIDTH = 500;
-  const MIN_WIDTH = 380;
-  const MAX_WIDTH = 720;
-  let routeHealth = null;
+  "use strict";
 
-  root.dataset.workspace = "v5";
+  const root = document.documentElement;
+  const body = document.body;
+  const workspace = document.getElementById("chatWorkspace");
+  const splitter = document.getElementById("workspaceSplitter");
+  const hermesPane = document.getElementById("hermesPane");
+  const modelSelect = document.getElementById("modelSelect");
+  const primaryRouteLabel = document.getElementById("primaryRouteLabel");
+  const fallbackRoutesLabel = document.getElementById("fallbackRoutesLabel");
+  const footerConnection = document.getElementById("footerConnection");
+  const STORAGE_WIDTH = "koordynator.workspace.hermes.width.v6";
+  let routeHealth = null;
+  let dragging = false;
+  let applyingWidth = false;
+
+  root.dataset.workspace = "v6";
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
 
-  function availableWidth() {
-    const width = workspace?.clientWidth || window.innerWidth;
-    return Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.floor(width * 0.55)));
+  function workspaceWidth() {
+    return workspace?.getBoundingClientRect().width || window.innerWidth;
   }
 
-  function setTerminalWidth(value, persist = true) {
-    const width = clamp(Number(value) || DEFAULT_WIDTH, MIN_WIDTH, availableWidth());
-    root.style.setProperty("--terminal-width", `${width}px`);
+  function limits() {
+    const width = workspaceWidth();
+    const minTerminal = width < 760 ? 260 : 340;
+    const minChat = width < 760 ? 300 : 430;
+    const maxTerminal = Math.max(minTerminal, width - minChat);
+    return { minTerminal, maxTerminal };
+  }
+
+  function setTerminalWidth(requested, persist = true) {
+    if (!workspace || applyingWidth) return;
+    const width = workspaceWidth();
+    const { minTerminal, maxTerminal } = limits();
+    let value = Number(requested);
+    if (!Number.isFinite(value)) value = Math.round(width * 0.34);
+    value = clamp(value, minTerminal, maxTerminal);
+
+    applyingWidth = true;
+    root.style.setProperty("--terminal-width", `${value}px`);
+    applyingWidth = false;
+
     if (persist) {
-      try { localStorage.setItem(STORAGE_WIDTH, String(width)); } catch { /* storage unavailable */ }
+      try { localStorage.setItem(STORAGE_WIDTH, String(value)); } catch { /* storage unavailable */ }
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
     }
-    window.dispatchEvent(new Event("resize"));
   }
 
   function restoreTerminalWidth() {
-    let value = DEFAULT_WIDTH;
-    try { value = Number(localStorage.getItem(STORAGE_WIDTH)) || DEFAULT_WIDTH; } catch { /* storage unavailable */ }
-    setTerminalWidth(value, false);
+    let saved = 0;
+    try { saved = Number(localStorage.getItem(STORAGE_WIDTH)); } catch { /* ignore */ }
+    setTerminalWidth(saved || workspaceWidth() * 0.34, false);
   }
 
-  function beginResize(event) {
-    if (!splitter || window.innerWidth <= 900) return;
+  function pointerDown(event) {
+    if (!splitter) return;
+    if (event.button !== undefined && event.button !== 0) return;
     event.preventDefault();
+    dragging = true;
+    splitter.classList.add("dragging");
     splitter.setPointerCapture?.(event.pointerId);
     const startX = event.clientX;
-    const current = parseInt(getComputedStyle(root).getPropertyValue("--terminal-width"), 10) || DEFAULT_WIDTH;
+    const currentWidth = hermesPane?.getBoundingClientRect().width || workspaceWidth() * 0.34;
 
-    const move = (moveEvent) => {
-      const next = current + (startX - moveEvent.clientX);
-      setTerminalWidth(next);
-    };
-    const end = (endEvent) => {
-      splitter.releasePointerCapture?.(endEvent.pointerId);
-      splitter.removeEventListener("pointermove", move);
-      splitter.removeEventListener("pointerup", end);
-      splitter.removeEventListener("pointercancel", end);
+    function pointerMove(moveEvent) {
+      if (!dragging) return;
+      setTerminalWidth(currentWidth + (startX - moveEvent.clientX));
+    }
+
+    function pointerUp(upEvent) {
+      dragging = false;
+      splitter.classList.remove("dragging");
+      splitter.releasePointerCapture?.(upEvent.pointerId);
+      splitter.removeEventListener("pointermove", pointerMove);
+      splitter.removeEventListener("pointerup", pointerUp);
+      splitter.removeEventListener("pointercancel", pointerUp);
       window.dispatchEvent(new Event("resize"));
-    };
+    }
 
-    splitter.addEventListener("pointermove", move);
-    splitter.addEventListener("pointerup", end);
-    splitter.addEventListener("pointercancel", end);
+    splitter.addEventListener("pointermove", pointerMove);
+    splitter.addEventListener("pointerup", pointerUp);
+    splitter.addEventListener("pointercancel", pointerUp);
   }
 
-  splitter?.addEventListener("pointerdown", beginResize);
+  splitter?.addEventListener("pointerdown", pointerDown);
   splitter?.addEventListener("keydown", (event) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    const current = parseInt(getComputedStyle(root).getPropertyValue("--terminal-width"), 10) || DEFAULT_WIDTH;
+    const current = hermesPane?.getBoundingClientRect().width || workspaceWidth() * 0.34;
     setTerminalWidth(current + (event.key === "ArrowLeft" ? 24 : -24));
   });
-  window.addEventListener("resize", () => setTerminalWidth(parseInt(getComputedStyle(root).getPropertyValue("--terminal-width"), 10) || DEFAULT_WIDTH, false));
+
+  let resizeTimer = 0;
+  window.addEventListener("resize", () => {
+    if (dragging || applyingWidth) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (body.classList.contains("terminal-hidden") || body.classList.contains("chat-hermes-muted")) return;
+      const current = hermesPane?.getBoundingClientRect().width;
+      if (current) setTerminalWidth(current, false);
+    }, 80);
+  });
+
   restoreTerminalWidth();
 
   function isFreeNoAuth(model) {
@@ -85,21 +122,41 @@
       ? routeHealth.chatFallbackModels.filter((value) => typeof value === "string" && value)
       : [];
 
-    if (primaryLabel) {
-      primaryLabel.textContent = primary;
-      primaryLabel.title = isFreeNoAuth(primary) ? "Live-probed free/no-auth primary route" : "Configured primary route";
-      primaryLabel.dataset.free = isFreeNoAuth(primary) ? "true" : "false";
+    if (primaryRouteLabel) {
+      primaryRouteLabel.textContent = primary;
+      primaryRouteLabel.title = isFreeNoAuth(primary) ? "Live-probed free/no-auth primary route" : "Configured primary route";
+      primaryRouteLabel.dataset.free = isFreeNoAuth(primary) ? "true" : "false";
     }
-    if (fallbackLabel) {
-      fallbackLabel.textContent = fallbacks.length ? `fallback · ${fallbacks.join(" → ")}` : "no fallback routes";
-      fallbackLabel.title = fallbacks.join(" → ");
+    if (fallbackRoutesLabel) {
+      fallbackRoutesLabel.textContent = fallbacks.length ? `fallback · ${fallbacks.join(" → ")}` : "no fallback routes";
+      fallbackRoutesLabel.title = fallbacks.join(" → ");
+    }
+    if (footerConnection) footerConnection.textContent = "CONNECTED";
+  }
+
+  async function fetchJsonWithTimeout(url, timeout = 2500) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await fetch(url, {
+        headers: { accept: "application/json" },
+        signal: controller.signal
+      });
+      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
     }
   }
 
-  async function fetchHealth() {
-    const response = await fetch("/api/health", { headers: { accept: "application/json" } });
-    if (!response.ok) throw new Error(`HEALTH_HTTP_${response.status}`);
-    return response.json();
+  async function refreshHealth() {
+    try {
+      renderRouteSummary(await fetchJsonWithTimeout("/api/health"));
+    } catch {
+      if (primaryRouteLabel) primaryRouteLabel.textContent = "route unavailable";
+      if (fallbackRoutesLabel) fallbackRoutesLabel.textContent = "backend health unavailable";
+      if (footerConnection) footerConnection.textContent = "LOCAL UI";
+    }
   }
 
   async function ensureBackendPrimary() {
@@ -109,7 +166,7 @@
         window.koordynatorChatModelsReady || Promise.resolve(true),
         new Promise((resolve) => setTimeout(resolve, 5000))
       ]);
-      const health = await fetchHealth();
+      const health = await fetchJsonWithTimeout("/api/health");
       renderRouteSummary(health);
       const desired = typeof health.chatDefaultModel === "string" ? health.chatDefaultModel : "";
       if (!desired) return;
@@ -121,13 +178,14 @@
       }
       modelSelect.dataset.backendPrimary = desired;
     } catch {
-      if (primaryLabel) primaryLabel.textContent = "route unavailable";
-      if (fallbackLabel) fallbackLabel.textContent = "health unavailable";
+      if (primaryRouteLabel) primaryRouteLabel.textContent = "route unavailable";
+      if (fallbackRoutesLabel) fallbackRoutesLabel.textContent = "health unavailable";
     }
   }
 
   const MODEL_ROLES = [
     ["ALL", "All roles"],
+    ["PRODUCT_OWNER", "Product Owner"],
     ["DEVELOPER", "Developer"],
     ["RESEARCHER", "Researcher"],
     ["FRONTEND_DEVELOPER", "Frontend Developer"],
@@ -144,7 +202,7 @@
 
   function rolesForOption(option) {
     const text = `${option.value} ${option.textContent || ""}`.toLowerCase();
-    const roles = new Set(["GENERAL"]);
+    const roles = new Set(["GENERAL", "PRODUCT_OWNER"]);
     const coding = /(codex|gpt|claude|qwen|kimi|grok|gemini|coder|code|big-pickle|nemotron|mimo|ling|sonnet|opus)/.test(text);
     const reasoning = /(opus|sonnet|gpt-5|grok-4|gemini|reason|thinking|xhigh|high)/.test(text);
     const vision = /\bvision\b/.test(text);
@@ -161,33 +219,8 @@
     return roles;
   }
 
-  function ensureExplorerStyles() {
-    if (document.getElementById("v5ModelExplorerStyles")) return;
-    const style = document.createElement("style");
-    style.id = "v5ModelExplorerStyles";
-    style.textContent = `
-      .v5-model-explorer{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
-      .v5-model-search{width:190px;height:40px;padding:0 10px;border:1px solid #27333d;border-radius:9px;background:#0b1116;color:#d9e2e8;font-size:12px;outline:none}
-      .v5-model-search:focus{border-color:#44779a;box-shadow:0 0 0 3px rgba(77,139,181,.10)}
-      .v5-model-role{height:40px;max-width:150px;padding:0 8px;border:1px solid #27333d;border-radius:9px;background:#0b1116;color:#9fb0bb;font-size:11px;outline:none}
-      .v5-model-results{position:absolute;z-index:180;left:0;bottom:46px;width:min(620px,70vw);max-height:340px;overflow:auto;padding:6px;border:1px solid #2b3944;border-radius:12px;background:#090e13;box-shadow:0 24px 70px rgba(0,0,0,.62)}
-      .v5-model-results[hidden]{display:none}
-      .v5-model-result{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 9px;border:0;border-radius:8px;background:transparent;color:#dce5eb;text-align:left;cursor:pointer}
-      .v5-model-result:hover,.v5-model-result.active{background:#111b23}
-      .v5-model-result strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace}
-      .v5-model-result small{display:block;margin-top:3px;color:#687986;font-size:10px}
-      .v5-model-tags{display:flex;gap:3px;justify-content:flex-end;flex-wrap:wrap;max-width:210px}
-      .v5-model-tag{padding:2px 5px;border:1px solid #263844;border-radius:999px;color:#7194aa;font-size:8px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
-      .v5-model-empty{padding:14px;color:#6f7e89;font-size:11px;text-align:center}
-      @media (max-width:980px){.v5-model-search{width:130px}.v5-model-role{max-width:110px}.v5-model-results{width:min(520px,88vw)}}
-      @media (max-width:720px){.v5-model-explorer{width:100%}.v5-model-search{flex:1;width:auto}.v5-model-role{max-width:140px}}
-    `;
-    document.head.appendChild(style);
-  }
-
   function ensureModelExplorer() {
     if (!modelSelect || document.getElementById("modelSearchInput")) return;
-    ensureExplorerStyles();
     const picker = modelSelect.closest(".v5-model-picker") || modelSelect.parentElement;
     const actions = modelSelect.closest(".v5-composer-actions") || picker?.parentElement;
     if (!picker || !actions) return;
@@ -195,14 +228,19 @@
     const explorer = document.createElement("div");
     explorer.className = "v5-model-explorer";
     explorer.innerHTML = `
-      <input id="modelSearchInput" class="v5-model-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search model…" aria-label="Search AI model" />
+      <div class="v5-model-combobox">
+        <input id="modelSearchInput" class="v5-model-search" type="search" autocomplete="off" spellcheck="false" placeholder="Type or choose model…" aria-label="Type or choose AI model" aria-controls="modelSearchResults" />
+        <button class="v5-model-open" type="button" aria-label="Open model list" title="Open model list">⌄</button>
+      </div>
       <select id="modelRoleFilter" class="v5-model-role" aria-label="Model role category">
         ${MODEL_ROLES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}
       </select>
       <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>`;
     actions.insertBefore(explorer, picker);
+    picker.classList.add("v5-native-model-picker");
 
     const input = explorer.querySelector("#modelSearchInput");
+    const open = explorer.querySelector(".v5-model-open");
     const role = explorer.querySelector("#modelRoleFilter");
     const results = explorer.querySelector("#modelSearchResults");
 
@@ -240,7 +278,11 @@
     }
 
     input.addEventListener("input", () => renderResults(true));
-    input.addEventListener("focus", () => renderResults(Boolean(input.value || role.value !== "ALL")));
+    input.addEventListener("focus", () => renderResults(true));
+    open.addEventListener("click", () => {
+      renderResults(true);
+      input.focus();
+    });
     role.addEventListener("change", () => renderResults(true));
     results.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-model]");
@@ -250,13 +292,30 @@
       if (!option) return;
       modelSelect.value = value;
       modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
-      input.value = "";
+      input.value = option.textContent || value;
+      input.title = option.title || value;
       results.hidden = true;
     });
     document.addEventListener("pointerdown", (event) => {
       if (!explorer.contains(event.target)) results.hidden = true;
     });
+    modelSelect.addEventListener("change", () => {
+      const selected = modelSelect.selectedOptions[0];
+      if (!selected) return;
+      input.value = selected.textContent || selected.value;
+      input.title = selected.title || selected.value;
+    });
+    const initiallySelected = modelSelect.selectedOptions[0];
+    if (initiallySelected?.value) {
+      input.value = initiallySelected.textContent || initiallySelected.value;
+      input.title = initiallySelected.title || initiallySelected.value;
+    }
     new MutationObserver(() => {
+      const selected = modelSelect.selectedOptions[0];
+      if (selected?.value && !input.matches(":focus")) {
+        input.value = selected.textContent || selected.value;
+        input.title = selected.title || selected.value;
+      }
       if (!results.hidden) renderResults(true);
     }).observe(modelSelect, { childList: true, subtree: true });
   }
@@ -265,15 +324,6 @@
     const transcript = document.getElementById("hermesTranscript");
     if (!transcript || transcript.dataset.tuiSanitizer === "1") return Boolean(transcript);
     transcript.dataset.tuiSanitizer = "1";
-
-    const style = document.createElement("style");
-    style.id = "hermesReadableSanitizerStyles";
-    style.textContent = `
-      #hermesTranscript .terminal-tui-hidden{display:none!important}
-      #hermesTranscript .terminal-tui-meta{color:#46555f!important;font-size:7.5px!important;line-height:1.35!important;opacity:.82!important}
-      #hermesTranscript .terminal-tui-meta.warning{color:#8d7651!important}
-    `;
-    document.head.appendChild(style);
 
     let inReasoningFrame = false;
     const rowsSelector = ".terminal-answer-line,.terminal-noise";
@@ -364,5 +414,7 @@
     }, 250);
     setTimeout(() => clearInterval(sanitizerTimer), 10_000);
   }
+
+  void refreshHealth();
   void ensureBackendPrimary();
 })();

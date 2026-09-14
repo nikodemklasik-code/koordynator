@@ -38,7 +38,7 @@ export const AI_TARGETS: Target[] = [
   { key: "astra", prefixes: ["cx/gpt-6-astra", "codex/gpt-6-astra"], envName: "KOORDYNATOR_ASTRA_MODEL", preferred: ["cx/gpt-6-astra", "cx/gpt-6-astra-pro"] },
   { key: "cursor", prefixes: ["cu/"], envName: "KOORDYNATOR_CURSOR_MODEL", preferred: [] },
   { key: "kilocode", prefixes: ["kc/"], envName: "KOORDYNATOR_KILOCODE_MODEL", preferred: [] },
-  { key: "cline", prefixes: ["cl/"], envName: "KOORDYNATOR_CLINE_MODEL", preferred: [] },
+  { key: "cline", prefixes: ["cl/"], envName: "KOORDYNATOR_CLINE_MODEL", preferred: ["cl/anthropic/claude-opus-4.8", "cl/openrouter/free"] },
   { key: "amazonq", prefixes: ["aq/"], envName: "KOORDYNATOR_AMAZON_Q_MODEL", preferred: [] },
   { key: "antigravity", prefixes: ["agy/"], envName: "KOORDYNATOR_ANTIGRAVITY_MODEL", preferred: [] }
 ];
@@ -68,6 +68,26 @@ export function selectChatModels(updates: Record<string, string>): { primary: st
     .filter((model): model is string => Boolean(model));
   const unique = [...new Set(ordered)];
   return { primary: unique[0] ?? null, fallbacks: unique.slice(1, 7) };
+}
+
+/** Prefer the first candidate that answers now. 429/5xx stay in the fallback list. */
+export async function firstLiveRoute(
+  endpoint: string,
+  key: string,
+  candidates: string[],
+  fetchImpl: typeof fetch = fetch
+): Promise<{ primary: string | null; fallbacks: string[] }> {
+  const unique = [...new Set(candidates.map(model => model.trim()).filter(Boolean))];
+  if (unique.length === 0) return { primary: null, fallbacks: [] };
+  let live: string | null = null;
+  const others: string[] = [];
+  for (const model of unique) {
+    const probe = await probeModel(endpoint, key, model, fetchImpl);
+    if (probe.ok && !live) live = model;
+    else others.push(model);
+  }
+  if (!live) return { primary: unique[0] ?? null, fallbacks: unique.slice(1, 7) };
+  return { primary: live, fallbacks: others.slice(0, 6) };
 }
 
 type ApiFetch = (path: string, opts?: Record<string, unknown>) => Promise<Response>;
@@ -156,12 +176,17 @@ function modelsFor(target: Target, models: string[]): string[] {
   return found.sort((a, b) => (rank.get(a) ?? 999) - (rank.get(b) ?? 999) || a.localeCompare(b));
 }
 
-async function probeModel(endpoint: string, key: string, model: string): Promise<{ ok: boolean; detail: string }> {
+async function probeModel(
+  endpoint: string,
+  key: string,
+  model: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<{ ok: boolean; detail: string }> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (key) headers.authorization = `Bearer ${key}`;
   let response: Response;
   try {
-    response = await fetch(`${endpoint.replace(/\/+$/, "")}/chat/completions`, {
+    response = await fetchImpl(`${endpoint.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -321,17 +346,20 @@ export async function bootstrapAi(_options: AiBootstrapOptions = {}): Promise<Ai
   }
 
   const selected = selectChatModels(updates);
-  if (!selected.primary) {
+  const ranked = await firstLiveRoute(
+    endpoint,
+    key,
+    [selected.primary, ...selected.fallbacks].filter((model): model is string => Boolean(model))
+  );
+  if (!ranked.primary) {
     printRows(rows);
     throw new Error("NO_WORKING_OMNIROUTE_AI_ROUTE");
   }
-  updates.KOORDYNATOR_CHAT_MODEL = selected.primary;
-  if (selected.fallbacks.length > 0) updates.KOORDYNATOR_FALLBACK_MODELS = selected.fallbacks.join(",");
+  updates.KOORDYNATOR_CHAT_MODEL = ranked.primary;
+  if (ranked.fallbacks.length > 0) updates.KOORDYNATOR_FALLBACK_MODELS = ranked.fallbacks.join(",");
   persistModels(updates);
   printRows(rows);
-  if (selected.primary) {
-    console.log(`\nPrimary chat model: ${selected.primary}`);
-    if (selected.fallbacks.length > 0) console.log(`Fallbacks: ${selected.fallbacks.join(" -> ")}`);
-  }
+  console.log(`\nPrimary chat model: ${ranked.primary}`);
+  if (ranked.fallbacks.length > 0) console.log(`Fallbacks: ${ranked.fallbacks.join(" -> ")}`);
   return rows;
 }

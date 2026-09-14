@@ -10,7 +10,8 @@ import { ReleaseReadModel } from "./release-read-model.js";
 import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
 import { loadChatProjectContext } from "./chat-project-context.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
-import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
+import { ChatModelCatalogError, ChatModelCatalogService, toPickerCatalog, type ChatModelCatalogPort } from "./chat-model-catalog.js";
+import { FAMILY_PREFIX } from "./model-family-router.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
 import { WorkspaceRepositoryContextService, type WorkspaceRepositoryContextPort } from "./workspace-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
@@ -21,7 +22,9 @@ import { ProjectPackService } from "./project-pack-service.js";
 import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
 import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
 import { MaterialisationError, MaterialisationService } from "./materialisation-service.js";
-import { TaskExecutionRunner, TaskExecutionError, type IndependentVerifier as TaskRunnerVerifier } from "./task-execution-runner.js";
+import { TaskExecutionRunner, TaskExecutionError, type IndependentVerifier as TaskRunnerVerifier, type TaskAgent } from "./task-execution-runner.js";
+import { DeliveryApprovalService } from "./delivery-approval-service.js";
+import { DeliveryProcessError, DeliveryProcessStore } from "./delivery-process-store.js";
 import { parseAgreedPlan } from "./chat-consensus.js";
 import { BrainError } from "./brain-roadmap.js";
 import { HarmoniaError } from "./harmonia-cognition.js";
@@ -70,6 +73,12 @@ export type ControlServerOptions = {
   taskRunnerPathPrefix?: string;
   /** Test hook: replace the independent verifier (production runs vitest). */
   taskRunnerVerifier?: TaskRunnerVerifier;
+  /** Test hook: inject the task agent so HTTP /run can be exercised without OpenCode. */
+  taskRunnerAgent?: TaskAgent;
+  /** Spec §3: /run requires an approved delivery process. */
+  requireApprovedProcess?: boolean;
+  /** Spec §4: isolate git worktree. */
+  isolateWorktree?: boolean;
 };
 
 export class ControlAuthError extends Error {
@@ -128,6 +137,7 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/repositories/remove" ||
     pathname === "/api/tasks/materialise" ||
     pathname === "/api/tasks/materialise-plan" ||
+    pathname === "/api/delivery/approve" ||
     /^\/api\/tasks\/TASK-[A-Za-z0-9._-]+\/run$/.test(pathname) ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
@@ -239,7 +249,10 @@ export function createControlServer(options: ControlServerOptions): Server {
     role: "code",
     requireWrite: true,
     ...(options.taskRunnerPathPrefix === undefined ? {} : { workerPathPrefix: options.taskRunnerPathPrefix }),
-    ...(options.taskRunnerVerifier === undefined ? {} : { verifier: options.taskRunnerVerifier })
+    ...(options.taskRunnerVerifier === undefined ? {} : { verifier: options.taskRunnerVerifier }),
+    ...(options.taskRunnerAgent === undefined ? {} : { agent: options.taskRunnerAgent }),
+    requireApprovedProcess: options.requireApprovedProcess ?? true,
+    isolateWorktree: options.isolateWorktree ?? true
   });
   const hermesGrants = new HermesGrantStore(stateDir);
   const modelCatalog = options.chatModelCatalog ?? new ChatModelCatalogService({
@@ -252,6 +265,11 @@ export function createControlServer(options: ControlServerOptions): Server {
   const chat = new ChatService({
     stateDir,
     authorizeModel: async model => evaluateChatBilling(model, await modelCatalog.list(), options.chatBillingPolicy),
+    familyCandidates: async (model) => {
+      if (!model.startsWith(FAMILY_PREFIX)) return [];
+      const catalog = await modelCatalog.list();
+      return catalog.families?.find((family) => family.id === model)?.candidates ?? [];
+    },
     ...(options.chatAllowRepositoryExecution ? { repositoryExecutor: createRepositoryExecutor(stateDir) } : {}),
     ...(materialisation ? { materialiser: (consensus) => materialisation.materialise(consensus) } : {}),
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
@@ -272,7 +290,12 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
     ...(options.chatHarmoniaModel === undefined ? {} : { harmoniaModel: options.chatHarmoniaModel }),
-    ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels })
+    ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
+    familyCandidates: async (model) => {
+      if (!model.startsWith(FAMILY_PREFIX)) return [];
+      const catalog = await modelCatalog.list();
+      return catalog.families?.find((family) => family.id === model)?.candidates ?? [];
+    }
   });
   const hermesPty = new HermesPtySession({
     stateDir,
@@ -299,7 +322,10 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/chat/models") {
-        return sendJson(response, 200, await modelCatalog.list());
+        // The live gateway catalog is tens of thousands of concrete routes.
+        // The picker only needs one row per model family; the server expands
+        // that row to a free-first provider chain at send time.
+        return sendJson(response, 200, toPickerCatalog(await modelCatalog.list()));
       }
 
       if (method === "GET" && url.pathname === "/api/chat/usage") {
@@ -662,6 +688,22 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 201, await materialisation.materialise(parsed));
       }
 
+      if (method === "POST" && url.pathname === "/api/delivery/approve") {
+        const payload = await readJsonBody(request, 8 * 1024);
+        assertExactKeys(payload, ["sessionId"]);
+        if (typeof payload.sessionId !== "string") return sendJson(response, 400, { error: "CHAT_SESSION_INVALID" });
+        const sessionId = safeSessionId(payload.sessionId);
+        const approval = new DeliveryApprovalService({ stateDir, stageZero, materialisation, projectRoot });
+        try {
+          const existing = await new DeliveryProcessStore(stateDir).getBySessionId(sessionId);
+          const result = await approval.approve(sessionId);
+          return sendJson(response, existing ? 200 : 201, result);
+        } catch (error) {
+          if (error instanceof DeliveryProcessError) return sendJson(response, error.status, { error: error.code });
+          throw error;
+        }
+      }
+
       if (url.pathname === "/api/tasks") {
         const rawFilter = url.searchParams.get("status") ?? "all";
         if (!FILTERS.has(rawFilter as TaskFilter)) return sendJson(response, 400, { error: "INVALID_TASK_FILTER" });
@@ -775,7 +817,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       const stageZeroHttp = asStageZeroHttpError(error);
       if (stageZeroHttp) return sendJson(response, stageZeroHttp.status, { error: stageZeroHttp.code });
-      if (error instanceof ProviderAutoconnectError || error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError) {
+      if (error instanceof DeliveryProcessError || error instanceof ProviderAutoconnectError || error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError) {
         return sendJson(response, error.status, { error: error.code });
       }
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });

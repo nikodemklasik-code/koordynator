@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { AI_TARGETS, mergeEnvText, selectChatModels } from "../src/runtime/ai-bootstrap.js";
+import { AI_TARGETS, firstLiveRoute, mergeEnvText, selectChatModels } from "../src/runtime/ai-bootstrap.js";
 import { evaluateChatBilling } from "../src/control/chat-billing-policy.js";
 import type { ChatModelCatalog } from "../src/control/chat-model-catalog.js";
 
@@ -78,6 +78,11 @@ describe("AI bootstrap", () => {
     expect(appLaunch).not.toContain("device-code");
   });
 
+  it("prefers the known live Cline Claude route within the Cline family", () => {
+    const target = AI_TARGETS.find(item => item.key === "cline");
+    expect(target?.preferred[0]).toBe("cl/anthropic/claude-opus-4.8");
+  });
+
   it("picks free/subscription routes before Codex for the chat primary", () => {
     expect(selectChatModels({
       KOORDYNATOR_OPENAI_MODEL: "cx/gpt-5.5",
@@ -95,6 +100,38 @@ describe("AI bootstrap", () => {
     })).toEqual({
       primary: "gemini-cli/gemini-2.5-pro",
       fallbacks: ["cc/claude-sonnet-5", "cx/gpt-5.6-sol"]
+    });
+  });
+
+  it("does not keep a 429 family slot as chat primary when a later route is live", async () => {
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const model = JSON.parse(String(init?.body ?? "{}")).model as string;
+      if (model.startsWith("cc/")) return new Response("rate limit", { status: 429 });
+      if (model.startsWith("cx/")) return new Response("quota", { status: 429 });
+      if (model.startsWith("gc/")) return Response.json({ choices: [{ message: { content: "PONG" } }] });
+      return new Response("nope", { status: 400 });
+    }) as typeof fetch;
+    await expect(firstLiveRoute(
+      "http://127.0.0.1:20128/v1",
+      "gateway-key",
+      ["cc/claude-opus-5", "gc/grok-4.6", "cx/gpt-5.6-sol"],
+      fetchImpl
+    )).resolves.toEqual({
+      primary: "gc/grok-4.6",
+      fallbacks: ["cc/claude-opus-5", "cx/gpt-5.6-sol"]
+    });
+  });
+
+  it("keeps the ranked family slot when every probe is 429", async () => {
+    const fetchImpl = (async () => new Response("rate limit", { status: 429 })) as typeof fetch;
+    await expect(firstLiveRoute(
+      "http://127.0.0.1:20128/v1",
+      "gateway-key",
+      ["cc/claude-opus-5", "gc/grok-4.6"],
+      fetchImpl
+    )).resolves.toEqual({
+      primary: "cc/claude-opus-5",
+      fallbacks: ["gc/grok-4.6"]
     });
   });
 });

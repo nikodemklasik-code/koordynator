@@ -105,4 +105,88 @@ describe("Live Chat dynamic Hermes skill routing", () => {
     expect(assistant.content).toContain("SKILLS_USED: never-used-before");
     chat.close();
   });
+
+  it("keeps ordinary conversation on OmniRoute instead of spawning Hermes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-conversation-"));
+    roots.push(root);
+    const skillCalls: string[] = [];
+    const upstream: string[] = [];
+    const chat = new ChatService({
+      stateDir: root,
+      apiKey: "super-secret-test-key",
+      defaultModel: "gc/grok-4.6",
+      skillExecutor: async (run) => {
+        skillCalls.push(run.text);
+        run.emit("SKILL_PATH_MUST_NOT_RUN\n");
+      },
+      fetchImpl: (async (_input: string | URL | Request, init?: RequestInit) => {
+        upstream.push(String(init?.body ?? ""));
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "PONG" } }] })}\n\n`));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            controller.close();
+          }
+        });
+        return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+      }) as typeof fetch
+    });
+    const session = await chat.createSession("gc/grok-4.6");
+    const done = new Promise<ChatMessage>((resolve) => {
+      const unsubscribe = chat.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done") {
+          unsubscribe();
+          resolve(event.message);
+        }
+      });
+    });
+    await chat.startMessage(session.sessionId, "Reply with exactly: PONG");
+    const assistant = await done;
+    expect(skillCalls).toEqual([]);
+    expect(upstream).toHaveLength(1);
+    expect(assistant.content).toBe("PONG");
+    expect(assistant.content).not.toContain("Skill routing");
+    chat.close();
+  });
+
+  it("still routes an explicit /skill turn through Hermes when every-turn routing is off", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-explicit-skill-"));
+    roots.push(root);
+    const calls: SkillRun[] = [];
+    const chat = new ChatService({
+      stateDir: root,
+      apiKey: "super-secret-test-key",
+      skillExecutor: async (run) => {
+        calls.push(run);
+        run.emit("skill done\nSKILLS_USED: planning\n");
+      },
+      fetchImpl: async () => {
+        throw new Error("PLAIN_CHAT_MUST_NOT_RUN");
+      }
+    });
+    const session = await chat.createSession();
+    const done = new Promise<ChatMessage>((resolve) => {
+      const unsubscribe = chat.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done") {
+          unsubscribe();
+          resolve(event.message);
+        }
+      });
+    });
+    await chat.startMessage(session.sessionId, "/skill przygotuj audyt dostępności interfejsu");
+    const assistant = await done;
+    expect(calls).toHaveLength(1);
+    expect(assistant.content).toContain("SKILLS_USED: planning");
+    chat.close();
+  });
+
+  it("does not enable Hermes skill routing on every Live Chat turn by default", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const main = await readFile(new URL("../src/control/main.ts", import.meta.url), "utf8");
+    const runner = await readFile(new URL("../src/control/hermes-skill-runner.ts", import.meta.url), "utf8");
+    expect(main).toContain('KOORDYNATOR_CHAT_HERMES_SKILLS === "1"');
+    expect(main).not.toContain('KOORDYNATOR_CHAT_HERMES_SKILLS !== "0"');
+    expect(runner).toMatch(/KOORDYNATOR_HERMES_HOME:\s*join\(job,\s*"hermes-home"\)/);
+  });
 });

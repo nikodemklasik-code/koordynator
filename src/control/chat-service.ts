@@ -10,6 +10,8 @@ import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api
 import type { ChatBillingDecision } from "./chat-billing-policy.js";
 import { extractChatAttachmentText } from "./chat-attachment-text.js";
 import { ChatUsageLedger, type ChatUsageSummary } from "./chat-usage-ledger.js";
+import { FAMILY_PREFIX } from "./model-family-router.js";
+import { formatProductOwnerContract, formatLiveChatAnswerStyle, buildProductOwnerContract } from "./product-owner-pack.js";
 
 export type ChatRole = "user" | "assistant";
 export type ChatMessageState = "complete" | "streaming" | "stopped" | "error";
@@ -91,6 +93,8 @@ export type ChatServiceOptions = {
   apiKeyEnv?: string;
   defaultModel?: string;
   fallbackModels?: string[];
+  /** Expands a `family/*` selection into the concrete provider routes to try, in order. */
+  familyCandidates?: (model: string) => string[] | Promise<string[]>;
   authorizeModel?: (model: string) => Promise<ChatBillingDecision>;
   fetchImpl?: typeof fetch;
   maxMessageBytes?: number;
@@ -163,6 +167,11 @@ function sessionTitle(session: ChatSession): string {
   return "New chat";
 }
 
+export function looksLikeToolDump(text: string): boolean {
+  return /(?:call_mcp_tool|search_files_with_regex|list_dirtarget_directory|read_filepath|0emod_zenith|SKILLS_USED:)/i.test(text)
+    || /head_limit\d+path\//i.test(text);
+}
+
 function extractDelta(payload: unknown): string {
   if (typeof payload !== "object" || payload === null) return "";
   const choices = (payload as { choices?: unknown }).choices;
@@ -211,6 +220,7 @@ export class ChatService {
   private readonly apiKeyEnv: string;
   private readonly defaultModel: string;
   private readonly fallbackModels: string[];
+  private readonly familyCandidates: ChatServiceOptions["familyCandidates"];
   private readonly authorizeModel: ChatServiceOptions["authorizeModel"];
   private readonly fetchImpl: typeof fetch;
   private readonly maxMessageBytes: number;
@@ -240,6 +250,7 @@ export class ChatService {
     this.defaultModel = safeModel(options.defaultModel ?? "auto/best-free");
     this.fallbackModels = [...new Set((options.fallbackModels ?? []).map((model) => model.trim()).filter(Boolean).filter((model) => model !== this.defaultModel))].slice(0, 6);
     this.authorizeModel = options.authorizeModel;
+    this.familyCandidates = options.familyCandidates;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
@@ -417,13 +428,22 @@ export class ChatService {
     }
     const history = [];
     for (const message of selected.reverse()) history.push(await this.upstreamMessage(message));
-    if (!this.projectContextProvider) return history;
+    const lastUser = [...selected].reverse().find((message) => message.role === "user");
+    const productOwner = lastUser
+      ? formatProductOwnerContract(buildProductOwnerContract(lastUser.content, `session ${lastUser.sessionId}`))
+      : "";
+    const packed = [
+      { role: "system" as const, content: formatLiveChatAnswerStyle() },
+      ...(productOwner ? [{ role: "system" as const, content: productOwner.slice(0, 8_000) }] : []),
+      ...history
+    ];
+    if (!this.projectContextProvider) return packed;
     try {
       const context = (await this.projectContextProvider())?.trim();
-      if (!context) return history;
-      return [{ role: "system", content: context.slice(0, 24_000) }, ...history];
+      if (!context) return packed;
+      return [{ role: "system", content: context.slice(0, 24_000) }, ...packed];
     } catch {
-      return history;
+      return packed;
     }
   }
 
@@ -553,6 +573,50 @@ export class ChatService {
     }
   }
 
+  private async routeChain(selected: string): Promise<string[]> {
+    // A `family/*` id is a UI grouping, never a gateway route: expand it into the
+    // concrete provider routes so a free provider substitutes the same model
+    // billed elsewhere.
+    const expanded = selected.startsWith(FAMILY_PREFIX) ? await this.familyCandidates?.(selected) ?? [] : [];
+    const head = expanded.length > 0 ? expanded : [selected];
+    const fallbacks = this.fallbackModels.filter((model) => !head.includes(model) && !model.startsWith(FAMILY_PREFIX));
+    return [...head, ...fallbacks];
+  }
+
+  private async consumeAssistantStream(
+    response: Response,
+    assistant: ChatMessage,
+    session: ChatSession,
+    sessionId: string
+  ): Promise<{ toolDump: boolean }> {
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let done = false;
+    while (!done) {
+      const part = await reader.read();
+      done = part.done;
+      pending += decoder.decode(part.value ?? new Uint8Array(), { stream: !done });
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        let parsed: unknown;
+        try { parsed = JSON.parse(data); } catch { continue; }
+        const usage = extractProviderReportedUsage(parsed);
+        if (usage) assistant.usage = mergeUsage(assistant.usage, usage);
+        const delta = extractDelta(parsed);
+        if (!delta) continue;
+        assistant.content += delta;
+        session.updatedAt = now();
+        this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
+      }
+    }
+    return { toolDump: looksLikeToolDump(assistant.content) };
+  }
+
   private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
     const sessionId = session.sessionId;
     const userMessage = session.messages.at(-2)!;
@@ -605,10 +669,10 @@ export class ChatService {
         return;
       }
       const history = await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id));
-      const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
-      let response: Response | undefined;
+      const chain = await this.routeChain(session.model);
       let lastRateLimit: ChatServiceError | undefined;
-      for (const model of chain) {
+      let accepted = false;
+      for (const [index, model] of chain.entries()) {
         const billing = await this.authorizeModel?.(model);
         if (billing && !billing.allowed) continue;
         const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
@@ -618,48 +682,34 @@ export class ChatService {
           signal: controller.signal
         });
         if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
-        if ([429, 502, 503, 504].includes(attempt.status)) {
-          lastRateLimit = new ChatServiceError(attempt.status === 429 ? "CHAT_RATE_LIMITED" : `CHAT_UPSTREAM_${attempt.status}`, attempt.status === 429 ? 429 : 502);
+        // A family route is an ordered substitution chain. Providers can advertise
+        // a model that their live catalog no longer accepts (400/404/405/422).
+        // Those are route-local incompatibilities, so try the next concrete route.
+        if ([400, 404, 405, 422, 429, 502, 503, 504].includes(attempt.status)) {
+          const retryableCode = attempt.status === 429 ? "CHAT_RATE_LIMITED" : `CHAT_UPSTREAM_${attempt.status}`;
+          lastRateLimit = new ChatServiceError(retryableCode, attempt.status === 429 ? 429 : 502);
           await attempt.body?.cancel();
           continue;
         }
         if (!attempt.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${attempt.status}`, 502);
-        response = attempt;
+        if (!attempt.body) throw new ChatServiceError("CHAT_STREAM_MISSING", 502);
+        const streamed = await this.consumeAssistantStream(attempt, assistant, session, sessionId);
+        if (streamed.toolDump && index < chain.length - 1) {
+          assistant.content = "";
+          delete assistant.usage;
+          continue;
+        }
         assistant.model = model;
         if (billing) assistant.billing = billing;
-        session.model = model;
+        const providerRequestId = attempt.headers.get("x-request-id") ?? undefined;
+        if (providerRequestId !== undefined) assistant.providerRequestId = providerRequestId;
+        // Keep a family selection on the session so the next turn re-resolves it
+        // live instead of pinning the provider that happened to answer first.
+        if (!session.model.startsWith(FAMILY_PREFIX)) session.model = model;
+        accepted = true;
         break;
       }
-      if (!response) throw lastRateLimit ?? new ChatServiceError("CHAT_RATE_LIMITED", 429);
-      const providerRequestId = response.headers.get("x-request-id") ?? undefined;
-      if (providerRequestId !== undefined) assistant.providerRequestId = providerRequestId;
-      if (!response.body) throw new ChatServiceError("CHAT_STREAM_MISSING", 502);
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let pending = "";
-      let done = false;
-      while (!done) {
-        const part = await reader.read();
-        done = part.done;
-        pending += decoder.decode(part.value ?? new Uint8Array(), { stream: !done });
-        const lines = pending.split(/\r?\n/);
-        pending = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue;
-          const data = line.slice(5).trim();
-          if (!data || data === "[DONE]") continue;
-          let parsed: unknown;
-          try { parsed = JSON.parse(data); } catch { continue; }
-          const usage = extractProviderReportedUsage(parsed);
-          if (usage) assistant.usage = mergeUsage(assistant.usage, usage);
-          const delta = extractDelta(parsed);
-          if (!delta) continue;
-          assistant.content += delta;
-          session.updatedAt = now();
-          this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
-        }
-      }
+      if (!accepted) throw lastRateLimit ?? new ChatServiceError("CHAT_RATE_LIMITED", 429);
       const audited = await this.finalize(session, assistant, "complete");
       if (!audited) {
         this.emit(sessionId, { type: "error", sessionId, code: "CHAT_USAGE_LEDGER_WRITE_FAILED", message: "CHAT_USAGE_LEDGER_WRITE_FAILED" });

@@ -84,6 +84,25 @@ describe("Live Chat strict billing provenance", () => {
     expect(evaluateChatBilling("m", catalogWith("UNKNOWN", "m")).decision).toBe("BLOCK_UNKNOWN");
   });
 
+  it("allows a family id using the cheapest installed route's billing", () => {
+    const catalog = catalogWith("FREE_CONFIRMED", "llm7/claude-opus-4.8");
+    catalog.models.push("cc/claude-opus-4-8");
+    catalog.families = [{
+      id: "family/claude-opus-4.8",
+      key: "claude-opus-4.8",
+      label: "Claude Opus 4.8",
+      family: "ANTHROPIC",
+      billingSource: "FREE_CONFIRMED",
+      providers: ["llm7", "claude-code"],
+      candidates: ["llm7/claude-opus-4.8", "cc/claude-opus-4-8"]
+    }];
+    expect(evaluateChatBilling("family/claude-opus-4.8", catalog)).toMatchObject({
+      allowed: true,
+      decision: "ALLOW_FREE_CONFIRMED",
+      source: "FREE_CONFIRMED"
+    });
+  });
+
   it("blocks unconfirmed free before upstream execution, then persists provider-reported usage for confirmed free", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-billing-"));
     roots.push(root);

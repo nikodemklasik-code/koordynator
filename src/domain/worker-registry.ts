@@ -44,6 +44,7 @@ const DELEGATION = new Set<WorkerAction>(["spawn.hermes", "spawn.opencode", "ass
 // worker. Hermes=research, OpenCode=code, Playwright=browser, audit=read-only
 // auditor, deploy=separate deploy role gated behind owner approval.
 const ROLE_WORKER: Record<TaskRole, Exclude<WorkerKind, "coordinator">> = {
+  "product-owner": "hermes",
   research: "hermes",
   code: "opencode",
   browser: "playwright",

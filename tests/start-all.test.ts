@@ -12,6 +12,8 @@ describe("one-click start all", () => {
     expect(source).toContain("omniroute");
     expect(source).toMatch(/8787|control|npm start|npm run control/);
     expect(source).toContain("open");
+    expect(source).toContain("chatDefaultModel");
+    expect(source).toContain("recycling");
     expect(pkg.scripts?.["start:all"]).toMatch(/scripts\/start-all\.mjs/);
   });
 

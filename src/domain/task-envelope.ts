@@ -5,7 +5,7 @@ import {
 } from "./constitutional-mandate.js";
 import type { Digest, TaskId } from "./ids.js";
 
-export type TaskRole = "research" | "code" | "browser" | "audit" | "deploy";
+export type TaskRole = "product-owner" | "research" | "code" | "browser" | "audit" | "deploy";
 export type TaskDataClass = "public" | "internal" | "confidential";
 export type TaskBudgetPolicy = "FREE_CONFIRMED" | "LOCAL_ONLY" | "OWNER_APPROVAL";
 
@@ -29,10 +29,10 @@ export type TaskEnvelope = {
   acceptanceChecks: string[];
 };
 
-const ROLES = new Set<TaskRole>(["research", "code", "browser", "audit", "deploy"]);
+const ROLES = new Set<TaskRole>(["product-owner", "research", "code", "browser", "audit", "deploy"]);
 const DATA_CLASSES = new Set<TaskDataClass>(["public", "internal", "confidential"]);
 const BUDGETS = new Set<TaskBudgetPolicy>(["FREE_CONFIRMED", "LOCAL_ONLY", "OWNER_APPROVAL"]);
-const READ_ONLY_ROLES = new Set<TaskRole>(["research", "browser", "audit"]);
+const READ_ONLY_ROLES = new Set<TaskRole>(["product-owner", "research", "browser", "audit"]);
 const ROOT_KEYS = [
   "taskId", "role", "objective", "allowedPaths", "allowedTools", "dataClass",
   "budgetPolicy", "constitutionalMandate", "writeLease", "idempotencyKey", "acceptanceChecks"

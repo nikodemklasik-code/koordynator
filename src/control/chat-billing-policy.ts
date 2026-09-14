@@ -1,4 +1,5 @@
 import type { ChatModelBillingSource, ChatModelCatalog, ChatModelRouteTransport } from "./chat-model-catalog.js";
+import { FAMILY_PREFIX } from "./model-family-router.js";
 
 export type ChatBillingPolicyOptions = {
   freeOnly?: boolean;
@@ -48,12 +49,18 @@ function protectedPrefixSource(model: string): ChatModelBillingSource | undefine
   return PROTECTED_PREFIX_SOURCE[model.slice(0, slash).toLowerCase()];
 }
 
+function familyRecord(model: string, catalog: ChatModelCatalog) {
+  if (!model.startsWith(FAMILY_PREFIX)) return undefined;
+  return catalog.families?.find((family) => family.id === model);
+}
+
 export function evaluateChatBilling(
   model: string,
   catalog: ChatModelCatalog,
   options: ChatBillingPolicyOptions = {}
 ): ChatBillingDecision {
-  const catalogSource = catalog.billing?.modelSources[model];
+  const family = familyRecord(model, catalog);
+  const catalogSource = family?.billingSource ?? catalog.billing?.modelSources[model];
   const prefixSource = protectedPrefixSource(model);
   // A live OmniRoute catalog may omit billing metadata for no-auth transports.
   // Prefer explicit catalog provenance when it is meaningful, but allow a
@@ -73,7 +80,10 @@ export function evaluateChatBilling(
     checkedAt: catalog.checkedAt
   };
 
-  if (options.freeOnly && (!catalog.models.includes(model) || !["FREE_CONFIRMED", "FREE_OAUTH"].includes(source))) {
+  const listed = family
+    ? family.candidates.some((candidate) => catalog.models.includes(candidate))
+    : catalog.models.includes(model);
+  if (options.freeOnly && (!listed || !["FREE_CONFIRMED", "FREE_OAUTH"].includes(source))) {
     return { ...base, allowed: false, decision: "BLOCK_FREE_ONLY" };
   }
 

@@ -103,6 +103,26 @@ function text(value: unknown, code: string, max = 4000): string {
   return result;
 }
 
+/** Models often omit `understanding` or nest it; recover a real reading instead of aborting Etap 0. */
+export function recoverUnderstanding(parsed: Record<string, unknown>, source: string): string {
+  const nested = parsed.project;
+  const candidates = [
+    parsed.understanding,
+    parsed.rozumienie,
+    parsed.summary,
+    parsed.description,
+    parsed.goal,
+    parsed.intent,
+    typeof nested === "object" && nested !== null ? (nested as Record<string, unknown>).understanding : undefined
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim().slice(0, 4000);
+  }
+  const sourceLine = String(source ?? "").trim().split(/\n+/).find((line) => line.trim().length >= 12) || String(source ?? "").trim();
+  if (sourceLine) return sourceLine.slice(0, 400);
+  throw new HarmoniaError("HARMONIA_UNDERSTANDING_REQUIRED", 502);
+}
+
 /** Urwany ogon = czytanie niedomknięte (`stage_zero_gate.has_open_tail`). */
 export function hasOpenTail(value: string): boolean {
   const text = String(value ?? "").trim();
@@ -148,6 +168,7 @@ function uniqueModels(primary: string, fallbacks: string[] | undefined): string[
   return [primary, ...(fallbacks ?? [])]
     .map((model) => model.trim())
     .filter(Boolean)
+    .filter((model) => !model.startsWith("family/"))
     .filter((model, index, all) => all.indexOf(model) === index);
 }
 
@@ -247,7 +268,7 @@ export class HarmoniaCognition {
     const findings = this.findings(parsed.findings);
     const sourceClosed = !hasOpenTail(source);
     return {
-      understanding: text(parsed.understanding, "HARMONIA_UNDERSTANDING_REQUIRED"),
+      understanding: recoverUnderstanding(parsed, source),
       findings,
       guidance: this.guidance(parsed.guidance),
       sourceClosed,

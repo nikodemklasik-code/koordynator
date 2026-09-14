@@ -182,8 +182,21 @@ export async function buildMaterialisationReadiness(input: MaterialisationReadin
       action: routeStatus === "GREEN" ? null : "Restore AI routing before planning"
     },
     workerStage({
-      id: "research",
+      id: "product-owner",
       order: 3,
+      label: "Product Owner · paczki zadań",
+      phase: "RESEARCH",
+      role: "product-owner",
+      binary: "hermes",
+      binaryReady: hermesBinary,
+      aiRequired: true,
+      route,
+      blocking: true,
+      action: hermesBinary ? "Restore a healthy AI route" : "Install/restore Hermes executable"
+    }),
+    workerStage({
+      id: "research",
+      order: 4,
       label: "Researcher · Hermes",
       phase: "RESEARCH",
       role: "research",
@@ -196,7 +209,7 @@ export async function buildMaterialisationReadiness(input: MaterialisationReadin
     }),
     {
       id: "design",
-      order: 4,
+      order: 5,
       label: "Projektowanie · innovation",
       phase: "PROJEKTOWANIE",
       light: routeStatus,
@@ -210,7 +223,7 @@ export async function buildMaterialisationReadiness(input: MaterialisationReadin
     },
     workerStage({
       id: "build",
-      order: 5,
+      order: 6,
       label: "Builder · OpenCode",
       phase: "TWORZENIE",
       role: "code",
@@ -223,7 +236,7 @@ export async function buildMaterialisationReadiness(input: MaterialisationReadin
     }),
     workerStage({
       id: "browser",
-      order: 6,
+      order: 7,
       label: "Frontend verify · Playwright",
       phase: "WERYFIKACJA",
       role: "browser",
@@ -236,7 +249,7 @@ export async function buildMaterialisationReadiness(input: MaterialisationReadin
     }),
     workerStage({
       id: "audit",
-      order: 7,
+      order: 8,
       label: "Security / independent audit",
       phase: "WERYFIKACJA",
       role: "audit",
@@ -249,7 +262,7 @@ export async function buildMaterialisationReadiness(input: MaterialisationReadin
     }),
     workerStage({
       id: "deploy",
-      order: 8,
+      order: 9,
       label: "Release / deploy",
       phase: "GOTOWE",
       role: "deploy",

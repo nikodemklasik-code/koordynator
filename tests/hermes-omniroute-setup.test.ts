@@ -124,9 +124,13 @@ describe("Hermes / OmniRoute operator setup", () => {
       expect(config.model.default).toBe(settings.model);
       expect(config.model.api_mode).toBe("chat_completions");
       expect(config.model.key_env).toBe("OPENAI_API_KEY");
+      expect(config.model.api_key).toBe(launch.env.OPENAI_API_KEY);
+      expect(config.model.api_key).toMatch(/^tkt\./);
       expect(config.model.base_url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
       expect(config.model.base_url).not.toBe(settings.endpoint);
       expect(JSON.stringify(config)).not.toContain(settings.apiKey);
+      expect(await readFile(join(launch.env.HERMES_HOME!, ".env"), "utf8")).toMatch(/^OPENAI_API_KEY=tkt\./m);
+      expect(await readFile(join(launch.env.HERMES_HOME!, ".env"), "utf8")).not.toContain(settings.apiKey);
       expect(config.approvals).toEqual({ mode: "smart" });
       expect(config.disabled_toolsets).toEqual(["terminal"]);
       expect(config.fallback_providers).toBeUndefined();
@@ -150,6 +154,36 @@ describe("Hermes / OmniRoute operator setup", () => {
     }
   });
 
+  it("does not overwrite a sibling managed profile when HERMES_HOME is isolated", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-hermes-isolated-"));
+    const launches: Array<{ close: () => Promise<void> }> = [];
+    try {
+      const live = await prepareHermes(settings, root, {
+        KOORDYNATOR_FALLBACK_MODELS: "",
+        OMNIROUTE_API_KEY: settings.apiKey
+      } as NodeJS.ProcessEnv);
+      launches.push(live);
+      const liveHome = live.env.HERMES_HOME!;
+      const liveConfig = await readFile(join(liveHome, "config.yaml"), "utf8");
+      const isolatedHome = join(root, "skill-job", "hermes-home");
+      const isolated = await prepareHermes(settings, root, {
+        KOORDYNATOR_FALLBACK_MODELS: "",
+        OMNIROUTE_API_KEY: settings.apiKey,
+        HERMES_HOME: liveHome,
+        KOORDYNATOR_HERMES_HOME: isolatedHome
+      } as NodeJS.ProcessEnv);
+      launches.push(isolated);
+      expect(isolated.env.HERMES_HOME).toBe(isolatedHome);
+      expect(isolated.env.HERMES_HOME).not.toBe(liveHome);
+      expect(await readFile(join(liveHome, "config.yaml"), "utf8")).toBe(liveConfig);
+      expect(JSON.parse(await readFile(join(isolatedHome, "config.yaml"), "utf8")).model.api_key).toMatch(/^tkt\./);
+      expect(JSON.parse(await readFile(join(isolatedHome, "config.yaml"), "utf8")).model.api_key).not.toBe(live.env.OPENAI_API_KEY);
+    } finally {
+      await Promise.all(launches.map((item) => item.close()));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes OmniRoute fallback providers into the managed Hermes profile", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-fallback-"));
     let launch: Awaited<ReturnType<typeof prepareHermes>> | undefined;
@@ -159,9 +193,9 @@ describe("Hermes / OmniRoute operator setup", () => {
       } as NodeJS.ProcessEnv);
       const config = JSON.parse(await readFile(join(launch.env.HERMES_HOME!, "config.yaml"), "utf8"));
       expect(config.fallback_providers).toEqual([
-        { provider: "custom", model: "cc/claude-opus-5", base_url: launch.env.OPENAI_BASE_URL, key_env: "OPENAI_API_KEY" },
-        { provider: "custom", model: "gc/grok-4.5", base_url: launch.env.OPENAI_BASE_URL, key_env: "OPENAI_API_KEY" },
-        { provider: "custom", model: "cx/gpt-5.5", base_url: launch.env.OPENAI_BASE_URL, key_env: "OPENAI_API_KEY" }
+        { provider: "custom", model: "cc/claude-opus-5", base_url: launch.env.OPENAI_BASE_URL, api_key: launch.env.OPENAI_API_KEY, key_env: "OPENAI_API_KEY" },
+        { provider: "custom", model: "gc/grok-4.5", base_url: launch.env.OPENAI_BASE_URL, api_key: launch.env.OPENAI_API_KEY, key_env: "OPENAI_API_KEY" },
+        { provider: "custom", model: "cx/gpt-5.5", base_url: launch.env.OPENAI_BASE_URL, api_key: launch.env.OPENAI_API_KEY, key_env: "OPENAI_API_KEY" }
       ]);
       expect(launch.env.OPENAI_BASE_URL).not.toBe(settings.endpoint);
     } finally {

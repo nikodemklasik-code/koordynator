@@ -14,7 +14,7 @@
  * explicit one-time `npm run ai:auth-missing` wizard only when a route needs it.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -76,10 +76,52 @@ function controlAlreadyUp() {
   return Boolean(code && Number(code) > 0 && Number(code) < 500);
 }
 
+function envSlot(name) {
+  try {
+    if (existsSync(resolve(root, ".env"))) {
+      const line = readFileSync(resolve(root, ".env"), "utf8")
+        .split(/\r?\n/)
+        .find((row) => row.startsWith(`${name}=`));
+      if (line) return line.slice(name.length + 1).trim();
+    }
+  } catch { /* .env is optional for this check */ }
+  return process.env[name]?.trim() || "";
+}
+
+function controlHealthJson() {
+  const result = spawnSync("curl", ["-sS", `http://${host}:${port}/api/health`], {
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  try { return JSON.parse(result.stdout || "null"); } catch { return null; }
+}
+
+function stopListeningControl() {
+  const result = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"], {
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  const pids = [...new Set((result.stdout || "").trim().split(/\s+/).filter(Boolean))];
+  for (const pid of pids) spawnSync("kill", [pid], { stdio: "ignore" });
+  for (let i = 0; i < 40; i += 1) {
+    spawnSync("sleep", ["0.15"]);
+    if (!controlAlreadyUp()) return;
+  }
+  for (const pid of pids) spawnSync("kill", ["-9", pid], { stdio: "ignore" });
+  spawnSync("sleep", ["0.3"]);
+}
+
 function startControlWithLog() {
   if (controlAlreadyUp()) {
-    console.log(`Control UI: already running at http://${host}:${port}`);
-    return;
+    const health = controlHealthJson();
+    const desired = envSlot("KOORDYNATOR_CHAT_MODEL");
+    const live = typeof health?.chatDefaultModel === "string" ? health.chatDefaultModel : "";
+    if (desired && live === desired) {
+      console.log(`Control UI: already running at http://${host}:${port} (${live})`);
+      return;
+    }
+    console.log(`Control UI: recycling stale primary ${live || "(unknown)"} → ${desired || "(env)"}`);
+    stopListeningControl();
   }
   mkdirSync(pidDir, { recursive: true });
   run("Build", "npm", ["run", "build"]);

@@ -112,6 +112,21 @@ describe("sessionToProject", () => {
     expect(project).toContain("Mogę to rozplanować.");
   });
 
+  it("pomija dump narzędzi Copilota, żeby Etap 0 czytał rozmowę a nie ślad narzędzi", () => {
+    const session = {
+      sessionId: "s", createdAt: "", updatedAt: "", model: "family/grok-4.6",
+      messages: [
+        message("user", "Rozumiesz zadanie?"),
+        message("assistant", "Najpierw sprawdzę repo.0emod_zenithcall_mcp_toolcall_search_files_with_regex list_dirtarget_directory/Users/nikodemklasik/Desktop", { state: "stopped" }),
+        message("assistant", "Tak — to Etap 0, bez kodu.")
+      ]
+    } as ChatSession;
+    const project = sessionToProject(session);
+    expect(project).toContain("Rozumiesz zadanie?");
+    expect(project).toContain("to Etap 0");
+    expect(project).not.toContain("list_dirtarget_directory");
+  });
+
   it("ogranicza poznanie do wybranego zakresu wiadomości (fromIndex..toIndex włącznie)", () => {
     const session = {
       sessionId: "s", createdAt: "", updatedAt: "", model: "m",

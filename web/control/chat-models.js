@@ -7,6 +7,7 @@ const CHAT_MODEL_SESSION_KEY = "koordynator.liveChat.sessionId";
 const chatNativeFetch = window.fetch.bind(window);
 let catalogBilling = null;
 let catalogEntries = [];
+let catalogFamilies = [];
 let billingPolicy = null;
 let resolveChatModelGate;
 let chatModelGateSettled = false;
@@ -25,7 +26,7 @@ const SOURCE_ORDER = {
   UNKNOWN: 5
 };
 
-const FAMILY_ORDER = ["OPENAI", "ANTHROPIC", "GOOGLE / GEMINI", "XAI / GROK", "GITHUB COPILOT"];
+const FAMILY_ORDER = ["Claude", "Gemini", "GPT", "Grok", "Qwen", "Kimi", "Llama", "Command", "Other"];
 
 function settleChatModelGate(ok) {
   if (chatModelGateSettled) return;
@@ -222,11 +223,44 @@ function shortName(entry) {
   return slash >= 0 ? entry.id.slice(slash + 1) : entry.id;
 }
 
+function familyFor(entry) {
+  return catalogFamilies.find((item) => item.id === entry.id);
+}
+
+function familyIdForModel(modelId) {
+  if (!modelId) return null;
+  const direct = catalogFamilies.find((item) => item.id === modelId);
+  if (direct) return direct.id;
+  const viaCandidate = catalogFamilies.find((item) => Array.isArray(item.candidates) && item.candidates.includes(modelId));
+  return viaCandidate?.id ?? null;
+}
+
 function entryLabel(entry) {
-  const parts = [shortName(entry), sourceLabel(entry.billingSource)];
-  if (entry.supportsVision) parts.push("VISION");
-  if (entry.inputTokenLimit) parts.push(`${Math.round(entry.inputTokenLimit / 1000)}K CTX`);
+  const family = familyFor(entry);
+  const name = family?.label || shortName(entry);
+  const parts = [entry.family && entry.family !== "Other" ? `${entry.family} ${name}` : name];
+  if (family?.candidates?.length > 1) parts.push(`${family.candidates.length} routes`);
   return parts.join(" · ");
+}
+
+function safeCatalogFamilies(payload) {
+  if (!Array.isArray(payload?.families)) return [];
+  const families = [];
+  for (const raw of payload.families) {
+    if (!raw || typeof raw !== "object" || typeof raw.id !== "string") continue;
+    const id = raw.id.trim();
+    if (!id.startsWith("family/")) continue;
+    families.push({
+      id,
+      key: typeof raw.key === "string" ? raw.key : id.slice("family/".length),
+      label: typeof raw.label === "string" && raw.label.trim() ? raw.label.trim() : id,
+      family: typeof raw.family === "string" ? raw.family : "OTHER",
+      billingSource: knownSource(raw.billingSource) ? raw.billingSource : "UNKNOWN",
+      providers: Array.isArray(raw.providers) ? raw.providers.filter((item) => typeof item === "string") : [],
+      candidates: Array.isArray(raw.candidates) ? raw.candidates.filter((item) => typeof item === "string") : []
+    });
+  }
+  return families;
 }
 
 function familyRank(family) {
@@ -255,7 +289,9 @@ async function desiredSessionModel(models, fallback) {
     const response = await chatNativeFetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, { headers: { accept: "application/json" } });
     if (!response.ok) return fallback;
     const session = await response.json();
-    return typeof session.model === "string" && models.includes(session.model) ? session.model : fallback;
+    return typeof session.model === "string"
+      ? (models.includes(session.model) ? session.model : (familyIdForModel(session.model) && models.includes(familyIdForModel(session.model)) ? familyIdForModel(session.model) : fallback))
+      : fallback;
   } catch {
     return fallback;
   }
@@ -274,9 +310,10 @@ function rebuildOptions(entries) {
     group.label = family;
     for (const entry of items) {
       const option = document.createElement("option");
+      const meta = familyFor(entry);
       option.value = entry.id;
       option.textContent = entryLabel(entry);
-      option.title = `${entry.id} · ${entry.provider} · ${sourceLabel(entry.billingSource)} · ${entry.transport}`;
+      option.title = `${entry.family} ${shortName(entry)}. Backend picks the first live free/subscription route among: ${(meta?.candidates || [entry.id]).join(", ")}.`;
       group.appendChild(option);
     }
     chatModelSelect.appendChild(group);
@@ -286,6 +323,7 @@ function rebuildOptions(entries) {
 function showCatalogFailure(message) {
   catalogBilling = null;
   catalogEntries = [];
+  catalogFamilies = [];
   chatModelSelect.textContent = "";
   const option = document.createElement("option");
   option.value = "";
@@ -310,13 +348,19 @@ function billingSummary() {
   if (!chatModelSelect || !chatBillingNote || chatModelSelect.dataset.catalog !== "omniroute") return;
   const model = chatModelSelect.value;
   const entry = catalogEntries.find((item) => item.id === model);
+  const family = familyFor(entry || { id: model });
   const source = entry?.billingSource || sourceFor(model);
   const allowed = sourceAllowed(source);
   const budget = catalogBilling?.budget;
   const budgetText = budget && typeof budget.remaining === "number"
     ? ` PAYG budget remaining: ${budget.remaining}${typeof budget.limit === "number" ? ` / ${budget.limit}` : ""}.`
     : "";
-  const routeText = entry ? ` Route: ${entry.provider} via ${entry.transport === "OMNIROUTE_OAUTH" ? "OmniRoute OAuth/harness" : "OmniRoute API"}.` : "";
+  const substituteText = family?.candidates?.length
+    ? ` Backend substitutes ${family.candidates[0]} first among ${family.candidates.length} installed routes.`
+    : "";
+  const routeText = entry
+    ? ` Route: ${entry.provider} via ${entry.transport === "OMNIROUTE_OAUTH" ? "OmniRoute OAuth/harness" : "OmniRoute API"}.${substituteText}`
+    : substituteText;
   const sourceText = source === "SUBSCRIPTION_HARNESS"
     ? "Subscription harness selected. Requests use the connected subscription/OAuth route rather than PAYG API billing. Provider quota may still apply."
     : source === "FREE_OAUTH"
@@ -363,14 +407,18 @@ async function loadChatModels() {
     if (!models.length) throw new Error("OmniRoute returned no chat-capable models");
     catalogBilling = payload.billing && typeof payload.billing === "object" ? payload.billing : null;
     catalogEntries = safeCatalogEntries(payload, models);
+    catalogFamilies = safeCatalogFamilies(payload);
 
     const usable = catalogEntries.filter((entry) => sourceAllowed(entry.billingSource));
     if (!usable.length) throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
 
     const usableIds = usable.map((entry) => entry.id);
+    const configuredFamily = typeof health.chatDefaultModel === "string"
+      ? familyIdForModel(health.chatDefaultModel)
+      : null;
     const configuredDefault = typeof health.chatDefaultModel === "string" && usableIds.includes(health.chatDefaultModel)
       ? health.chatDefaultModel
-      : null;
+      : (configuredFamily && usableIds.includes(configuredFamily) ? configuredFamily : null);
     const preferred = configuredDefault
       || usable.find((entry) => entry.billingSource === "FREE_CONFIRMED")?.id
       || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
@@ -384,7 +432,8 @@ async function loadChatModels() {
     chatModelSelect.dataset.catalog = "omniroute";
     chatModelSelect.disabled = false;
     const hidden = catalogEntries.length - usable.length;
-    chatModelSelect.title = `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
+    const familyCount = catalogFamilies.length || usable.length;
+    chatModelSelect.title = `${familyCount} model families loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}. Backend substitutes the same model across free providers.`;
     billingSummary();
     settleChatModelGate(true);
     return true;

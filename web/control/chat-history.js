@@ -522,18 +522,24 @@ function scheduleResponseActionSync() {
 
 function installDocumentExport() {
   const oldButtons = [document.getElementById("exportMdButton"), document.getElementById("exportPdfButton"), document.getElementById("exportZipButton")];
-  const group = document.querySelector(".v5-toolbar-left") || document.querySelector(".chat-action-group");
-  if (group && !document.getElementById("createDocumentButton")) {
-    const button = document.createElement("button");
+  const group = document.querySelector(".v5-toolbar-left") || document.querySelector(".toolbar-group") || document.querySelector(".chat-action-group");
+  let button = document.getElementById("createDocumentButton");
+  if (group && !button) {
+    button = document.createElement("button");
     button.id = "createDocumentButton";
     button.type = "button";
-    button.className = group.classList.contains("v5-toolbar-left") ? "v5-action" : "secondary-button chat-action-button";
+    button.className = group.classList.contains("v5-toolbar-left") || group.classList.contains("toolbar-group")
+      ? "toolbar-button v5-action"
+      : "secondary-button chat-action-button";
     button.textContent = "Create document";
     button.title = "Select AI responses and attachments, then create PDF, DOCX or ZIP";
-    button.addEventListener("click", () => openSelector());
     const stageZero = document.getElementById("stageZeroButton");
     if (stageZero?.parentNode === group) group.insertBefore(button, stageZero);
     else group.appendChild(button);
+  }
+  if (button && button.dataset.bound !== "1") {
+    button.dataset.bound = "1";
+    button.addEventListener("click", () => openSelector());
   }
   const thread = document.getElementById("chatThread");
   if (thread) new MutationObserver(scheduleResponseActionSync).observe(thread, { childList: true, subtree: true });

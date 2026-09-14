@@ -128,6 +128,7 @@ const {
 const {
   mergeEnvText,
   selectChatModels,
+  firstLiveRoute,
   bootstrapAi
 } = await import(pathToFileURL(resolve(root, "dist/runtime/ai-bootstrap.js")).href);
 
@@ -184,6 +185,18 @@ if (freeOnly) {
   selected = result;
 }
 
+if (!freeOnly && selected.primary) {
+  const liveSettings = omniRouteSettings();
+  if (liveSettings.apiKey) {
+    console.log("\n==> Re-probe family slots (429/quota cannot stay primary)");
+    selected = await firstLiveRoute(
+      liveSettings.endpoint,
+      liveSettings.apiKey,
+      [selected.primary, ...selected.fallbacks]
+    );
+  }
+}
+
 if (!selected.primary) {
   if (freeOnly) {
     console.error("FREE_ROUTE_UNAVAILABLE: no confirmed free route passed the tool-call probe. Configuration unchanged.");
@@ -214,7 +227,59 @@ const doctorArgs = ["run", "doctor:omniroute"];
 if (wantProbe) doctorArgs.push("--", "--probe");
 if (!freeOnly) run("Doctor", "npm", doctorArgs, { allowFail: true });
 
+function parseManagedHermesConfig(text) {
+  try {
+    const json = JSON.parse(text);
+    if (json && typeof json === "object") return json;
+  } catch {
+    /* Hermes rewrites the JSON config.yaml to YAML on first run. */
+  }
+  const apiKey = text.match(/^\s*api_key:\s*['"]?(\S+?)['"]?\s*$/m)?.[1];
+  const baseUrl = text.match(/^\s*base_url:\s*['"]?(\S+?)['"]?\s*$/m)?.[1];
+  if (!apiKey || !baseUrl) return null;
+  const fallbacks = [];
+  const block = text.split(/^\s*fallback_providers:\s*$/m)[1] ?? "";
+  for (const line of block.split(/\r?\n/)) {
+    const model = line.match(/^\s+model:\s*['"]?(\S+?)['"]?\s*$/)?.[1];
+    if (model) fallbacks.push({ model });
+  }
+  return { model: { api_key: apiKey, base_url: baseUrl }, fallback_providers: fallbacks };
+}
+
+function liveManagedHermesProxy() {
+  const home = resolve(root, ".orchestrator", "hermes-omniroute");
+  const configPath = resolve(home, "config.yaml");
+  if (!existsSync(configPath)) return null;
+  const config = parseManagedHermesConfig(readFileSync(configPath, "utf8"));
+  if (!config) return null;
+  const token = String(config?.model?.api_key || "");
+  const base = String(config?.model?.base_url || "");
+  if (!token.startsWith("tkt.") || !base) return null;
+  let port;
+  try { port = new URL(base).port; } catch { return null; }
+  if (!port) return null;
+  const listen = spawnSync("lsof", ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"], {
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  if ((listen.status ?? 1) !== 0 || !(listen.stdout || "").includes("LISTEN")) return null;
+  return { home, config };
+}
+
 const settings = omniRouteSettings();
+const liveHermes = liveManagedHermesProxy();
+if (liveHermes) {
+  const fallbacks = Array.isArray(liveHermes.config.fallback_providers)
+    ? liveHermes.config.fallback_providers.map(entry => entry.model).filter(Boolean)
+    : [];
+  console.log("\nConfigured (kept live Hermes ticket proxy; not rotated)");
+  console.log(`  primary:   ${settings.model}`);
+  console.log(`  fallbacks: ${fallbacks.length ? fallbacks.join(" -> ") : "(none)"}`);
+  console.log(`  endpoint:  ${settings.endpoint}`);
+  console.log(`  hermes:    HERMES_HOME=${liveHermes.home}`);
+  console.log("\nDone. Next command:\n  npm start");
+  if (wantStart) run("Start control UI", "npm", ["run", "control"]);
+} else {
 const launch = await prepareHermes(settings, root);
 try {
 const config = JSON.parse(readFileSync(resolve(launch.env.HERMES_HOME, "config.yaml"), "utf8"));
@@ -234,4 +299,5 @@ if (wantStart) {
 }
 } finally {
   await launch.close();
+}
 }

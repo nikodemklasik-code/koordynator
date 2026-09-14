@@ -4,6 +4,7 @@ import {
   HarmoniaError,
   decideStageZero,
   hasOpenTail,
+  recoverUnderstanding,
   type HarmoniaFinding,
   type HarmoniaReading
 } from "../src/control/harmonia-cognition.js";
@@ -135,6 +136,19 @@ describe("Harmonia — samotne poznanie", () => {
       await expect(new HarmoniaCognition({ apiKey: "k", model: "m", fetchImpl }).read("p"))
         .rejects.toThrow(HarmoniaError);
     }
+  });
+
+  it("odzyskuje understanding gdy model pominie pole, zamiast zamykać Etap 0", async () => {
+    expect(recoverUnderstanding({ summary: "Panel ma tryb ciemny." }, "x")).toContain("tryb ciemny");
+    expect(recoverUnderstanding({}, "Chcę tryb ciemny w panelu.")).toContain("tryb ciemny");
+    const omitted = JSON.stringify({
+      findings: [{ code: "A1", bucket: "assumptions", detail: "brak zmian w API", cardinal: false, repairable: true, needsAuthor: false, risk: 0.1 }],
+      guidance: []
+    });
+    const { fetchImpl } = gateway(omitted);
+    const reading = await new HarmoniaCognition({ apiKey: "k", model: "m", fetchImpl }).read("Chcę tryb ciemny w panelu.");
+    expect(reading.understanding).toContain("tryb ciemny");
+    expect(reading.decision.status).toBe("allow");
   });
 
   it("nie zmyśla czytania, gdy model odpowiada prozą albo pada", async () => {

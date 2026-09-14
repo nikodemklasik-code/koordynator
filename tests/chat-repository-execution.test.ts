@@ -58,7 +58,7 @@ if(command==='git') {
 else {
   const config=JSON.parse(readFileSync(process.env.HERMES_HOME+'/config.yaml','utf8'));
   if(config.model.default!=='cx/test' || !/^http:\\/\\/127\\.0\\.0\\.1:\\d+\\/v1$/.test(config.model.base_url) || config.model.base_url==='http://127.0.0.1:20128/v1') process.exit(2);
-  if(config.model.api_key || config.model.key_env!=='OPENAI_API_KEY') process.exit(4);
+  if(!String(config.model.api_key||'').startsWith('tkt.') || config.model.key_env!=='OPENAI_API_KEY') process.exit(4);
   if(!String(process.env.OPENAI_API_KEY||'').startsWith('tkt.')) process.exit(5);
   if(process.env.OMNIROUTE_API_KEY) process.exit(6);
   if(!args.includes('-q') || !args.includes('--quiet')) process.exit(3);

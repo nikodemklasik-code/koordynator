@@ -1,11 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import { DeliveryProcessStore } from "./delivery-process-store.js";
 import type { TaskId } from "../domain/ids.js";
 import { FileStateStore } from "../store/file-state-store.js";
 import { FileSignedWorkOrderStore } from "../store/work-order-store.js";
 import { controlRoots } from "./task-read-model.js";
-import { runCommand } from "./hermes-repository-runner.js";
+import { independentVerify, runCommand } from "./hermes-repository-runner.js";
 import { type WriteLease, type WriteLeaseRequest } from "../domain/write-lease.js";
 import { FileWriteLeaseStore } from "../store/write-lease-store.js";
 import { evaluateTestReceipt } from "../domain/independent-test-receipt.js";
@@ -29,7 +30,7 @@ export type AgentContext = {
 export type AgentResult = { summary: string };
 export type TaskAgent = (context: AgentContext) => Promise<AgentResult>;
 
-export type IndependentVerifier = () => Promise<{ command: string; exitCode: number; status: "PASS" | "FAIL" | "NOT_RUN" }>;
+export type IndependentVerifier = (context?: { cwd: string; baseSha: string }) => Promise<{ command: string; exitCode: number; status: "PASS" | "FAIL" | "NOT_RUN" }>;
 
 export type TaskRunResult = {
   taskId: TaskId;
@@ -76,7 +77,36 @@ export type TaskExecutionRunnerOptions = {
   leases?: WriteLeasePort;
   repository?: string;
   verifier?: IndependentVerifier;
+  /** Spec §3: refuse run unless an approved delivery process points at this task. */
+  requireApprovedProcess?: boolean;
+  /** Spec §4: git worktree from recorded baseSha, not the operator checkout. */
+  isolateWorktree?: boolean;
 };
+
+function porcelainPaths(status: string): string[] {
+  if (!status) return [];
+  return status.split("\n").map((line) => line.slice(3).trim()).filter(Boolean);
+}
+
+function pathMatchesAllowed(file: string, allowed: string[]): boolean {
+  const normalized = file.replace(/\\/g, "/");
+  return allowed.some((pattern) => {
+    const rule = pattern.replace(/\\/g, "/");
+    if (rule === "**") return true;
+    if (rule.endsWith("/**")) {
+      const prefix = rule.slice(0, -3);
+      return normalized === prefix || normalized.startsWith(`${prefix}/`);
+    }
+    if (rule.endsWith("/*")) {
+      const prefix = rule.slice(0, -2);
+      if (normalized === prefix) return true;
+      if (!normalized.startsWith(`${prefix}/`)) return false;
+      return !normalized.slice(prefix.length + 1).includes("/");
+    }
+    if (rule.endsWith("/")) return normalized === rule.slice(0, -1) || normalized.startsWith(rule);
+    return normalized === rule || normalized.startsWith(`${rule}/`);
+  });
+}
 
 function agentPrompt(context: Omit<AgentContext, "prompt">): string {
   return [
@@ -116,14 +146,24 @@ export class TaskExecutionRunner {
     this.mandate = options.mandate ?? new MandateAuthority();
   }
 
+  private gitAt(cwd: string, args: string[], signal = new AbortController().signal): Promise<string> {
+    return runCommand("git", args, resolve(cwd), { ...process.env, GIT_TERMINAL_PROMPT: "0" }, signal);
+  }
+
   private git(args: string[], signal = new AbortController().signal): Promise<string> {
-    return runCommand("git", args, resolve(this.options.projectRoot), { ...process.env, GIT_TERMINAL_PROMPT: "0" }, signal);
+    return this.gitAt(this.options.projectRoot, args, signal);
   }
 
   async run(taskId: TaskId): Promise<TaskRunResult> {
     const current = await this.states.load(taskId);
     if (!current) throw new TaskExecutionError("TASK_NOT_FOUND", 404);
     if (current.state !== "CREATED") throw new TaskExecutionError("TASK_NOT_RUNNABLE", 409);
+
+    const processes = new DeliveryProcessStore(this.options.stateDir);
+    const delivery = await processes.getByTaskId(taskId);
+    if (this.options.requireApprovedProcess && (!delivery || delivery.state !== "APPROVED")) {
+      throw new TaskExecutionError("DELIVERY_PROCESS_REQUIRED", 409);
+    }
 
     // Resolve the worker from the role BEFORE any git/lease side effect, so a
     // capability violation (e.g. research asked to write) fails closed up front.
@@ -165,12 +205,29 @@ export class TaskExecutionRunner {
     const signed = await this.workOrders.get(taskId, current.revision);
     const order = signed?.order;
     const branch = `koordynator/task-${taskId.toLowerCase()}-${randomUUID().slice(0, 8)}`;
+    const repoRoot = resolve(this.options.projectRoot);
+    const isolate = this.options.isolateWorktree === true;
     const baseBranch = (await this.git(["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+    const baseSha = (delivery?.baseSha || (await this.git(["rev-parse", "HEAD"]))).trim();
     const allowedPaths = order?.scope.allowedPaths ?? ["**"];
     let leaseId: string | undefined;
+    let workCwd = repoRoot;
+    let worktreePath: string | undefined;
 
     await this.states.save({ ...current, state: "BUILDING", changedAt: new Date().toISOString() });
-    await this.git(["switch", "-c", branch]);
+    if (isolate) {
+      worktreePath = join(resolve(this.options.stateDir), "worktrees", `${taskId}-${randomUUID().slice(0, 8)}`);
+      await mkdir(join(resolve(this.options.stateDir), "worktrees"), { recursive: true, mode: 0o700 });
+      await this.git(["worktree", "add", "-b", branch, worktreePath, baseSha]);
+      workCwd = worktreePath;
+      try {
+        await symlink(join(repoRoot, "node_modules"), join(workCwd, "node_modules"), "dir");
+      } catch {
+        /* no shared node_modules */
+      }
+    } else {
+      await this.git(["switch", "-c", branch]);
+    }
 
     try {
       const lease = await this.leases.grant({
@@ -187,33 +244,46 @@ export class TaskExecutionRunner {
       const context: Omit<AgentContext, "prompt"> = {
         taskId,
         branch,
-        cwd: resolve(this.options.projectRoot),
+        cwd: workCwd,
         objective: order?.objective ?? "Zadanie orkiestracji",
         allowedPaths,
         acceptanceCriteria: order?.acceptanceCriteria ?? []
       };
       const result = await agent({ ...context, prompt: agentPrompt(context) });
+      const gitWork = (args: string[]) => this.gitAt(workCwd, args);
 
-      const status = (await this.git(["status", "--porcelain"])).trim();
-      let commit: string | undefined;
-      if (status) {
-        await this.git(["add", "-A"]);
-        await this.git(["commit", "-m", `${taskId}: ${context.objective}\n\n${result.summary}`.slice(0, 1800)]);
-        commit = (await this.git(["rev-parse", "HEAD"])).trim();
+      const status = (await gitWork(["status", "--porcelain"])).trim();
+      const changedNow = porcelainPaths(status);
+      if (isolate && !allowedPaths.includes("**")) {
+        const extra = changedNow.filter((file) => !pathMatchesAllowed(file, allowedPaths));
+        if (extra.length) throw new TaskExecutionError("SCOPE_VIOLATION", 409);
       }
 
       const testClaim = this.options.verifier
-        ? { verifier: "independent" as const, ...(await this.options.verifier()) }
-        : { source: "SEE_AGENT_REPORT" as const };
+        ? { verifier: "independent" as const, ...(await this.options.verifier({ cwd: workCwd, baseSha })) }
+        : isolate
+          ? await independentVerify(workCwd, { ...process.env }, new AbortController().signal, baseSha)
+          : { source: "SEE_AGENT_REPORT" as const };
       const testVerdict = evaluateTestReceipt(testClaim).verdict;
-      if (testVerdict === "FAIL") throw new TaskExecutionError("INDEPENDENT_TESTS_FAILED", 409);
+      if (isolate) {
+        if (testVerdict === "FAIL") throw new TaskExecutionError("INDEPENDENT_TESTS_FAILED", 409);
+        if (testVerdict === "BLOCKED") throw new TaskExecutionError("INDEPENDENT_TESTS_BLOCKED", 409);
+      }
+
+      let commit: string | undefined;
+      if (status) {
+        await gitWork(["add", "-A"]);
+        await gitWork(["commit", "-m", `${taskId}: ${context.objective}\n\n${result.summary}`.slice(0, 1800)]);
+        commit = (await gitWork(["rev-parse", "HEAD"])).trim();
+      }
+      if (!isolate && testVerdict === "FAIL") throw new TaskExecutionError("INDEPENDENT_TESTS_FAILED", 409);
 
       // Post-build reviewer (recenzent, NOT a gate): reconstruct intent from the
       // product and report MATCH/DRIFT with evidence. It never blocks release.
       let review: PostBuildReview | undefined;
       if (commit) {
-        const treeSha = (await this.git(["rev-parse", "HEAD^{tree}"])).trim();
-        const changed = (await this.git(["diff", "--name-only", `${baseBranch}..HEAD`]))
+        const treeSha = (await gitWork(["rev-parse", "HEAD^{tree}"])).trim();
+        const changed = (await gitWork(["diff", "--name-only", `${baseSha}..HEAD`]))
           .split("\n").map((f) => f.trim()).filter(Boolean);
         review = reviewPostBuild({
           subjectSha: commit,
@@ -226,8 +296,12 @@ export class TaskExecutionRunner {
         });
       }
 
-      // Leave the working tree where the operator left it; the work lives on the branch.
-      await this.git(["switch", baseBranch]);
+      if (isolate && worktreePath) {
+        await this.git(["worktree", "remove", "--force", worktreePath]);
+        worktreePath = undefined;
+      } else {
+        await this.git(["switch", baseBranch]);
+      }
       await this.states.save({ ...current, state: "BUILD_READY", reasonCode: "BUILD", changedAt: new Date().toISOString() });
 
       const receipt: TaskRunResult = {
@@ -243,10 +317,17 @@ export class TaskExecutionRunner {
       await writeFile(join(this.runRoot, `${taskId}.json`), `${JSON.stringify(receipt, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
       return receipt;
     } catch (error) {
-      // Abandon the branch and return to the operator's branch, so a failure leaves no mess.
-      try { await this.git(["reset", "--hard"]); } catch { /* best effort */ }
-      try { await this.git(["switch", baseBranch]); } catch { /* best effort */ }
-      try { await this.git(["branch", "-D", branch]); } catch { /* best effort */ }
+      if (isolate) {
+        if (worktreePath) {
+          try { await this.git(["worktree", "remove", "--force", worktreePath]); } catch { /* best effort */ }
+          try { await rm(worktreePath, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
+        try { await this.git(["branch", "-D", branch]); } catch { /* best effort */ }
+      } else {
+        try { await this.git(["reset", "--hard"]); } catch { /* best effort */ }
+        try { await this.git(["switch", baseBranch]); } catch { /* best effort */ }
+        try { await this.git(["branch", "-D", branch]); } catch { /* best effort */ }
+      }
       const reason = error instanceof Error ? error.message : "AGENT_FAILED";
       await this.states.save({ ...current, state: "FAILED", reasonCode: reason.slice(0, 80), changedAt: new Date().toISOString() });
       throw error;

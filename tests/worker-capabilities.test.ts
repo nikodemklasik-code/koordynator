@@ -82,6 +82,7 @@ describe("Worker capability registry", () => {
   it("maps each TaskEnvelope role to the worker issue 40 assigns it", () => {
     // Issue 40 responsibility table: research=Hermes, code=OpenCode,
     // browser=Playwright, audit=audit reader, deploy=separate deploy role.
+    expect(workerForRole("product-owner")).toBe("hermes");
     expect(workerForRole("research")).toBe("hermes");
     expect(workerForRole("code")).toBe("opencode");
     expect(workerForRole("browser")).toBe("playwright");
@@ -91,6 +92,7 @@ describe("Worker capability registry", () => {
 
   it("keeps only the code role on a write worker; research/browser/audit stay read-only", () => {
     expect(workerCapabilities(workerForRole("code")).write).toBe(true);
+    expect(workerCapabilities(workerForRole("product-owner")).write).toBe(false);
     expect(workerCapabilities(workerForRole("research")).write).toBe(false);
     expect(workerCapabilities(workerForRole("browser")).write).toBe(false);
     expect(workerCapabilities(workerForRole("audit")).write).toBe(false);

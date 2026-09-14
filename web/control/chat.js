@@ -11,6 +11,9 @@ const state = {
   stageZeroTo: 0,
   stageZeroPick: "start",
   stageZeroMessages: [],
+  deliveryApproving: false,
+  deliveryTaskId: null,
+  deliveryProcessId: null,
   hermesMuted: false,
   hermesSessionId: null,
   hermesSource: null,
@@ -129,6 +132,8 @@ const stageZeroRunButton = $("stageZeroRunButton");
 const stageZeroAllButton = $("stageZeroAllButton");
 const stageZeroFromInput = $("stageZeroFrom");
 const stageZeroToInput = $("stageZeroTo");
+const approveDeliveryButton = $("approveDeliveryButton");
+const runDeliveryButton = $("runDeliveryButton");
 const muteHermesButton = $("muteHermesButton");
 const startHermesButton = $("startHermesButton");
 const stopHermesButton = $("stopHermesButton");
@@ -169,6 +174,15 @@ function setStatus(kind, text) {
   $("statusText").textContent = text;
   $("statusDot").className = `chat-status-dot ${kind}`;
   $("footerConnection").textContent = text.toUpperCase();
+  const activity = $("executionActivity");
+  const activityText = $("executionActivityText");
+  const active = kind === "generating" || kind === "analyzing" || kind === "working";
+  if (activity) {
+    activity.classList.toggle("active", active);
+    activity.setAttribute("aria-hidden", active ? "false" : "true");
+  }
+  if (activityText) activityText.textContent = kind === "generating" ? "ANALYZING · EXECUTING" : String(text || "WORKING").toUpperCase();
+  window.dispatchEvent(new CustomEvent("koordynator:execution-state", { detail: { active, kind, text } }));
 }
 
 function showAttachmentError(message = "") {
@@ -356,6 +370,8 @@ function updateControls() {
   modelSelect.disabled = state.generating;
   attachButton.disabled = state.generating || state.preparingAttachments;
   if (stageZeroButton) stageZeroButton.disabled = state.generating || state.preparingAttachments || !state.sessionId || state.stageZeroRunning;
+  if (approveDeliveryButton) approveDeliveryButton.disabled = state.generating || state.stageZeroRunning || state.deliveryApproving || !state.sessionId;
+  if (runDeliveryButton) runDeliveryButton.disabled = state.generating || state.stageZeroRunning || state.deliveryApproving || !state.deliveryTaskId;
 }
 
 function textBlock(text) {
@@ -678,12 +694,15 @@ function applyEvent(event) {
   } else if (event.type === "assistant_done") {
     state.generating = false;
     setStatus("connected", "Connected");
+    window.dispatchEvent(new CustomEvent("koordynator:chat-event", { detail: event }));
   } else if (event.type === "stopped") {
     state.generating = false;
     setStatus("stopped", "Stopped");
+    window.dispatchEvent(new CustomEvent("koordynator:chat-event", { detail: event }));
   } else if (event.type === "error") {
     state.generating = false;
     setStatus("error", humanError(event.code));
+    window.dispatchEvent(new CustomEvent("koordynator:chat-event", { detail: event }));
   }
   updateControls();
 }
@@ -731,7 +750,13 @@ function connectEvents() {
   };
   source.onerror = () => {
     state.connected = false;
-    if (!state.generating) setStatus("error", "Connection lost");
+    if (state.generating) {
+      state.generating = false;
+      setStatus("error", "Connection lost");
+      updateControls();
+      return;
+    }
+    setStatus("error", "Connection lost");
   };
 }
 
@@ -800,31 +825,77 @@ function buildMarkdownExport() {
 }
 
 function escapePdfText(value) {
-  return String(value || "").replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+  return String(value || "")
+    .replace(/[^\x20-\x7E]/g, (character) => {
+      const replacements = { "ą": "a", "ć": "c", "ę": "e", "ł": "l", "ń": "n", "ó": "o", "ś": "s", "ź": "z", "ż": "z", "Ą": "A", "Ć": "C", "Ę": "E", "Ł": "L", "Ń": "N", "Ó": "O", "Ś": "S", "Ź": "Z", "Ż": "Z", "—": "-", "–": "-", "…": "...", "“": '"', "”": '"', "„": '"', "’": "'" };
+      return replacements[character] ?? "?";
+    })
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function wrapPdfWords(text, maxWidth = 88) {
+  const wrapped = [];
+  for (const rawLine of String(text || "Empty conversation").split(/\r?\n/)) {
+    if (!rawLine.trim()) {
+      wrapped.push("");
+      continue;
+    }
+    const words = rawLine.trim().split(/\s+/);
+    let line = "";
+    for (const word of words) {
+      const pieces = word.length <= maxWidth ? [word] : word.match(new RegExp(`.{1,${maxWidth}}`, "g")) || [word];
+      for (const piece of pieces) {
+        if (!line) {
+          line = piece;
+          continue;
+        }
+        if (`${line} ${piece}`.length <= maxWidth) {
+          line += ` ${piece}`;
+          continue;
+        }
+        wrapped.push(line);
+        line = piece;
+      }
+    }
+    if (line) wrapped.push(line);
+  }
+  return wrapped;
 }
 
 function buildPdfExport(text) {
-  const lines = String(text || "Empty conversation").split(/\r?\n/).slice(0, 80);
-  const content = ["BT", "/F1 10 Tf", "50 780 Td"];
-  lines.forEach((line, index) => {
-    if (index > 0) content.push("0 -14 Td");
-    content.push(`(${escapePdfText(line.slice(0, 100))}) Tj`);
-  });
-  content.push("ET");
-  const stream = content.join("\n");
+  const PDF_PAGE_BREAK = 48;
+  const lines = wrapPdfWords(text);
+  const pages = [];
+  for (let index = 0; index < lines.length || index === 0; index += PDF_PAGE_BREAK) {
+    pages.push(lines.slice(index, index + PDF_PAGE_BREAK));
+  }
   const objects = [];
+  const pageIds = pages.map((_page, index) => 4 + index * 2);
   objects.push("1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n");
-  objects.push("2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n");
-  objects.push("3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources<< /Font<< /F1 5 0 R >> >> >>endobj\n");
-  objects.push(`4 0 obj<< /Length ${stream.length} >>stream\n${stream}\nendstream\nendobj\n`);
-  objects.push("5 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n");
+  objects.push(`2 0 obj<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>endobj\n`);
+  objects.push("3 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n");
+  pages.forEach((pageLines, pageIndex) => {
+    const pageId = pageIds[pageIndex];
+    const contentId = pageId + 1;
+    const content = ["BT", "/F1 11 Tf", "50 748 Td", "14 TL"];
+    pageLines.forEach((line, index) => {
+      if (index > 0) content.push("T*");
+      content.push(`(${escapePdfText(line)}) Tj`);
+    });
+    content.push("ET");
+    const stream = content.join("\n");
+    objects.push(`${pageId} 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${contentId} 0 R /Resources<< /Font<< /F1 3 0 R >> >> >>endobj\n`);
+    objects.push(`${contentId} 0 obj<< /Length ${new TextEncoder().encode(stream).length} >>stream\n${stream}\nendstream\nendobj\n`);
+  });
   let pdf = "%PDF-1.4\n";
   const offsets = [0];
   for (const object of objects) {
-    offsets.push(pdf.length);
+    offsets.push(new TextEncoder().encode(pdf).length);
     pdf += object;
   }
-  const xref = pdf.length;
+  const xref = new TextEncoder().encode(pdf).length;
   pdf += `xref\n0 ${objects.length + 1}\n`;
   pdf += "0000000000 65535 f \n";
   for (let i = 1; i < offsets.length; i += 1) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
@@ -1137,13 +1208,71 @@ async function runStageZero() {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
     stageZeroDialog?.close();
-    setStageZeroNotice(payload.reading?.decision?.status === "allow" ? "ok" : "warn", stageZeroSummary(payload));
+    const allowed = payload.reading?.decision?.status === "allow";
+    setStageZeroNotice(allowed ? "ok" : "warn", stageZeroSummary(payload));
+    if (approveDeliveryButton) approveDeliveryButton.classList.toggle("hidden", !allowed);
+    if (runDeliveryButton) runDeliveryButton.classList.add("hidden");
+    state.deliveryTaskId = null;
+    state.deliveryProcessId = null;
   } catch (error) {
     setStageZeroNotice("error", error instanceof Error ? error.message : "STAGE_ZERO_FAILED");
   } finally {
     state.stageZeroRunning = false;
     updateControls();
     if (stageZeroRunButton) stageZeroRunButton.disabled = false;
+  }
+}
+
+async function approveDelivery() {
+  if (!state.sessionId || state.deliveryApproving) return;
+  state.deliveryApproving = true;
+  updateControls();
+  setStageZeroNotice("pending", "Zatwierdzam zakres Harmonii do jednego podpisanego procesu…");
+  try {
+    const response = await fetch("/api/delivery/approve", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ sessionId: state.sessionId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+    state.deliveryProcessId = payload.processId || null;
+    state.deliveryTaskId = payload.taskId || null;
+    if (approveDeliveryButton) approveDeliveryButton.classList.add("hidden");
+    if (runDeliveryButton) runDeliveryButton.classList.toggle("hidden", !state.deliveryTaskId);
+    setStageZeroNotice("ok", `Proces ${payload.processId} zatwierdzony — zadanie ${payload.taskId}. Worktree i testy przed commitem.`);
+  } catch (error) {
+    setStageZeroNotice("error", error instanceof Error ? error.message : "DELIVERY_APPROVE_FAILED");
+  } finally {
+    state.deliveryApproving = false;
+    updateControls();
+  }
+}
+
+async function runApprovedDelivery() {
+  if (!state.deliveryTaskId || state.deliveryApproving) return;
+  state.deliveryApproving = true;
+  updateControls();
+  setStageZeroNotice("pending", `Uruchamiam ${state.deliveryTaskId} w izolowanym worktree…`);
+  try {
+    const response = await fetch(`/api/tasks/${encodeURIComponent(state.deliveryTaskId)}/run`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+    if (runDeliveryButton) runDeliveryButton.classList.add("hidden");
+    const tests = payload.testVerdict || "BLOCKED";
+    setStageZeroNotice(
+      tests === "PASS" ? "ok" : "warn",
+      `${payload.taskId} → ${payload.state} na ${payload.branch} (testy ${tests}, push nie).`
+    );
+  } catch (error) {
+    setStageZeroNotice("error", error instanceof Error ? error.message : "DELIVERY_RUN_FAILED");
+  } finally {
+    state.deliveryApproving = false;
+    updateControls();
   }
 }
 
@@ -1435,8 +1564,7 @@ async function newConversation() {
 }
 
 function resizeInput() {
-  input.style.height = "auto";
-  input.style.height = `${Math.min(input.scrollHeight, 180)}px`;
+  input.style.height = "";
   updateControls();
 }
 
@@ -1511,6 +1639,8 @@ popoutChatButton?.addEventListener("click", () => openPopoutChat());
 stageZeroButton?.addEventListener("click", () => void openStageZeroDialog());
 stageZeroRunButton?.addEventListener("click", () => void runStageZero());
 stageZeroAllButton?.addEventListener("click", () => selectWholeStageZeroRange());
+approveDeliveryButton?.addEventListener("click", () => void approveDelivery());
+runDeliveryButton?.addEventListener("click", () => void runApprovedDelivery());
 muteHermesButton?.addEventListener("click", () => toggleHermesMute());
 startHermesButton?.addEventListener("click", () => void startHermesPty());
 stopHermesButton?.addEventListener("click", () => void stopHermesPty());

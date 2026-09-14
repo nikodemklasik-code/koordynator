@@ -60,6 +60,8 @@ process.stdout.write('OpenCode implemented the task');
       projectRoot: repo,
       materialisationPrivateKeyPem: keys(),
       taskRunnerPathPrefix: bin,
+      requireApprovedProcess: false,
+      isolateWorktree: false,
       taskRunnerVerifier: async () => ({ command: "npx vitest run", exitCode: 0, status: "PASS" as const })
     });
     try {

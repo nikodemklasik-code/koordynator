@@ -11,6 +11,7 @@ describe("Live Chat model explorer", () => {
     expect(html).toContain('id="modelSelect"');
     expect(controller).toContain("modelSearchInput");
     expect(controller).toContain("modelRoleFilter");
+    expect(controller).not.toContain('createElement("style")');
     for (const role of [
       "Developer", "Researcher", "Frontend Developer", "Frontend Builder",
       "Builder", "Innovation Developer", "Security"

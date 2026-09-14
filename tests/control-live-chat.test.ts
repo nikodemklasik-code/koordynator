@@ -64,6 +64,17 @@ function confirmedFreeCatalog(model = "openai/gpt-5.6-sol"): ChatModelCatalogPor
   };
 }
 
+describe("Live Chat export contract", () => {
+  it("wraps PDF text and long attachment names instead of truncating them", async () => {
+    const source = await readFile(resolve("web/control/chat.js"), "utf8");
+    const css = await readFile(resolve("web/control/chat-v5.css"), "utf8");
+    expect(source).toContain("function wrapPdfWords");
+    expect(source).not.toContain("line.slice(0, 100)");
+    expect(source).toContain("PDF_PAGE_BREAK");
+    expect(css).toContain("overflow-wrap: anywhere");
+  });
+});
+
 describe("Live Chat service", () => {
   it("emits incremental assistant deltas, persists the transcript and never stores the API key", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-"));
@@ -359,7 +370,8 @@ describe("Live Chat HTTP boundary and UI", () => {
       const base = `http://127.0.0.1:${address.port}`;
 
       const page = await fetch(`${base}/chat`).then((response) => response.text());
-      expect(page).toContain("Live Chat");
+      expect(page).toContain("LIVE WORKSPACE");
+      expect(page).toContain("Live conversation");
       expect(page).toContain('id="sendButton"');
       expect(page).toContain('id="stopButton"');
       expect(page).toContain('id="newChatButton"');
@@ -372,7 +384,9 @@ describe("Live Chat HTTP boundary and UI", () => {
       expect(page).toContain('id="exportMdButton"');
       expect(page).toContain('id="exportPdfButton"');
       expect(page).toContain('id="exportZipButton"');
-      expect(page).toContain("Drop files or a GitHub repo link here");
+      expect(page).toContain("Drop files here");
+      expect(page).toContain('id="approveDeliveryButton"');
+      expect(page).toContain('id="runDeliveryButton"');
       expect(page).toContain("githubChatConsentDialog");
       expect(page).not.toContain("browser-must-never-see-this");
       expect(page.toLowerCase()).not.toContain("deepseek");
