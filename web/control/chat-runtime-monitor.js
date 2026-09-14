@@ -17,7 +17,7 @@
   let readableFlushTimer = null;
   let terminalToolbar = null;
   let terminalSummary = null;
-  let currentMode = "readable";
+  let currentMode = "raw";
   let lastReadableLine = "";
   let lastReadableAt = 0;
 
@@ -76,6 +76,7 @@
         telemetry.hermes.busySince = 0;
         telemetry.hermes.error = false;
         resetReadable("Hermes uruchomiony. Widok czytelny pokazuje odpowiedzi i pytania, a techniczny szum zostaje w Raw PTY.");
+        setMode("readable");
         emitTelemetry();
       }).catch(() => undefined);
     }
@@ -309,20 +310,19 @@
     if (!readableRoot) {
       readableRoot = document.createElement("div");
       readableRoot.id = "hermesReadableRuntime";
-      readableRoot.className = "runtime-readable active";
+      readableRoot.className = "runtime-readable";
       readableRoot.setAttribute("role", "log");
       readableRoot.setAttribute("aria-live", "polite");
       readableRoot.innerHTML = '<div class="runtime-readable-empty">Czekam na wyjście Hermesa…</div>';
       raw.before(readableRoot);
-      raw.classList.add("runtime-raw-hidden");
     }
 
     if (!terminalToolbar) {
       terminalToolbar = document.createElement("div");
       terminalToolbar.className = "runtime-terminal-toolbar";
       terminalToolbar.innerHTML = `
-        <button class="runtime-terminal-button active" data-runtime-mode="readable" type="button" aria-pressed="true">Readable</button>
-        <button class="runtime-terminal-button" data-runtime-mode="raw" type="button" aria-pressed="false">Raw PTY</button>
+        <button class="runtime-terminal-button" data-runtime-mode="readable" type="button" aria-pressed="false">Readable</button>
+        <button class="runtime-terminal-button active" data-runtime-mode="raw" type="button" aria-pressed="true">Raw PTY</button>
         <span class="runtime-terminal-spacer"></span>
         <span class="runtime-terminal-summary dead" id="runtimeTerminalSummary"><i class="runtime-terminal-heartbeat"></i><strong>OFF</strong><span>RX 0 B · TX 0 B</span></span>
         <button class="runtime-terminal-button" data-runtime-action="expand" type="button">Expand</button>
