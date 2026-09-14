@@ -127,7 +127,7 @@
   }
 
   const MODEL_ROLES = [
-    ["ALL", "All roles"],
+    ["ALL", "Model category"],
     ["DEVELOPER", "Developer"],
     ["RESEARCHER", "Researcher"],
     ["FRONTEND_DEVELOPER", "Frontend Developer"],

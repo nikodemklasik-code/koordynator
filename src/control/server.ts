@@ -1,3 +1,5 @@
+import { listConversationRoles } from "./chat-roles.js";
+import { openHermesToolPort } from "./hermes-tool-port.js";
 import { createRepositoryExecutor } from "./hermes-repository-runner.js";
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -7,8 +9,7 @@ import type { Digest, TaskId } from "../domain/ids.js";
 import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.js";
 import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 import { ReleaseReadModel } from "./release-read-model.js";
-import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
-import { loadChatProjectContext } from "./chat-project-context.js";
+import { ChatService, ChatServiceError, type ChatEvent, type ChatServiceOptions } from "./chat-service.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
@@ -32,6 +33,8 @@ import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
+  chatDirectTools?: boolean;
+  chatAutoMaterialise?: boolean;
   stateDir: string;
   webRoot?: string;
   projectRoot?: string;
@@ -253,7 +256,7 @@ export function createControlServer(options: ControlServerOptions): Server {
     stateDir,
     authorizeModel: async model => evaluateChatBilling(model, await modelCatalog.list(), options.chatBillingPolicy),
     ...(options.chatAllowRepositoryExecution ? { repositoryExecutor: createRepositoryExecutor(stateDir) } : {}),
-    ...(materialisation ? { materialiser: (consensus) => materialisation.materialise(consensus) } : {}),
+    ...(materialisation && options.chatAutoMaterialise === true ? { materialiser: (consensus) => materialisation.materialise(consensus) } : {}),
     ...(options.chatEndpoint === undefined ? {} : { endpoint: options.chatEndpoint }),
     ...(options.chatApiKey === undefined ? {} : { apiKey: options.chatApiKey }),
     ...(options.chatApiKeyEnv === undefined ? {} : { apiKeyEnv: options.chatApiKeyEnv }),
@@ -261,7 +264,8 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
     ...(options.chatHermesSkillsEveryTurn === undefined ? {} : { hermesSkillsEveryTurn: options.chatHermesSkillsEveryTurn }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
-    projectContextProvider: () => loadChatProjectContext(projectRoot)
+    projectRoot,
+    ...(options.chatDirectTools ? { toolFactory: (input: Parameters<NonNullable<ChatServiceOptions["toolFactory"]>>[0]) => openHermesToolPort({ ...input, root: projectRoot, stateDir }) } : {})
   });
   const stageZero = new StageZeroService({
     stateDir,
@@ -298,6 +302,11 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
       }
 
+      if (method === "GET" && url.pathname === "/api/chat/roles") {
+        const roles = await listConversationRoles(projectRoot);
+        return sendJson(response, 200, { roles });
+      }
+
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/chat/models") {
         return sendJson(response, 200, await modelCatalog.list());
       }
@@ -326,7 +335,8 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (method === "POST" && chatMessageMatch?.[1]) {
         const sessionId = safeSessionId(chatMessageMatch[1]);
         const payload = await readJsonBody(request, CHAT_MESSAGE_MAX_BYTES);
-        assertExactKeys(payload, ["message", "model", "attachments"]);
+        assertExactKeys(payload, ["message", "model", "attachments", "roleId"]);
+        if (payload.roleId !== undefined && typeof payload.roleId !== "string") throw new ChatServiceError("CHAT_ROLE_INVALID", 400);
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
         if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
@@ -354,7 +364,8 @@ export function createControlServer(options: ControlServerOptions): Server {
           payload.message,
           model,
           attachments,
-          billing
+          billing,
+          typeof payload.roleId === "string" ? payload.roleId : undefined
         ));
       }
 

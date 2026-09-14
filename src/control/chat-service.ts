@@ -1,3 +1,5 @@
+import { AD_HOC, listConversationRoles, type ConversationRole } from "./chat-roles.js";
+import { runChatToolLoop, type ToolPort, type ToolNotice } from "./chat-tool-loop.js";
 import { readAttachment } from "./attachment-reader.js";
 import { detectProjectConsensus, type ProjectConsensus } from "./chat-consensus.js";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
@@ -30,6 +32,8 @@ export type ChatMessage = {
   id: string;
   sessionId: string;
   role: ChatRole;
+  adHocRole?: string;
+  toolEvents?: ToolNotice[];
   content: string;
   createdAt: string;
   completedAt?: string;
@@ -48,6 +52,7 @@ export type ChatMessage = {
 };
 
 export type ChatSession = {
+  adHocRoleId?: string;
   sessionId: string;
   createdAt: string;
   updatedAt: string;
@@ -82,6 +87,8 @@ export class ChatServiceError extends Error {
 
 export type ChatServiceOptions = {
   stateDir: string;
+  projectRoot?: string;
+  toolFactory?: (input: { model: string; apiKey: string; endpoint: string; sessionId: string; userTask: string; readOnly: boolean; signal: AbortSignal }) => Promise<ToolPort>;
   repositoryExecutor?: RepositoryExecutor;
   skillExecutor?: SkillExecutor;
   /** Ships an agreed plan into Tasks; omitted when no signing key is configured. */
@@ -228,12 +235,16 @@ export class ChatService {
   private readonly starting = new Set<string>();
   private readonly active = new Map<string, ActiveGeneration>();
   private readonly materialiser: ChatServiceOptions["materialiser"];
+  private readonly toolFactory: ChatServiceOptions["toolFactory"];
+  private readonly projectRoot: string;
 
   constructor(options: ChatServiceOptions) {
     this.root = resolve(options.stateDir, "chat");
     this.repositoryExecutor = options.repositoryExecutor;
     this.skillExecutor = options.skillExecutor ?? createSkillExecutor(options.stateDir, process.cwd());
     this.materialiser = options.materialiser;
+    this.toolFactory = options.toolFactory;
+    this.projectRoot = options.projectRoot ?? process.cwd();
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
@@ -452,10 +463,10 @@ export class ChatService {
     }
   }
 
-  async startMessage(sessionId: string, messageText: string, requestedModel?: string, rawAttachments?: unknown, billing?: ChatBillingDecision) {
+  async startMessage(sessionId: string, messageText: string, requestedModel?: string, rawAttachments?: unknown, billing?: ChatBillingDecision, requestedRole?: string) {
     if (this.starting.has(sessionId) || this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
     this.starting.add(sessionId);
-    try { return await this.prepareMessage(sessionId, messageText, requestedModel, rawAttachments, billing); }
+    try { return await this.prepareMessage(sessionId, messageText, requestedModel, rawAttachments, billing, requestedRole); }
     finally { this.starting.delete(sessionId); }
   }
 
@@ -464,7 +475,8 @@ export class ChatService {
     messageText: string,
     requestedModel?: string,
     rawAttachments?: unknown,
-    billing?: ChatBillingDecision
+    billing?: ChatBillingDecision,
+    requestedRole?: string
   ): Promise<{ accepted: true; messageId: string; model: string; billingSource: string }> {
     const text = messageText.trim();
     const attachments = this.normalizeAttachments(rawAttachments);
@@ -477,6 +489,10 @@ export class ChatService {
     if (this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
     const session = await this.getSession(sessionId);
     if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    const roleId = requestedRole ?? session.adHocRoleId ?? "general";
+    const selectedRole = (await listConversationRoles(this.projectRoot)).find(role => role.id === roleId);
+    if (!selectedRole) throw new ChatServiceError("CHAT_ROLE_NOT_FOUND", 400);
+    session.adHocRoleId = selectedRole.id;
     const key = this.credential();
     if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
     if (billing?.allowed === false) throw new ChatServiceError("CHAT_BILLING_POLICY_DENIED", 403);
@@ -502,7 +518,7 @@ export class ChatService {
       ...(attachments.length === 0 ? {} : { attachments })
     };
     const assistant: ChatMessage = {
-      id: randomUUID(), sessionId, role: "assistant", content: "", createdAt: now(), state: "streaming", model,
+      id: randomUUID(), sessionId, role: "assistant", content: "", createdAt: now(), state: "streaming", model, adHocRole: selectedRole.name,
       ...(billing === undefined ? {} : { billing })
     };
     session.messages.push(user, assistant);
@@ -513,7 +529,7 @@ export class ChatService {
 
     const controller = new AbortController();
     this.active.set(sessionId, { controller, messageId: assistant.id });
-    void this.generate(session, assistant, controller, key).finally(() => {
+    void this.generate(session, assistant, controller, key, selectedRole).finally(() => {
       const current = this.active.get(sessionId);
       if (current?.messageId === assistant.id) this.active.delete(sessionId);
     });
@@ -553,13 +569,13 @@ export class ChatService {
     }
   }
 
-  private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
+  private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string, selectedRole: ConversationRole): Promise<void> {
     const sessionId = session.sessionId;
     const userMessage = session.messages.at(-2)!;
     const taskText = userMessage.content;
     const naturalSkillTask = isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
     const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText) || (this.hermesSkillsEveryTurn && naturalSkillTask);
-    const longRunning = Boolean(repositoryTask(taskText)) || skillTask;
+    const longRunning = Boolean(this.toolFactory) || Boolean(repositoryTask(taskText)) || skillTask;
     const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
       if (repositoryTask(taskText) && this.repositoryExecutor) {
@@ -605,7 +621,43 @@ export class ChatService {
         return;
       }
       const history = await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id));
+      if (this.toolFactory || selectedRole.id !== "general") history.push({ role: "system", content: [selectedRole.contract, AD_HOC, "Selected role: " + selectedRole.name].filter(Boolean).join("\n\n") });
       const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
+      if (this.toolFactory) {
+        const emit = (delta: string) => {
+          assistant.content += delta;
+          this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
+        };
+        const notice = (event: ToolNotice) => {
+          assistant.toolEvents ??= [];
+          assistant.toolEvents.push(event);
+          // Plain transcript events are persisted, exported, and replayed in the originating chat.
+          emit("\n\n[" + event.name + " · " + event.state + "]" + (event.output ? "\n" + event.output : "") + "\n\n");
+        };
+        let port: ToolPort;
+        try {
+          port = await this.toolFactory({ model: session.model, apiKey: key, endpoint: this.endpoint,
+            sessionId, userTask: taskText, readOnly: selectedRole.readOnly, signal: controller.signal });
+        } catch (error) {
+          if (controller.signal.aborted) throw error;
+          const reason = error instanceof Error ? error.message : "TOOLS_UNAVAILABLE";
+          notice({ id: randomUUID(), name: "Narzędzia", state: "error", output: reason });
+          port = { tools: [], call: async () => { throw new Error("TOOLS_UNAVAILABLE"); }, close: async () => {} };
+          history.push({ role: "system", content: "Tools are unavailable this turn. Do not claim to have used them." });
+        }
+        try {
+          await runChatToolLoop({
+            endpoint: this.endpoint, key, models: chain, messages: history, signal: controller.signal,
+            fetchImpl: this.fetchImpl, port, ...(this.authorizeModel ? { authorize: this.authorizeModel } : {}),
+            delta: emit, notice, selected: (model, billing) => { assistant.model=model; session.model=model; if(billing) assistant.billing=billing; },
+            usage: value => { if (value) assistant.usage=mergeUsage(assistant.usage,value); }
+          });
+        } finally { await port.close(); }
+        const audited = await this.finalize(session, assistant, "complete");
+        if (!audited) throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+        this.emit(sessionId, { type: "assistant_done", message: assistant });
+        return;
+      }
       let response: Response | undefined;
       let lastRateLimit: ChatServiceError | undefined;
       for (const model of chain) {
@@ -677,6 +729,8 @@ export class ChatService {
         return;
       }
       const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_UNAVAILABLE";
+      assistant.content += "\n\n[Błąd: " + code + "]";
+      this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta: "\n\n[Błąd: " + code + "]" });
       await this.finalize(session, assistant, "error");
       this.emit(sessionId, { type: "error", sessionId, code, message: code });
     } finally {

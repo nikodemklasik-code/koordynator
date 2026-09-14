@@ -724,9 +724,11 @@ function connectEvents() {
   if (state.source) state.source.close();
   state.connected = false;
   setStatus("", "Connecting");
+  const originatingSessionId = state.sessionId;
   const source = new EventSource(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/events`);
   state.source = source;
   source.onmessage = (event) => {
+    if (state.sessionId !== originatingSessionId || state.source !== source) return;
     try { applyEvent(JSON.parse(event.data)); } catch { setStatus("error", "Invalid stream event"); }
   };
   source.onerror = () => {
@@ -744,6 +746,8 @@ async function createSession({ persist = !isPopoutWindow } = {}) {
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
   state.sessionId = session.sessionId;
+  if (session.adHocRoleId && !localStorage.getItem(roleStorageKey())) localStorage.setItem(roleStorageKey(), session.adHocRoleId);
+  await refreshConversationRoles();
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   renderTranscript([]);
@@ -758,6 +762,8 @@ async function loadSessionById(sessionId, { persist = false } = {}) {
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
   state.sessionId = session.sessionId;
+  if (session.adHocRoleId && !localStorage.getItem(roleStorageKey())) localStorage.setItem(roleStorageKey(), session.adHocRoleId);
+  await refreshConversationRoles();
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   if ([...modelSelect.options].some((option) => option.value === session.model)) modelSelect.value = session.model;
@@ -1369,6 +1375,48 @@ function openPopoutChat() {
   window.open(target.toString(), `koord-chat-${Date.now()}`, "popup=yes,width=1180,height=860");
 }
 
+let conversationRoles = [];
+function roleStorageKey() { return "koordynator.chatRole." + state.sessionId; }
+function selectedConversationRole() { return document.getElementById("conversationRoleSelect")?.value || "general"; }
+async function refreshConversationRoles() {
+  let select = document.getElementById("conversationRoleSelect");
+  if (!select) {
+    select = document.createElement("select");
+    select.id = "conversationRoleSelect";
+    select.setAttribute("aria-label", "Rola rozmówcy");
+    select.style.cssText = "max-width:210px;min-height:40px;background:#0b1722;color:#dceaf5;border:1px solid #284659;border-radius:9px;padding:6px";
+    select.append(new Option("AI / bez roli", "general"));
+    sendButton.parentElement.insertBefore(select, sendButton);
+    select.addEventListener("change", () => {
+      localStorage.setItem(roleStorageKey(), select.value);
+      const role = conversationRoles.find(r => r.id === select.value);
+      const options = [...modelSelect.options].filter(o => o.value && !o.disabled);
+      const assigned = (role?.models || []).map(id => options.find(o => o.value === id)).filter(Boolean);
+      const code = /developer|builder|integrator|cleaner/i.test(role?.name || "");
+      const candidates = assigned.length ? assigned : options.filter(o => code ? /codex|coder|gpt|claude|qwen/i.test(o.textContent + o.value) : /gpt|claude|gemini|grok/i.test(o.textContent + o.value));
+      const hint = document.getElementById("conversationRoleHint");
+      hint.textContent = select.value === "general" ? "Zwykły czat AI" : (assigned.length ? "Modele z kontraktu: " : "Sugestie z katalogu (heurystyka): ") + (candidates.slice(0,3).map(o => o.textContent).join(" · ") || "wybierz dostępny model");
+      // Recommendations never silently replace the user's model.
+      select.title = role?.source || "";
+    });
+    const hint = document.createElement("div");
+    hint.id = "conversationRoleHint";
+    hint.style.cssText = "font-size:11px;color:#9bb1c3;max-width:100%;padding:4px 8px";
+    hint.textContent = "Zwykły czat AI";
+    composer.appendChild(hint);
+  }
+  try {
+    const response = await fetch("/api/chat/roles");
+    if (!response.ok) throw new Error("ROLE_CATALOG_UNAVAILABLE");
+    const payload = await response.json();
+    conversationRoles = payload.roles || [];
+    const saved = localStorage.getItem(roleStorageKey()) || "general";
+    select.replaceChildren(...conversationRoles.map(r => new Option(r.name, r.id)));
+    select.value = conversationRoles.some(r => r.id === saved) ? saved : "general";
+    select.dispatchEvent(new Event("change"));
+  } catch { document.getElementById("conversationRoleHint").textContent = "Role niedostępne — działa zwykły czat"; }
+}
+
 async function sendMessage() {
   const message = input.value.trim();
   const attachments = state.pendingAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }));
@@ -1385,7 +1433,7 @@ async function sendMessage() {
     const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(modelSelect.value ? { message, model: modelSelect.value, attachments } : { message, attachments })
+      body: JSON.stringify({ message, ...(modelSelect.value ? { model: modelSelect.value } : {}), attachments, roleId: selectedConversationRole() })
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
