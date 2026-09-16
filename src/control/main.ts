@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
 import { loadOrCreateControlSigningKey } from "./control-signing-key.js";
 import { ChatService } from "./chat-service.js";
 import { ChatExportService } from "./chat-export-service.js";
 import { installChatExportHttp } from "./chat-export-http.js";
+import { LiveChatModelCatalogService } from "./live-chat-model-catalog.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -26,6 +28,19 @@ const stateDir = resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator");
 const materialisationEnabled = process.env.KOORDYNATOR_CHAT_MATERIALISE !== "0";
 const signing = materialisationEnabled ? await loadOrCreateControlSigningKey(stateDir) : null;
 
+const keeper = spawn(process.execPath, [resolve("scripts/omniroute-keeper.mjs")], {
+  cwd: process.cwd(),
+  env: process.env,
+  detached: true,
+  stdio: "ignore"
+});
+keeper.unref();
+
+const chatModelCatalog = new LiveChatModelCatalogService({
+  endpoint: route.endpoint,
+  apiKeyEnv: "OMNIROUTE_API_KEY"
+});
+
 const server = createControlServer({
   stateDir,
   projectRoot: resolve(process.env.KOORDYNATOR_PROJECT_ROOT ?? process.cwd()),
@@ -39,9 +54,10 @@ const server = createControlServer({
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT !== "0",
   chatAllowWorkspaceContext: process.env.KOORDYNATOR_CHAT_WORKSPACE_CONTEXT !== "0",
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
-  chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS !== "0",
+  chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
+  chatModelCatalog,
   chatBillingPolicy: { freeOnly: process.env.KOORDYNATOR_FREE_ONLY === "1" },
   ...(process.env.KOORDYNATOR_HARMONIA_MODEL?.trim()
     ? { chatHarmoniaModel: process.env.KOORDYNATOR_HARMONIA_MODEL.trim() }
