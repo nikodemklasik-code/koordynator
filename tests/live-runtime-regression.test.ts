@@ -1,10 +1,15 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { ChatModelCatalogService } from "../src/control/chat-model-catalog.js";
+import { LiveChatModelCatalogService } from "../src/control/live-chat-model-catalog.js";
 
 describe("live runtime regressions", () => {
-  it("keeps executable chat models anchored to /v1/models instead of inflating them from management inventories", async () => {
-    const managementModels = Array.from({ length: 500 }, (_, index) => ({ id: `inventory/model-${index}`, type: "chat", free: index < 200 }));
+  it("keeps executable chat models anchored to /v1/models while preserving inventory counts", async () => {
+    const managementModels = Array.from({ length: 500 }, (_, index) => ({
+      id: `inventory/model-${index}`,
+      type: "chat",
+      free: index < 200
+    }));
+
     const fetchImpl = (async (input: string | URL | Request) => {
       const url = String(input);
       if (url.endsWith("/v1/models")) {
@@ -25,7 +30,7 @@ describe("live runtime regressions", () => {
       return new Response("", { status: 404 });
     }) as typeof fetch;
 
-    const catalog = await new ChatModelCatalogService({
+    const catalog = await new LiveChatModelCatalogService({
       endpoint: "http://127.0.0.1:20128/v1",
       apiKey: "test",
       fetchImpl
@@ -36,15 +41,22 @@ describe("live runtime regressions", () => {
       "groq/openai/gpt-oss-120b"
     ]);
     expect(catalog.models.some((id) => id.startsWith("inventory/"))).toBe(false);
+    expect(catalog.inventory).toEqual({
+      totalModels: 502,
+      verifiedFreeModels: 2,
+      freeCandidates: 202,
+      executableModels: 2
+    });
   });
 
-  it("keeps ordinary chat direct and wires an OmniRoute keeper into normal startup", async () => {
-    const [main, startAll] = await Promise.all([
+  it("keeps ordinary chat direct and wires OmniRoute recovery into Control and Hermes CLI", async () => {
+    const [main, packageJson] = await Promise.all([
       readFile("src/control/main.ts", "utf8"),
-      readFile("scripts/start-all.mjs", "utf8")
+      readFile("package.json", "utf8")
     ]);
 
     expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1"');
-    expect(startAll).toContain("omniroute-keeper.mjs");
+    expect(main).toContain("omniroute-keeper.mjs");
+    expect(packageJson).toContain("hermes-managed.mjs");
   });
 });
