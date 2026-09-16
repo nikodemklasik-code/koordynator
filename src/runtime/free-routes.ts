@@ -1,4 +1,5 @@
-import { ChatModelCatalogService, type ChatModelCatalog, type ChatModelCatalogPort } from "../control/chat-model-catalog.js";
+import { type ChatModelCatalog, type ChatModelCatalogPort } from "../control/chat-model-catalog.js";
+import { LiveChatModelCatalogService } from "../control/live-chat-model-catalog.js";
 import { evaluateChatBilling } from "../control/chat-billing-policy.js";
 
 export function freeRouteCandidates(catalog: ChatModelCatalog, preferred?: string): string[] {
@@ -10,7 +11,7 @@ export function freeRouteCandidates(catalog: ChatModelCatalog, preferred?: strin
 
 /** Live pricing evidence is required; a provider name or ':free' suffix is insufficient. */
 export function freeRouteGuard(settings: { endpoint: string; apiKey: string }, catalogPort?: ChatModelCatalogPort) {
-  const service = catalogPort ?? new ChatModelCatalogService(settings);
+  const service = catalogPort ?? new LiveChatModelCatalogService(settings);
   let snapshot: ChatModelCatalog | undefined;
   let expires = 0;
   return async (model: string): Promise<boolean> => {
@@ -31,7 +32,7 @@ export async function selectWorkingFreeRoutes(settings: { endpoint: string; apiK
   timeoutMs?: number;
 } = {}): Promise<{ primary: string | null; fallbacks: string[]; probes: FreeRouteProbe[];
   diagnostics: { modelCount: number; freeCandidateCount: number; pricingAvailable: boolean; billingSources: Record<string, number> } }> {
-  const catalog = await (options.catalog ?? new ChatModelCatalogService(settings)).list();
+  const catalog = await (options.catalog ?? new LiveChatModelCatalogService({ ...settings, fetchImpl: options.fetchImpl })).list();
   const allCandidates = freeRouteCandidates(catalog, settings.model);
   const candidates = allCandidates.slice(0, 6);
   const billingSources: Record<string, number> = {};
