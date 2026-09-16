@@ -12,10 +12,13 @@ const keeper = spawn(process.execPath, [resolve(root, "scripts", "omniroute-keep
 });
 keeper.unref();
 
+const requested = process.argv.slice(2);
+const hermesArgs = requested[0] === "hermes" ? requested.slice(1) : requested;
+
 const child = spawn(process.execPath, [
   resolve(root, "dist", "runtime", "main.js"),
   "hermes",
-  ...process.argv.slice(2)
+  ...hermesArgs
 ], {
   cwd: root,
   env: process.env,
