@@ -32,7 +32,11 @@ export async function selectWorkingFreeRoutes(settings: { endpoint: string; apiK
   timeoutMs?: number;
 } = {}): Promise<{ primary: string | null; fallbacks: string[]; probes: FreeRouteProbe[];
   diagnostics: { modelCount: number; freeCandidateCount: number; pricingAvailable: boolean; billingSources: Record<string, number> } }> {
-  const catalog = await (options.catalog ?? new LiveChatModelCatalogService({ ...settings, fetchImpl: options.fetchImpl })).list();
+  const service = options.catalog ?? new LiveChatModelCatalogService({
+    ...settings,
+    ...(options.fetchImpl === undefined ? {} : { fetchImpl: options.fetchImpl })
+  });
+  const catalog = await service.list();
   const allCandidates = freeRouteCandidates(catalog, settings.model);
   const candidates = allCandidates.slice(0, 6);
   const billingSources: Record<string, number> = {};
