@@ -3,9 +3,11 @@ import { LiveChatModelCatalogService } from "../control/live-chat-model-catalog.
 import { evaluateChatBilling } from "../control/chat-billing-policy.js";
 
 export function freeRouteCandidates(catalog: ChatModelCatalog, preferred?: string): string[] {
-  return [...new Set(catalog.models)].filter(model =>
-    evaluateChatBilling(model, catalog, { freeOnly: true }).allowed
-  ).sort((a, b) => Number(b === preferred) - Number(a === preferred)
+  return [...new Set(catalog.models)].filter(model => {
+    const source = catalog.billing?.modelSources[model] ?? "UNKNOWN";
+    if (source !== "FREE_CONFIRMED" && source !== "FREE_OAUTH") return false;
+    return evaluateChatBilling(model, catalog, { freeOnly: true }).allowed;
+  }).sort((a, b) => Number(b === preferred) - Number(a === preferred)
     || Number(catalog.billing?.modelSources[a] !== "FREE_CONFIRMED") - Number(catalog.billing?.modelSources[b] !== "FREE_CONFIRMED"));
 }
 
@@ -19,7 +21,10 @@ export function freeRouteGuard(settings: { endpoint: string; apiKey: string }, c
       snapshot = await service.list();
       expires = Date.now() + 30_000;
     }
-    return snapshot.models.includes(model) && evaluateChatBilling(model, snapshot, { freeOnly: true }).allowed;
+    const source = snapshot.billing?.modelSources[model] ?? "UNKNOWN";
+    return snapshot.models.includes(model)
+      && (source === "FREE_CONFIRMED" || source === "FREE_OAUTH")
+      && evaluateChatBilling(model, snapshot, { freeOnly: true }).allowed;
   };
 }
 

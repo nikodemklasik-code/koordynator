@@ -101,7 +101,15 @@ function runBootstrap() {
 async function main() {
   const plan = { mode: "EXISTING_SESSIONS_ONLY", freshConsentStarted: false, results: [], activeProviders: [], bootstrapStatus: 0 };
   if (DRY_RUN) {
-    if (JSON_MODE) console.log(JSON.stringify(plan)); else log("AUTO_IMPORT: existing local AI sessions only; fresh OAuth is never started");
+    if (JSON_MODE) {
+      console.log(JSON.stringify(plan));
+    } else {
+      log("AUTO_IMPORT: existing local AI sessions only; no OAuth/login prompts");
+      log("- Codex/OpenAI: import ~/.codex/auth.json when available");
+      log("- Cursor: OmniRoute system auto-import when available");
+      log("- Zed: OmniRoute system auto-import when available");
+      log("- Providers requiring fresh consent: skipped, never opened automatically");
+    }
     return;
   }
   const version = exec("omniroute", ["--version"]);
