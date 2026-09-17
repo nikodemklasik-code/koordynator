@@ -102,3 +102,11 @@
    ledger usable instead of clipping it against a tall min-height. */
 @media(max-height:760px){.release-kpis article{min-height:76px}.release-kpis strong{font-size:clamp(18px,2vw,22px)}.release-table-wrap{min-height:180px}.page-head.release-head{min-height:0;padding-top:14px}}
 @media(max-height:560px){.release-kpis{padding-bottom:10px}.release-table-wrap{min-height:150px}.release-path li:not(:last-child)::after{display:none}}
+
+/* The release page is a flex column while the shared .page-head rule was designed for the
+   grid pages. Never let flexbox shrink the heading underneath the KPI cards. Higher
+   specificity is intentional because control-ui.css is loaded after this stylesheet. */
+.page-head.release-head{flex:0 0 auto;min-height:124px;padding:20px clamp(14px,2.2vw,28px) 18px;align-items:flex-end;position:relative;z-index:2;background:linear-gradient(180deg,rgba(9,16,24,.98),rgba(9,16,24,.78) 72%,rgba(9,16,24,0))}
+.release-kpis{flex:0 0 auto;position:relative;z-index:1}
+@media(max-width:900px){.page-head.release-head{align-items:flex-start;flex-direction:column;flex-wrap:nowrap;min-height:0;padding-top:16px;padding-bottom:16px}}
+@media(max-height:760px){.page-head.release-head{flex:0 0 auto;min-height:0;padding-top:14px;padding-bottom:14px}}

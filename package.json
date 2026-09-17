@@ -27,6 +27,7 @@
     "start:all": "node scripts/start-all.mjs",
     "doctor:omniroute": "npm run build && node dist/runtime/main.js doctor",
     "ai:bootstrap": "npm run build && node dist/runtime/main.js bootstrap",
+    "ai:swarm": "npm run build && node dist/runtime/free-swarm-cli.js",
     "ai:always-on": "node scripts/ai-always-on.mjs",
     "hermes": "npm run build && node dist/runtime/main.js hermes",
     "hermes:openai": "npm run build && node dist/runtime/main.js hermes openai",

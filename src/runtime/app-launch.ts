@@ -3,7 +3,9 @@ import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { resolve } from "node:path";
 import { bootstrapAi } from "./ai-bootstrap.js";
+import { bootstrapFreeSwarm } from "./free-swarm.js";
 import { loadLocalConfig } from "./local-config.js";
+import { chooseControlPort, isKoordynatorControl } from "./control-instance.js";
 
 function browserUrl(host: string, port: number): string {
   const safeHost = host === "0.0.0.0"
@@ -39,14 +41,42 @@ function controlPort(): number {
 async function main(): Promise<void> {
   loadLocalConfig();
 
-  // Reuse only already-persisted OmniRoute sessions. This never starts OAuth.
+  const host = process.env.KOORDYNATOR_CONTROL_HOST ?? "127.0.0.1";
+  const preferredPort = controlPort();
+  const preferredUrl = browserUrl(host, preferredPort);
+
+  // Fast path: if Koordynator is already running, reuse it instead of probing AI
+  // and then crashing with EADDRINUSE.
+  if (await isKoordynatorControl(preferredUrl)) {
+    console.log(`KOORDYNATOR_CONTROL_REUSE ${preferredUrl}`);
+    openUrl(preferredUrl);
+    return;
+  }
+
+  // 8787 is the documented/default port and appears in .env.example, so merely
+  // loading KOORDYNATOR_CONTROL_PORT=8787 must not disable automatic fallback.
+  // Only a non-default configured value is treated as an operator-pinned port.
+  const explicitPort = process.env.KOORDYNATOR_CONTROL_PORT !== undefined && preferredPort !== 8787;
+  const port = await chooseControlPort(host, preferredPort, explicitPort);
+  const url = browserUrl(host, port);
+  if (port !== preferredPort) {
+    process.env.KOORDYNATOR_CONTROL_PORT = String(port);
+    console.log(`KOORDYNATOR_CONTROL_PORT_BUSY ${preferredPort}; using ${port}`);
+  }
+
+  // Reuse only already-persisted OmniRoute sessions. This never starts a fresh login.
   await bootstrapAi();
 
-  const host = process.env.KOORDYNATOR_CONTROL_HOST ?? "127.0.0.1";
-  const port = controlPort();
-  const url = browserUrl(host, port);
-  const controlEntry = resolve("dist", "control", "main.js");
+  // Then discover OmniRoute's explicitly no-auth/free providers and put every
+  // route that passes a real inference probe ahead of quota-limited accounts.
+  // Failure here is non-fatal: the already-proven subscription route remains active.
+  try {
+    await bootstrapFreeSwarm();
+  } catch {
+    console.log("FREE_SWARM_UNAVAILABLE; keeping existing AI route");
+  }
 
+  const controlEntry = resolve("dist", "control", "main.js");
   const child = spawn(process.execPath, [controlEntry], {
     cwd: process.cwd(),
     env: process.env,
