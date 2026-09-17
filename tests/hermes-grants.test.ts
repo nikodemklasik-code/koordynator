@@ -23,16 +23,22 @@ describe("Hermes terminal grants", () => {
     await expect(store.grant("terminal", false)).rejects.toThrow("HERMES_GRANT_CONSENT_REQUIRED");
 
     const denied = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
-    const deniedConfig = JSON.parse(await readFile(join(denied.env.HERMES_HOME, "config.yaml"), "utf8"));
+    try {
+    const deniedConfig = JSON.parse(await readFile(join(denied.env.HERMES_HOME!, "config.yaml"), "utf8"));
     expect(deniedConfig.approvals).toEqual({ mode: "smart" });
     expect(deniedConfig.disabled_toolsets).toContain("terminal");
 
     expect((await store.grant("terminal", true)).terminal).toBe(true);
     const allowed = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
-    const allowedConfig = JSON.parse(await readFile(join(allowed.env.HERMES_HOME, "config.yaml"), "utf8"));
+    try {
+    const allowedConfig = JSON.parse(await readFile(join(allowed.env.HERMES_HOME!, "config.yaml"), "utf8"));
     expect(allowedConfig.approvals).toEqual({ mode: "off" });
     expect(allowedConfig.disabled_toolsets ?? []).not.toContain("terminal");
     expect(allowedConfig.terminal).toMatchObject({ cwd: resolve(root) });
+    expect(allowed.env.OPENAI_API_KEY).toMatch(/^tkt\./);
+    expect(allowed.env.OPENAI_API_KEY).not.toBe(settings.apiKey);
+    } finally { await allowed.close(); }
+    } finally { await denied.close(); }
   });
 });
 

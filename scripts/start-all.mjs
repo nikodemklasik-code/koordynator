@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 /**
  * One-click always-on start for Koordynator.
- * Boots OmniRoute (if needed), refreshes free/sub AI routes, starts Control UI, opens chat.
+ * Boots OmniRoute (if needed), safely reuses persisted/local AI sessions,
+ * refreshes live routes, starts Control UI, then opens chat.
  *
  * Daily:
  *   npm run start:all
  *
  * Or double-click:
  *   scripts/Koordynator-Start.command
+ *
+ * Fresh vendor authorization is deliberately NOT part of normal launch. Use the
+ * explicit one-time `npm run ai:auth-missing` wizard only when a route needs it.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -112,8 +116,10 @@ function openChat() {
 console.log("Koordynator start-all");
 console.log(`repo: ${root}`);
 ensureOmniRoute();
+run("Reuse existing AI sessions (no login)", "npm", ["run", "ai:connect-existing", "--", "--no-bootstrap"], { allowFail: true });
 run("AI always-on (no login)", "npm", ["run", "ai:always-on"]);
 startControlWithLog();
 openChat();
 console.log(`\nDone. Chat: ${chatUrl}`);
+console.log("Fresh vendor authorization is never launched here. Run npm run ai:auth-missing only when a missing route needs one-time consent.");
 console.log("Stop later: close the Control UI process; OmniRoute can stay running.");

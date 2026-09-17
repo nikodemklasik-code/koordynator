@@ -5,12 +5,12 @@
  * Default: NO interactive login. Uses already-active OmniRoute sessions.
  * Priority: free OAuth / subscription first, Codex/OpenAI last.
  *
- * Two commands for daily use:
+ * Daily:
  *   npm run ai:always-on
  *   npm start
  *
  * Optional:
- *   npm run ai:always-on -- --login   # only when a provider is missing
+ *   npm run ai:always-on -- --login   # explicit one-time vendor auth wizard
  *   npm run ai:always-on -- --probe
  */
 import { spawnSync } from "node:child_process";
@@ -37,7 +37,8 @@ Daily:
   npm start
 
 Options:
-  --login   Allow interactive OAuth for missing providers
+  --free    Select only live, catalog-confirmed free routes with tool calling
+  --login   Run the explicit one-time vendor OAuth wizard for missing routes
   --probe   Live inference probe
   --start   Start control UI after setup
 `);
@@ -103,7 +104,7 @@ console.log(`node: ${need("node")}`);
 console.log(`npm:  ${need("npm")}`);
 console.log(`omniroute: ${need("omniroute")}`);
 console.log(`hermes: ${need("hermes")}`);
-console.log(wantLogin ? "mode: login allowed for missing providers" : "mode: no login (use existing sessions)");
+console.log(wantLogin ? "mode: explicit one-time login wizard" : "mode: no login (use existing sessions)");
 
 if (!existsSync(resolve(root, ".env")) && existsSync(resolve(root, ".env.example"))) {
   run("Create .env from example", "cp", [".env.example", ".env"]);
@@ -114,7 +115,7 @@ ensureOmniRoute();
 run("Build", "npm", ["run", "build"]);
 
 if (wantLogin) {
-  run("Bootstrap / login missing providers", "node", ["dist/runtime/main.js", "bootstrap"]);
+  run("One-time provider authentication", "node", ["scripts/ai-auth-missing.mjs"]);
 }
 
 const {
@@ -131,6 +132,7 @@ const {
 } = await import(pathToFileURL(resolve(root, "dist/runtime/ai-bootstrap.js")).href);
 
 loadLocalConfig();
+const freeOnly = args.has("--free") || process.env.KOORDYNATOR_FREE_ONLY === "1";
 
 const familyKeys = [
   "KOORDYNATOR_GEMINI_MODEL",
@@ -158,7 +160,7 @@ let selected = selectChatModels(family);
 
 // No interactive OAuth by default. If .env has no family slots yet, discover
 // already-connected OmniRoute sessions using the Keychain gateway key.
-if (!selected.primary && !wantLogin) {
+if (!freeOnly && !selected.primary && !wantLogin) {
   console.log("\n==> Discover active OmniRoute routes (no login)");
   await bootstrapAi();
   loadLocalConfig();
@@ -170,14 +172,31 @@ if (!selected.primary && !wantLogin) {
   selected = selectChatModels(family);
 }
 
+if (freeOnly) {
+  const { selectWorkingFreeRoutes } = await import(pathToFileURL(resolve(root, "dist/runtime/free-routes.js")).href);
+  const result = await selectWorkingFreeRoutes(omniRouteSettings());
+  console.log(`Catalog: ${result.diagnostics.modelCount} models; ${result.diagnostics.freeCandidateCount} confirmed free candidates; pricing endpoint: ${result.diagnostics.pricingAvailable ? "available" : "unavailable"}`);
+  if (result.diagnostics.freeCandidateCount === 0) {
+    console.log(`Billing evidence: ${JSON.stringify(result.diagnostics.billingSources)}`);
+    console.log("No inference attempted: the live catalog/pricing did not confirm a free route. Check provider connections and pricing access in OmniRoute.");
+  }
+  for (const probe of result.probes) console.log(`  ${probe.status} ${probe.model}: ${probe.detail}`);
+  selected = result;
+}
+
 if (!selected.primary) {
+  if (freeOnly) {
+    console.error("FREE_ROUTE_UNAVAILABLE: no confirmed free route passed the tool-call probe. Configuration unchanged.");
+    process.exit(1);
+  }
   console.error("No active OmniRoute model routes yet.");
-  console.error("Connect a provider in OmniRoute, or run once:");
-  console.error("  npm run ai:always-on -- --login");
+  console.error("Run the one-time missing-provider wizard:");
+  console.error("  npm run ai:auth-missing");
   process.exit(1);
 }
 
 const updates = {
+  KOORDYNATOR_FREE_ONLY: freeOnly ? "1" : "0",
   KOORDYNATOR_CHAT_MODEL: selected.primary,
   KOORDYNATOR_FALLBACK_MODELS: selected.fallbacks.join(",")
 };
@@ -193,10 +212,11 @@ console.log(`    fallbacks: ${selected.fallbacks.join(" -> ") || "(none)"}`);
 
 const doctorArgs = ["run", "doctor:omniroute"];
 if (wantProbe) doctorArgs.push("--", "--probe");
-run("Doctor", "npm", doctorArgs, { allowFail: true });
+if (!freeOnly) run("Doctor", "npm", doctorArgs, { allowFail: true });
 
 const settings = omniRouteSettings();
 const launch = await prepareHermes(settings, root);
+try {
 const config = JSON.parse(readFileSync(resolve(launch.env.HERMES_HOME, "config.yaml"), "utf8"));
 const fallbacks = Array.isArray(config.fallback_providers)
   ? config.fallback_providers.map(entry => entry.model).filter(Boolean)
@@ -210,5 +230,8 @@ console.log(`  hermes:    HERMES_HOME=${launch.env.HERMES_HOME}`);
 console.log("\nDone. Next command:\n  npm start");
 
 if (wantStart) {
-  run("Start control UI", "npm", ["start"]);
+  run("Start control UI", "npm", ["run", "control"]);
+}
+} finally {
+  await launch.close();
 }

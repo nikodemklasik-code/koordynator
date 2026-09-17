@@ -17,9 +17,9 @@ const chatModelGate = new Promise((resolve) => {
 window.koordynatorChatModelsReady = chatModelGate;
 
 const SOURCE_ORDER = {
-  SUBSCRIPTION_HARNESS: 0,
+  FREE_CONFIRMED: 0,
   FREE_OAUTH: 1,
-  FREE_CONFIRMED: 2,
+  SUBSCRIPTION_HARNESS: 2,
   FREE_REQUESTED: 3,
   PAID_API: 4,
   UNKNOWN: 5
@@ -104,6 +104,7 @@ function sourceLabel(source) {
 }
 
 function sourceAllowed(source) {
+  if (billingPolicy?.freeOnly === true) return ["FREE_CONFIRMED", "FREE_OAUTH"].includes(source);
   if (source === "SUBSCRIPTION_HARNESS" || source === "FREE_OAUTH" || source === "FREE_CONFIRMED") return true;
   if (source === "FREE_REQUESTED") return billingPolicy?.unconfirmedFreeAllowedByDefault === true;
   if (source === "PAID_API") return billingPolicy?.paidApiAllowedByDefault === true && catalogBilling?.budget?.exhausted !== true;
@@ -113,9 +114,10 @@ function sourceAllowed(source) {
 function routeReady() {
   return Boolean(
     chatModelSelect
-    && chatModelSelect.dataset.catalog === "omniroute"
-    && chatModelSelect.dataset.billingAllowed === "true"
-    && chatModelSelect.value
+    && (
+      (chatModelSelect.dataset.catalog === "omniroute" && chatModelSelect.dataset.billingAllowed === "true" && chatModelSelect.value)
+      || chatModelSelect.dataset.catalog === "server-default"
+    )
   );
 }
 
@@ -234,14 +236,14 @@ function familyRank(family) {
 
 function sortEntries(entries) {
   return [...entries].sort((a, b) => {
+    const sourceDelta = (SOURCE_ORDER[a.billingSource] ?? 99) - (SOURCE_ORDER[b.billingSource] ?? 99);
+    if (sourceDelta) return sourceDelta;
     const familyDelta = familyRank(a.family) - familyRank(b.family);
     if (familyDelta) return familyDelta;
     if (familyRank(a.family) === FAMILY_ORDER.length) {
       const familyName = a.family.localeCompare(b.family);
       if (familyName) return familyName;
     }
-    const sourceDelta = (SOURCE_ORDER[a.billingSource] ?? 99) - (SOURCE_ORDER[b.billingSource] ?? 99);
-    if (sourceDelta) return sourceDelta;
     return shortName(a).localeCompare(shortName(b));
   });
 }
@@ -366,11 +368,17 @@ async function loadChatModels() {
     if (!usable.length) throw new Error(`OmniRoute returned ${catalogEntries.length} models, but none are executable under the active billing policy`);
 
     const usableIds = usable.map((entry) => entry.id);
-    const preferred = usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
-      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+    const configuredDefault = typeof health.chatDefaultModel === "string" && usableIds.includes(health.chatDefaultModel)
+      ? health.chatDefaultModel
+      : null;
+    const preferred = configuredDefault
       || usable.find((entry) => entry.billingSource === "FREE_CONFIRMED")?.id
+      || usable.find((entry) => entry.billingSource === "FREE_OAUTH")?.id
+      || usable.find((entry) => entry.billingSource === "SUBSCRIPTION_HARNESS")?.id
       || (usableIds.includes(previous) ? previous : usableIds[0]);
-    const desired = await desiredSessionModel(usableIds, preferred);
+    // The startup swarm has already live-probed chatDefaultModel. Honor that exact
+    // route even when an older persistent session remembers a subscription model.
+    const desired = configuredDefault || await desiredSessionModel(usableIds, preferred);
     rebuildOptions(usable);
     chatModelSelect.value = usableIds.includes(desired) ? desired : preferred;
     chatModelSelect.dataset.catalog = "omniroute";
@@ -381,11 +389,62 @@ async function loadChatModels() {
     settleChatModelGate(true);
     return true;
   } catch (error) {
-    showCatalogFailure(error instanceof Error ? error.message : "Model catalog unavailable");
-    settleChatModelGate(false);
+    activateServerDefaultRoute(error instanceof Error ? error.message : "Model catalog unavailable");
     return false;
   }
 }
 
 chatModelSelect?.addEventListener("change", billingSummary);
 void loadChatModels();
+
+
+/* LIVE_WORKSPACE_V5_RUNTIME_RECOVERY */
+function activateServerDefaultRoute(reason = "Model catalog is still resolving") {
+  if (!chatModelSelect || chatModelSelect.dataset.catalog === "omniroute") return;
+  chatModelSelect.textContent = "";
+  const option = document.createElement("option");
+  option.value = "";
+  option.textContent = "Server default route";
+  option.selected = true;
+  chatModelSelect.appendChild(option);
+  chatModelSelect.dataset.catalog = "server-default";
+  chatModelSelect.dataset.billingAllowed = "true";
+  chatModelSelect.disabled = false;
+  chatModelSelect.title = String(reason);
+  if (chatBillingBadge) {
+    chatBillingBadge.textContent = "SERVER ROUTE";
+    chatBillingBadge.className = "billing-badge checking";
+  }
+  if (chatBillingNote) chatBillingNote.textContent = "Using the server-configured default route while the live model catalog resolves.";
+  settleChatModelGate(true);
+  enforceRouteGuard();
+}
+
+const v5RuntimeFetchBase = window.fetch;
+window.fetch = async function koordynatorRuntimeRecoveryFetch(input, init) {
+  const method = String(init?.method || (typeof Request !== "undefined" && input instanceof Request ? input.method : "GET") || "GET").toUpperCase();
+  const path = requestPath(input);
+  const bypassModelGate = chatModelSelect?.dataset.catalog === "server-default"
+    && method === "POST"
+    && (path === "/api/chat/sessions" || /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(path));
+  if (bypassModelGate) {
+    let nextInit = init;
+    if (typeof init?.body === "string") {
+      try {
+        const payload = JSON.parse(init.body);
+        if (payload && typeof payload === "object" && payload.model === "") delete payload.model;
+        nextInit = { ...init, body: JSON.stringify(payload) };
+      } catch { /* server validates malformed JSON */ }
+    }
+    return chatNativeFetch(input, nextInit);
+  }
+  return v5RuntimeFetchBase(input, init);
+};
+
+if (typeof setTimeout === "function") {
+  setTimeout(() => {
+    if (!chatModelGateSettled && chatModelSelect?.dataset.catalog !== "omniroute") {
+      activateServerDefaultRoute("Live model catalog is taking too long; server default route enabled.");
+    }
+  }, 1500);
+}

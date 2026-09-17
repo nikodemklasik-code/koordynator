@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 describe("Providers OmniRoute live harness", () => {
-  it("exposes Claude/Grok/Codex live OmniRoute statuses and a real connect action endpoint", async () => {
+  it("exposes the full route matrix while preserving live Claude/Grok/Codex probes", async () => {
     const root = await mkdtemp(join(tmpdir(), "control-providers-live-"));
     roots.push(root);
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -19,16 +19,18 @@ describe("Providers OmniRoute live harness", () => {
       if (url.includes("/v1/models")) {
         return new Response(JSON.stringify({
           data: [
+            { id: "oc/big-pickle" },
             { id: "cc/claude-opus-5" },
             { id: "gc/grok-4.5" },
-            { id: "cx/gpt-5.5" }
+            { id: "cx/gpt-5.5" },
+            { id: "gemini-cli/gemini-test" }
           ]
         }), { status: 200, headers: { "content-type": "application/json" } });
       }
       if (url.includes("/v1/chat/completions")) {
         const body = typeof init?.body === "string" ? JSON.parse(String(init.body)) : {};
         const model = String(body.model || "");
-        if (model.startsWith("cc/") || model.startsWith("gc/")) {
+        if (model.startsWith("oc/") || model.startsWith("cc/") || model.startsWith("gc/") || model.startsWith("gemini-cli/")) {
           return new Response(JSON.stringify({ choices: [{ message: { content: "PONG" } }] }), { status: 200 });
         }
         return new Response(JSON.stringify({ error: { message: "quota" } }), { status: 429 });
@@ -59,17 +61,19 @@ describe("Providers OmniRoute live harness", () => {
         "openai-codex-sub", "claude-code-sub"
       ]));
       expect(Array.isArray(fabric.omniRoutes)).toBe(true);
-      const families = (fabric.omniRoutes || []).map((item) => item.family).sort();
-      expect(families).toEqual(["claude", "codex", "grok"]);
+      const families = (fabric.omniRoutes || []).map((item) => item.family);
+      expect(families).toEqual(expect.arrayContaining([
+        "opencode-free", "claude", "codex", "grok", "github", "gemini", "kimi", "qoder", "cursor", "kilocode", "cline"
+      ]));
       for (const route of fabric.omniRoutes || []) {
         expect(route.transport).toBe("OMNIROUTE");
         expect(["HEALTHY", "DEGRADED", "RATE_LIMITED", "UNAVAILABLE", "AUTH_REQUIRED"]).toContain(route.health);
         expect(route.connectAction.length).toBeGreaterThan(0);
       }
-      const claude = (fabric.omniRoutes || []).find((item) => item.family === "claude");
-      expect(claude?.health).toBe("HEALTHY");
-      const codex = (fabric.omniRoutes || []).find((item) => item.family === "codex");
-      expect(codex?.health).toBe("RATE_LIMITED");
+      expect((fabric.omniRoutes || []).find((item) => item.family === "opencode-free")?.health).toBe("HEALTHY");
+      expect((fabric.omniRoutes || []).find((item) => item.family === "claude")?.health).toBe("HEALTHY");
+      expect((fabric.omniRoutes || []).find((item) => item.family === "codex")?.health).toBe("RATE_LIMITED");
+      expect((fabric.omniRoutes || []).find((item) => item.family === "github")?.health).toBe("UNAVAILABLE");
 
       const doctor = await fetch(`${base}/api/providers/omni-claude/doctor`);
       expect(doctor.status).toBe(200);
@@ -85,7 +89,7 @@ describe("Providers OmniRoute live harness", () => {
       expect(connect.status).toBe(200);
       const connectPayload = await connect.json() as { ok: boolean; action: string; command?: string };
       expect(connectPayload.ok).toBe(true);
-      expect(connectPayload.action).toMatch(/READY|OPEN|COPY|STATUS/i);
+      expect(connectPayload.action).toMatch(/READY|OPEN|COPY|STATUS|RETRY/i);
 
       const page = await fetch(`${base}/providers`).then((item) => item.text());
       expect(page).toContain("OMNIROUTE LIVE HARNESS");

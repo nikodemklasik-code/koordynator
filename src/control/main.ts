@@ -1,7 +1,12 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { createControlServer } from "./server.js";
 import { loadOrCreateControlSigningKey } from "./control-signing-key.js";
+import { ChatService } from "./chat-service.js";
+import { ChatExportService } from "./chat-export-service.js";
+import { installChatExportHttp } from "./chat-export-http.js";
+import { LiveChatModelCatalogService } from "./live-chat-model-catalog.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -20,9 +25,21 @@ const controlToken = process.env.KOORDYNATOR_CONTROL_TOKEN?.trim() || undefined;
 if (!loopback && !controlToken) throw new Error("CONTROL_TOKEN_REQUIRED_FOR_NON_LOOPBACK");
 
 const stateDir = resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator");
-// Chat→Tasks materialisation is on by default; set KOORDYNATOR_CHAT_MATERIALISE=0 to disable.
 const materialisationEnabled = process.env.KOORDYNATOR_CHAT_MATERIALISE !== "0";
 const signing = materialisationEnabled ? await loadOrCreateControlSigningKey(stateDir) : null;
+
+const keeper = spawn(process.execPath, [resolve("scripts/omniroute-keeper.mjs")], {
+  cwd: process.cwd(),
+  env: process.env,
+  detached: true,
+  stdio: "ignore"
+});
+keeper.unref();
+
+const chatModelCatalog = new LiveChatModelCatalogService({
+  endpoint: route.endpoint,
+  apiKeyEnv: "OMNIROUTE_API_KEY"
+});
 
 const server = createControlServer({
   stateDir,
@@ -37,16 +54,31 @@ const server = createControlServer({
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT !== "0",
   chatAllowWorkspaceContext: process.env.KOORDYNATOR_CHAT_WORKSPACE_CONTEXT !== "0",
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
+  chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
+  chatModelCatalog,
+  chatBillingPolicy: { freeOnly: process.env.KOORDYNATOR_FREE_ONLY === "1" },
+  ...(process.env.KOORDYNATOR_HARMONIA_MODEL?.trim()
+    ? { chatHarmoniaModel: process.env.KOORDYNATOR_HARMONIA_MODEL.trim() }
+    : {}),
   chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean),
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   ...(signing === null ? {} : {
     materialisationPrivateKeyPem: signing.privateKeyPem,
     materialisationKeyId: signing.keyId
   }),
-  version: process.env.KOORDYNATOR_VERSION ?? VERSION
+  version: VERSION
 });
+
+const exportChat = new ChatService({ stateDir });
+const chatExports = new ChatExportService({
+  stateDir,
+  chat: exportChat,
+  ...(process.env.KOORDYNATOR_EXPORT_ROOT === undefined ? {} : { exportRoot: resolve(process.env.KOORDYNATOR_EXPORT_ROOT) })
+});
+installChatExportHttp(server, chatExports, controlToken);
+server.on("close", () => exportChat.close());
 
 server.listen(port(), host, () => {
   process.stdout.write(`KOORDYNATOR_CONTROL http://${host}:${port()}\n`);

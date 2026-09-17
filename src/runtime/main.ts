@@ -102,8 +102,8 @@ async function main(): Promise<void> {
   const launch = await prepareHermes(settings);
   console.log(`Hermes → OmniRoute: ${settings.endpoint} · ${settings.model}`);
   const child = spawn(launch.command, launch.args, { cwd: launch.cwd, env: launch.env, stdio: "inherit", shell: false });
-  child.once("error", () => { console.error("HERMES_START_FAILED: sprawdź instalację poleceniem hermes --version"); process.exitCode = 1; });
-  child.once("exit", (code, signal) => { process.exitCode = code ?? (signal ? 1 : 0); });
+  child.once("error", () => { console.error("HERMES_START_FAILED: sprawdź instalację poleceniem hermes --version"); void launch.close(); process.exitCode = 1; });
+  child.once("exit", (code, signal) => { void launch.close(); process.exitCode = code ?? (signal ? 1 : 0); });
 }
 
 main().catch(error => {

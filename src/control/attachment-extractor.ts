@@ -15,7 +15,7 @@ const result = (text: string, detected: string): ExtractedAttachment => ({ text:
 
 export async function extractAttachment(bytes: Uint8Array, name: string, mime: string, depth = 0): Promise<ExtractedAttachment> {
   const buffer = Buffer.from(bytes);
-  if (buffer.length > 10 * 1024 * 1024) throw new Error("CHAT_ATTACHMENT_TOO_LARGE");
+  if (buffer.length > 128 * 1024 * 1024) throw new Error("CHAT_ATTACHMENT_TOO_LARGE");
   const sig = buffer.subarray(0, 16);
   if (sig.subarray(0, 4).equals(Buffer.from([137,80,78,71])) || sig.subarray(0, 3).equals(Buffer.from([255,216,255])) || sig.toString().startsWith("GIF8") || (sig.toString().startsWith("RIFF") && sig.subarray(8,12).toString() === "WEBP")) {
     const detected = sig[0] === 137 ? "image/png" : sig[0] === 255 ? "image/jpeg" : sig[0] === 71 ? "image/gif" : "image/webp";
@@ -37,7 +37,7 @@ export async function extractAttachment(bytes: Uint8Array, name: string, mime: s
     let total = 0;
     const files = unzipSync(bytes, { filter: entry => {
       count++; total += entry.originalSize;
-      if (count > 300 || total > 20 * 1024 * 1024 || entry.originalSize > 10 * 1024 * 1024) throw new Error("CHAT_ARCHIVE_LIMIT");
+      if (count > 5000 || total > 256 * 1024 * 1024 || entry.originalSize > 64 * 1024 * 1024) throw new Error("CHAT_ARCHIVE_LIMIT");
       if (entry.name.startsWith("/") || entry.name.includes("\\") || entry.name.split("/").includes("..")) throw new Error("CHAT_ARCHIVE_PATH_UNSAFE");
       return !entry.name.endsWith("/");
     } });

@@ -83,9 +83,12 @@ describe("Harmonia — samotne poznanie", () => {
     expect(reading.findings.map((item) => item.bucket)).toEqual(["assumptions"]);
     expect(reading.guidance.map((item) => item.subject)).toEqual(["tokeny", "zakres"]);
     expect(reading.decision.status).toBe("allow");
+    expect(reading.readingPlan.strategy).toBe("linear");
+    expect(reading.readingPlan.sourceClosed).toBe(true);
 
     // Jako jedyna dostaje całość projektu.
     const sent = bodies[0] as { messages: Array<{ role: string; content: string }> };
+    expect(sent.messages.some((message) => message.content.includes("PLAN CZYTANIA"))).toBe(true);
     expect(sent.messages.some((message) => message.content.includes("Chcę tryb ciemny w panelu."))).toBe(true);
 
     // Nie ma ręki: czytanie nie niesie mapy.
@@ -142,6 +145,81 @@ describe("Harmonia — samotne poznanie", () => {
     const failed = gateway("{}", 503);
     await expect(new HarmoniaCognition({ apiKey: "k", model: "m", fetchImpl: failed.fetchImpl }).read("p"))
       .rejects.toThrow(/HARMONIA_HTTP_503/);
+  });
+
+  it("504/503/429 nie zamyka poznania — skacze na kolejny model w łańcuchu tokenów", async () => {
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      models.push(String(body.model ?? ""));
+      if (body.model === "cc/claude-opus-5") {
+        return new Response(JSON.stringify({ error: { message: "gateway timeout" } }), { status: 504 });
+      }
+      if (body.model === "cx/gpt-5.5") {
+        return new Response(JSON.stringify({ error: { message: "overloaded" } }), { status: 503 });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: CLEAN } }] }), {
+        status: 200, headers: { "content-type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    const reading = await new HarmoniaCognition({
+      apiKey: "k",
+      model: "cc/claude-opus-5",
+      fallbackModels: ["cx/gpt-5.5", "gc/grok-4.6"],
+      fetchImpl
+    }).read("Chcę tryb ciemny w panelu.");
+
+    expect(models).toEqual(["cc/claude-opus-5", "cx/gpt-5.5", "gc/grok-4.6"]);
+    expect(reading.model).toBe("gc/grok-4.6");
+    expect(reading.understanding).toContain("tryb ciemny");
+    expect(reading.decision.status).toBe("allow");
+  });
+
+  it("timeout albo proza na pinie nie zamyka poznania, gdy następny model czyta", async () => {
+    const models: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { model?: string };
+      models.push(String(body.model ?? ""));
+      if (body.model === "slow") {
+        const error = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+        throw error;
+      }
+      if (body.model === "prose") {
+        return new Response(JSON.stringify({ choices: [{ message: { content: "Nie umiem tego odczytać." } }] }), {
+          status: 200, headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: CLEAN } }] }), {
+        status: 200, headers: { "content-type": "application/json" }
+      });
+    }) as unknown as typeof fetch;
+
+    const reading = await new HarmoniaCognition({
+      apiKey: "k",
+      model: "slow",
+      fallbackModels: ["prose", "gc/grok-4.6"],
+      fetchImpl
+    }).read("Chcę tryb ciemny w panelu.");
+
+    expect(models).toEqual(["slow", "prose", "gc/grok-4.6"]);
+    expect(reading.model).toBe("gc/grok-4.6");
+    expect(reading.understanding).toContain("tryb ciemny");
+  });
+
+  it("checks billing on each fallback while preserving capacity recovery", async () => {
+    const models: string[] = [];
+    const reading = await new HarmoniaCognition({ apiKey: "fixture", model: "free/primary", fallbackModels: ["subscription/blocked", "free/next"],
+      authorizeModel: async model => model.startsWith("free/"),
+      fetchImpl: (async (_url, init) => {
+        const { model } = JSON.parse(String(init?.body));
+        models.push(model);
+        if (model === "free/primary") return new Response("timeout", { status: 504 });
+        return Response.json({ choices: [{ message: { content: CLEAN } }] });
+      }) as typeof fetch
+    }).read("Chcę tryb ciemny w panelu.");
+    expect(models).toEqual(["free/primary", "free/next"]);
+    expect(reading.model).toBe("free/next");
   });
 
   it("wymaga rzeczywistego projektu zamiast czytać pustkę", async () => {

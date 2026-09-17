@@ -1,7 +1,9 @@
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { mergeEnvText } from "./ai-bootstrap.js";
-import { resolveOmniRouteApiKey } from "./local-config.js";
+import { omniRouteSettings } from "./local-config.js";
+import { ChatModelCatalogService } from "../control/chat-model-catalog.js";
+import { selectWorkingFreeRoutes } from "./free-routes.js";
 
 export type FreeSwarmRow = {
   key: string;
@@ -49,8 +51,6 @@ export const FREE_SWARM_TARGETS: FreeSwarmTarget[] = [
   }
 ];
 
-const MARKER = "KOORDYNATOR_SWARM_OK";
-
 function unique(values: string[]): string[] {
   return [...new Set(values.map(value => value.trim()).filter(Boolean))];
 }
@@ -84,67 +84,6 @@ export function modelsForFreeTarget(target: FreeSwarmTarget, models: string[]): 
     .sort((a, b) => rankModel(target, a) - rankModel(target, b) || a.localeCompare(b));
 }
 
-async function fetchModels(endpoint: string, key: string): Promise<string[]> {
-  const response = await fetch(`${endpoint.replace(/\/+$/, "")}/models`, {
-    headers: { authorization: `Bearer ${key}` },
-    signal: AbortSignal.timeout(10000)
-  });
-  if (!response.ok) throw new Error(`FREE_SWARM_MODELS_HTTP_${response.status}`);
-  const payload = await response.json() as { data?: Array<{ id?: unknown }> };
-  return unique((payload.data ?? [])
-    .map(item => typeof item.id === "string" ? item.id : "")
-    .filter(Boolean));
-}
-
-function responseText(payload: unknown): string {
-  if (!payload || typeof payload !== "object") return "";
-  const choices = (payload as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return "";
-  const first = choices[0];
-  if (!first || typeof first !== "object") return "";
-  const message = (first as { message?: unknown }).message;
-  if (!message || typeof message !== "object") return "";
-  const content = (message as { content?: unknown }).content;
-  return typeof content === "string" ? content : "";
-}
-
-async function probeModel(
-  endpoint: string,
-  key: string,
-  model: string,
-  timeoutMs: number
-): Promise<{ ok: boolean; detail: string }> {
-  let response: Response;
-  try {
-    response = await fetch(`${endpoint.replace(/\/+$/, "")}/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${key}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        stream: false,
-        max_tokens: 24,
-        messages: [{ role: "user", content: `Reply exactly: ${MARKER}` }]
-      }),
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-  } catch {
-    return { ok: false, detail: "request failed or timed out" };
-  }
-
-  if (!response.ok) return { ok: false, detail: `HTTP ${response.status}` };
-  try {
-    const payload = await response.json();
-    return responseText(payload).includes(MARKER)
-      ? { ok: true, detail: "live inference probe passed" }
-      : { ok: false, detail: "HTTP 200 but marker missing" };
-  } catch {
-    return { ok: false, detail: "HTTP 200 but invalid response" };
-  }
-}
-
 function persist(updates: Record<string, string>, envPath = resolve(".env")): void {
   const original = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
   writeFileSync(envPath, mergeEnvText(original, updates), { encoding: "utf8", mode: 0o600 });
@@ -169,62 +108,38 @@ function printRows(rows: FreeSwarmRow[]): void {
  * No browser, device-code, token paste, or vendor sign-in is ever started here.
  */
 export async function bootstrapFreeSwarm(): Promise<FreeSwarmRow[]> {
-  const endpoint = process.env.OMNIROUTE_ENDPOINT?.trim() || "http://127.0.0.1:20128/v1";
-  const key = resolveOmniRouteApiKey(process.env);
-  if (!key) throw new Error("OMNIROUTE_GATEWAY_KEY_MISSING");
-
-  const models = await fetchModels(endpoint, key);
-  const rows: FreeSwarmRow[] = [];
-  const updates: Record<string, string> = {};
-  const working: string[] = [];
-
+  const settings = omniRouteSettings();
+  const freeOnly = process.env.KOORDYNATOR_FREE_ONLY === "1";
+  const live = await new ChatModelCatalogService(settings).list();
+  const candidates = freeOnly ? live.models : FREE_SWARM_TARGETS.flatMap(target => modelsForFreeTarget(target, live.models));
+  const selection = await selectWorkingFreeRoutes(settings, { catalog: { list: async () => ({ ...live, models: candidates }) } });
+  const rows: FreeSwarmRow[] = selection.probes.map(probe => ({
+    key: FREE_SWARM_TARGETS.find(target => target.prefixes.some(prefix => probe.model.startsWith(prefix)))?.key ?? "free-route",
+    model: probe.model,
+    status: probe.status === "PASS" ? "PASS" : "FAILED",
+    detail: probe.detail
+  }));
   for (const target of FREE_SWARM_TARGETS) {
-    const candidates = modelsForFreeTarget(target, models).slice(0, 6);
-    if (candidates.length === 0) {
-      rows.push({ key: target.key, model: null, status: "SKIP", detail: "not present in live OmniRoute catalog" });
-      continue;
-    }
-
-    let selected: string | null = null;
-    let lastDetail = "not probed";
-    for (const model of candidates) {
-      const probe = await probeModel(endpoint, key, model, target.timeoutMs);
-      lastDetail = probe.detail;
-      if (probe.ok) {
-        selected = model;
-        break;
-      }
-    }
-
-    if (!selected) {
-      rows.push({ key: target.key, model: candidates[0] ?? null, status: "FAILED", detail: lastDetail });
-      continue;
-    }
-
-    updates[target.envName] = selected;
-    working.push(selected);
-    rows.push({ key: target.key, model: selected, status: "PASS", detail: "live inference probe passed" });
+    if (!rows.some(row => row.key === target.key)) rows.push({ key: target.key, model: null, status: "SKIP", detail: "no catalog-confirmed free route probed" });
   }
-
   printRows(rows);
-  if (working.length === 0) {
-    console.log("\nFree swarm: no live no-auth route; keeping the existing chat route.");
+  if (!selection.primary) {
+    if (freeOnly) throw new Error("FREE_ROUTE_UNAVAILABLE");
+    console.log("Free swarm: no verified free tool route; keeping the configured route.");
     return rows;
   }
-
-  const currentPrimary = process.env.KOORDYNATOR_CHAT_MODEL?.trim();
-  const currentFallbacks = (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "")
-    .split(",")
-    .map(model => model.trim())
-    .filter(Boolean);
-  const selection = mergeSwarmSelection(working, currentPrimary, currentFallbacks);
-  if (!selection.primary) return rows;
-
-  updates.KOORDYNATOR_CHAT_MODEL = selection.primary;
-  updates.KOORDYNATOR_FALLBACK_MODELS = selection.fallbacks.join(",");
+  const working = [selection.primary, ...selection.fallbacks];
+  const selected = freeOnly ? selection : mergeSwarmSelection(working, settings.model,
+    (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(","));
+  const updates: Record<string, string> = {
+    KOORDYNATOR_CHAT_MODEL: selection.primary,
+    KOORDYNATOR_FALLBACK_MODELS: selected.fallbacks.join(",")
+  };
+  for (const target of FREE_SWARM_TARGETS) {
+    const model = working.find(value => target.prefixes.some(prefix => value.startsWith(prefix)));
+    if (model) updates[target.envName] = model;
+  }
   persist(updates);
-
-  console.log(`\nFree swarm primary: ${selection.primary}`);
-  if (selection.fallbacks.length > 0) console.log(`Free swarm fallbacks: ${selection.fallbacks.join(" -> ")}`);
+  console.log(`Free swarm primary: ${selection.primary}`);
   return rows;
 }

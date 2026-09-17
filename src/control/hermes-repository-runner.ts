@@ -1,8 +1,9 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { prepareHermes } from "../runtime/hermes-launch.js";
+import { evaluateTestReceipt } from "../domain/independent-test-receipt.js";
 
 export function repositoryTask(text: string): { repository: string; task: string } | null {
   if (!/^\/repo(?:\s|$)/.test(text.trim())) return null;
@@ -51,6 +52,72 @@ export function runCommand(command: string, args: string[], cwd: string, env: No
   });
 }
 
+export function runCommandResult(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv,
+  signal: AbortSignal): Promise<{ exitCode: number; output: string }> {
+  signal.throwIfAborted();
+  return new Promise((accept, reject) => {
+    const child = spawn(command, args, { cwd, env, shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    let size = 0;
+    let overflow = false;
+    const kill = () => {
+      try { if (process.platform !== "win32" && child.pid) process.kill(-child.pid, "SIGKILL"); else child.kill("SIGKILL"); } catch { /* exited */ }
+    };
+    const collect = (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 1024 * 1024) { overflow = true; kill(); return; }
+      output += chunk.toString("utf8");
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", (chunk: Buffer) => { size += chunk.length; if (size > 1024 * 1024) { overflow = true; kill(); } });
+    signal.addEventListener("abort", kill, { once: true });
+    if (signal.aborted) kill();
+    child.once("error", () => { signal.removeEventListener("abort", kill); reject(new Error("REPO_EXECUTABLE_UNAVAILABLE")); });
+    child.once("close", code => {
+      signal.removeEventListener("abort", kill);
+      if (signal.aborted) reject(new Error("REPO_STOPPED"));
+      else if (overflow) reject(new Error("REPO_OUTPUT_LIMIT"));
+      else accept({ exitCode: code ?? 1, output });
+    });
+  });
+}
+
+/** Incremental verify plan: validate only what the commit changed. Full run
+ *  is the fallback ONLY when the base SHA is unknown. Canon: don't re-validate
+ *  the whole product every cycle. */
+export function vitestVerifyArgs(baseSha?: string): { command: string; args: string[] } {
+  const base = baseSha?.trim();
+  const args = base ? ["vitest", "run", "--changed", base] : ["vitest", "run"];
+  return { command: `npx ${args.join(" ")}`, args };
+}
+
+async function independentVerify(cwd: string, env: NodeJS.ProcessEnv, signal: AbortSignal, baseSha?: string): Promise<{
+  verifier: "independent";
+  command: string;
+  exitCode: number;
+  status: "PASS" | "FAIL" | "NOT_RUN";
+}> {
+  const plan = vitestVerifyArgs(baseSha);
+  try {
+    await access(join(cwd, "package.json"));
+  } catch {
+    return { verifier: "independent", command: plan.command, exitCode: 0, status: "NOT_RUN" };
+  }
+  const result = await runCommandResult("npx", plan.args, cwd, env, signal);
+  // vitest --changed with no affected tests exits 0 but ran nothing — that is
+  // NOT_RUN, never a fake PASS (dowód albo nic).
+  const ranNothing = /No test files found/i.test(result.output ?? "");
+  const status: "PASS" | "FAIL" | "NOT_RUN" = ranNothing
+    ? "NOT_RUN"
+    : result.exitCode === 0 ? "PASS" : "FAIL";
+  return {
+    verifier: "independent",
+    command: plan.command,
+    exitCode: result.exitCode,
+    status
+  };
+}
+
 export function createRepositoryExecutor(stateDir: string): RepositoryExecutor {
   return async run => {
     const request = repositoryTask(run.text);
@@ -69,6 +136,7 @@ export function createRepositoryExecutor(stateDir: string): RepositoryExecutor {
     const head = (await exec("git", ["rev-parse", "HEAD"], cwd)).trim();
     run.emit(`Gałąź: ${branch}\nBaza: ${head}\nKatalog pracy: ${cwd}\nHermes wykonuje zadanie…\n`);
     const launch = await prepareHermes({ endpoint: run.endpoint, apiKey: run.apiKey, model: run.model }, job);
+    try {
     const attachmentPaths: string[] = [];
     if (run.attachments?.length) {
       const directory = join(job, "attachments");
@@ -96,8 +164,23 @@ export function createRepositoryExecutor(stateDir: string): RepositoryExecutor {
     const output = await runCommand(launch.command, [...launch.args, "-q", prompt, "--quiet"], cwd,
       { ...launch.env, GIT_TERMINAL_PROMPT: "0", GH_PROMPT_DISABLED: "1" }, run.signal);
     if (!output.trim()) throw new Error("HERMES_EMPTY_RESULT");
-    const clean = output.split(run.apiKey).join("[REDACTED]").replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, "[REDACTED]");
-    await writeFile(join(job, "receipt.json"), JSON.stringify({ repository: request.repository, branch, base: head, model: run.model, completedAt: new Date().toISOString(), status: "PROCESS_COMPLETED", tests: "SEE_AGENT_REPORT" }), { mode: 0o600 });
-    run.emit(`\n${clean}\nProces Hermesa zakończony. Wyniki testów i PR: patrz raport agenta powyżej.\n`);
+    const secrets = [run.apiKey, launch.env.OPENAI_API_KEY, launch.env.OMNIROUTE_TASK_TICKET]
+      .filter((value): value is string => Boolean(value));
+    let clean = output;
+    for (const secret of secrets) clean = clean.split(secret).join("[REDACTED]");
+    clean = clean.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g, "[REDACTED]");
+    const verified = await independentVerify(cwd, env, run.signal, head);
+    const testReceipt = evaluateTestReceipt(verified);
+    await writeFile(join(job, "receipt.json"), JSON.stringify({
+      repository: request.repository, branch, base: head, model: run.model,
+      completedAt: new Date().toISOString(), status: "PROCESS_COMPLETED",
+      tests: verified.command, verifier: verified.verifier,
+      testStatus: verified.status, testExitCode: verified.exitCode,
+      testVerdict: testReceipt.verdict
+    }), { mode: 0o600 });
+    run.emit(`\n${clean}\nProces Hermesa zakończony. Testy (niezależny weryfikator): ${testReceipt.verdict}.\n`);
+    } finally {
+      await launch.close();
+    }
   };
 }

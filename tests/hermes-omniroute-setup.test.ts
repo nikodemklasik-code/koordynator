@@ -107,16 +107,26 @@ describe("Hermes / OmniRoute operator setup", () => {
 
   it("creates endpoint-bound Hermes config, keeps secrets out of argv and rejects profile symlinks", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-"));
+    const launches: Array<{ close: () => Promise<void> }> = [];
     try {
       // prepareHermes reads the real process.env by default, so an operator shell with
       // KOORDYNATOR_FALLBACK_MODELS set would leak fallbacks into this assertion.
       const launch = await prepareHermes(settings, root, {
         ...process.env,
-        KOORDYNATOR_FALLBACK_MODELS: ""
+        KOORDYNATOR_FALLBACK_MODELS: "",
+        OMNIROUTE_API_KEY: settings.apiKey,
+        OPENAI_API_KEY: settings.apiKey
       } as NodeJS.ProcessEnv);
-      const path = join(launch.env.HERMES_HOME, "config.yaml");
+      launches.push(launch);
+      const path = join(launch.env.HERMES_HOME!, "config.yaml");
       const config = JSON.parse(await readFile(path, "utf8"));
-      expect(config.model).toEqual({ provider: "custom", default: settings.model, base_url: settings.endpoint, api_mode: "chat_completions", api_key: settings.apiKey });
+      expect(config.model.provider).toBe("custom");
+      expect(config.model.default).toBe(settings.model);
+      expect(config.model.api_mode).toBe("chat_completions");
+      expect(config.model.key_env).toBe("OPENAI_API_KEY");
+      expect(config.model.base_url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+      expect(config.model.base_url).not.toBe(settings.endpoint);
+      expect(JSON.stringify(config)).not.toContain(settings.apiKey);
       expect(config.approvals).toEqual({ mode: "smart" });
       expect(config.disabled_toolsets).toEqual(["terminal"]);
       expect(config.fallback_providers).toBeUndefined();
@@ -124,27 +134,39 @@ describe("Hermes / OmniRoute operator setup", () => {
       expect(launch.args).toEqual(["chat", "--provider", "custom", "--model", settings.model]);
       expect(launch.args.join(" ")).not.toContain(settings.apiKey);
       expect(launch.env.OPENROUTER_API_KEY).toBe("");
+      expect(launch.env.OMNIROUTE_API_KEY).toBeUndefined();
+      expect(launch.env.OPENAI_API_KEY).toMatch(/^tkt\./);
+      expect(launch.env.OPENAI_API_KEY).not.toBe(settings.apiKey);
+      expect(launch.env.OMNIROUTE_TASK_TICKET).toBe(launch.env.OPENAI_API_KEY);
       await rm(path);
       const outside = join(root, "untouched");
       await writeFile(outside, "preserve");
       await symlink(outside, path);
       await expect(prepareHermes(settings, root)).rejects.toThrow();
       expect(await readFile(outside, "utf8")).toBe("preserve");
-    } finally { await rm(root, { recursive: true, force: true }); }
+    } finally {
+      await Promise.all(launches.map((item) => item.close()));
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("writes OmniRoute fallback providers into the managed Hermes profile", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-fallback-"));
+    let launch: Awaited<ReturnType<typeof prepareHermes>> | undefined;
     try {
-      const launch = await prepareHermes(settings, root, {
+      launch = await prepareHermes(settings, root, {
         KOORDYNATOR_FALLBACK_MODELS: "cc/claude-opus-5,gc/grok-4.5,cx/gpt-5.5,cx/gpt-5.5"
       } as NodeJS.ProcessEnv);
-      const config = JSON.parse(await readFile(join(launch.env.HERMES_HOME, "config.yaml"), "utf8"));
+      const config = JSON.parse(await readFile(join(launch.env.HERMES_HOME!, "config.yaml"), "utf8"));
       expect(config.fallback_providers).toEqual([
-        { provider: "custom", model: "cc/claude-opus-5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" },
-        { provider: "custom", model: "gc/grok-4.5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" },
-        { provider: "custom", model: "cx/gpt-5.5", base_url: settings.endpoint, key_env: "OPENAI_API_KEY" }
+        { provider: "custom", model: "cc/claude-opus-5", base_url: launch.env.OPENAI_BASE_URL, key_env: "OPENAI_API_KEY" },
+        { provider: "custom", model: "gc/grok-4.5", base_url: launch.env.OPENAI_BASE_URL, key_env: "OPENAI_API_KEY" },
+        { provider: "custom", model: "cx/gpt-5.5", base_url: launch.env.OPENAI_BASE_URL, key_env: "OPENAI_API_KEY" }
       ]);
-    } finally { await rm(root, { recursive: true, force: true }); }
+      expect(launch.env.OPENAI_BASE_URL).not.toBe(settings.endpoint);
+    } finally {
+      await launch?.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

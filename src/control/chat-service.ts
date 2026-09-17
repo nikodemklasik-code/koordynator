@@ -2,6 +2,7 @@ import { readAttachment } from "./attachment-reader.js";
 import { detectProjectConsensus, type ProjectConsensus } from "./chat-consensus.js";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
+import { createSkillExecutor, isActionableSkillTask, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -82,6 +83,7 @@ export class ChatServiceError extends Error {
 export type ChatServiceOptions = {
   stateDir: string;
   repositoryExecutor?: RepositoryExecutor;
+  skillExecutor?: SkillExecutor;
   /** Ships an agreed plan into Tasks; omitted when no signing key is configured. */
   materialiser?: (consensus: ProjectConsensus) => Promise<{ taskId: string }>;
   endpoint?: string;
@@ -89,6 +91,7 @@ export type ChatServiceOptions = {
   apiKeyEnv?: string;
   defaultModel?: string;
   fallbackModels?: string[];
+  authorizeModel?: (model: string) => Promise<ChatBillingDecision>;
   fetchImpl?: typeof fetch;
   maxMessageBytes?: number;
   maxHistoryMessages?: number;
@@ -99,6 +102,8 @@ export type ChatServiceOptions = {
   maxHistoryAttachmentBytes?: number;
   timeoutMs?: number;
   projectContextProvider?: () => Promise<string | null | undefined>;
+  /** Route every substantive chat turn through Hermes dynamic skill discovery. */
+  hermesSkillsEveryTurn?: boolean;
 };
 
 type Subscriber = (event: ChatEvent) => void;
@@ -113,7 +118,6 @@ const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
 const MIME_RE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
 const DATA_URL_RE = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/;
-
 
 function now(): string { return new Date().toISOString(); }
 function normalizeEndpoint(value: string): string { return value.replace(/\/+$/, ""); }
@@ -137,7 +141,6 @@ function safeAttachmentMime(value: unknown): string {
   if (typeof value !== "string") throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
   const mimeType = value.trim().toLowerCase();
   if (!MIME_RE.test(mimeType)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
-
   return mimeType;
 }
 
@@ -202,11 +205,13 @@ export function materialisationFingerprint(consensus: ProjectConsensus): string 
 export class ChatService {
   private readonly root: string;
   private readonly repositoryExecutor: RepositoryExecutor | undefined;
+  private readonly skillExecutor: SkillExecutor;
   private readonly endpoint: string;
   private readonly apiKey: string | undefined;
   private readonly apiKeyEnv: string;
   private readonly defaultModel: string;
   private readonly fallbackModels: string[];
+  private readonly authorizeModel: ChatServiceOptions["authorizeModel"];
   private readonly fetchImpl: typeof fetch;
   private readonly maxMessageBytes: number;
   private readonly maxHistoryMessages: number;
@@ -218,6 +223,7 @@ export class ChatService {
   private readonly timeoutMs: number;
   private readonly usageLedger: ChatUsageLedger;
   private readonly projectContextProvider?: () => Promise<string | null | undefined>;
+  private readonly hermesSkillsEveryTurn: boolean;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
   private readonly starting = new Set<string>();
   private readonly active = new Map<string, ActiveGeneration>();
@@ -226,22 +232,25 @@ export class ChatService {
   constructor(options: ChatServiceOptions) {
     this.root = resolve(options.stateDir, "chat");
     this.repositoryExecutor = options.repositoryExecutor;
+    this.skillExecutor = options.skillExecutor ?? createSkillExecutor(options.stateDir, process.cwd());
     this.materialiser = options.materialiser;
     this.endpoint = normalizeEndpoint(options.endpoint ?? "http://127.0.0.1:20128/v1");
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
     this.defaultModel = safeModel(options.defaultModel ?? "auto/best-free");
     this.fallbackModels = [...new Set((options.fallbackModels ?? []).map((model) => model.trim()).filter(Boolean).filter((model) => model !== this.defaultModel))].slice(0, 6);
+    this.authorizeModel = options.authorizeModel;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
     this.maxHistoryMessages = options.maxHistoryMessages ?? 24;
     this.maxHistoryChars = options.maxHistoryChars ?? 64 * 1024;
     this.maxAttachments = options.maxAttachments ?? 5;
-    this.maxAttachmentBytes = options.maxAttachmentBytes ?? 10 * 1024 * 1024;
-    this.maxAttachmentTotalBytes = options.maxAttachmentTotalBytes ?? 20 * 1024 * 1024;
-    this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 24 * 1024 * 1024;
+    this.maxAttachmentBytes = options.maxAttachmentBytes ?? 128 * 1024 * 1024;
+    this.maxAttachmentTotalBytes = options.maxAttachmentTotalBytes ?? 192 * 1024 * 1024;
+    this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 224 * 1024 * 1024;
     this.timeoutMs = options.timeoutMs ?? 120_000;
     this.usageLedger = new ChatUsageLedger(options.stateDir);
+    this.hermesSkillsEveryTurn = options.hermesSkillsEveryTurn ?? false;
     if (options.projectContextProvider) this.projectContextProvider = options.projectContextProvider;
   }
 
@@ -382,22 +391,12 @@ export class ChatService {
         continue;
       }
       const bytes = Buffer.from(match[2], "base64");
-      const extracted = await extractChatAttachmentText({
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        bytes
-      });
+      const extracted = await extractChatAttachmentText({ name: attachment.name, mimeType: attachment.mimeType, bytes });
       if (extracted) {
-        parts.push({
-          type: "text",
-          text: `Attached file: ${attachment.name}\n--- BEGIN EXTRACTED TEXT ---\n${extracted}\n--- END EXTRACTED TEXT ---`
-        });
+        parts.push({ type: "text", text: `Attached file: ${attachment.name}\n--- BEGIN EXTRACTED TEXT ---\n${extracted}\n--- END EXTRACTED TEXT ---` });
         continue;
       }
-      parts.push({
-        type: "text",
-        text: `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes). Binary content could not be extracted as text.`
-      });
+      parts.push({ type: "text", text: `Attached file: ${attachment.name} (${attachment.mimeType}, ${attachment.size} bytes). Binary content could not be extracted as text.` });
     }
     return { role: message.role, content: parts };
   }
@@ -481,11 +480,8 @@ export class ChatService {
     const key = this.credential();
     if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
     if (billing?.allowed === false) throw new ChatServiceError("CHAT_BILLING_POLICY_DENIED", 403);
-    try {
-      await this.usageLedger.ensureWritable();
-    } catch {
-      throw new ChatServiceError("CHAT_USAGE_LEDGER_UNAVAILABLE", 503);
-    }
+    try { await this.usageLedger.ensureWritable(); }
+    catch { throw new ChatServiceError("CHAT_USAGE_LEDGER_UNAVAILABLE", 503); }
     const model = requestedModel === undefined ? session.model : safeModel(requestedModel);
     session.model = model;
     for (const attachment of attachments) {
@@ -502,22 +498,11 @@ export class ChatService {
     }
 
     const user: ChatMessage = {
-      id: randomUUID(),
-      sessionId,
-      role: "user",
-      content: text,
-      createdAt: now(),
-      state: "complete",
+      id: randomUUID(), sessionId, role: "user", content: text, createdAt: now(), state: "complete",
       ...(attachments.length === 0 ? {} : { attachments })
     };
     const assistant: ChatMessage = {
-      id: randomUUID(),
-      sessionId,
-      role: "assistant",
-      content: "",
-      createdAt: now(),
-      state: "streaming",
-      model,
+      id: randomUUID(), sessionId, role: "assistant", content: "", createdAt: now(), state: "streaming", model,
       ...(billing === undefined ? {} : { billing })
     };
     session.messages.push(user, assistant);
@@ -546,27 +531,14 @@ export class ChatService {
     return audited;
   }
 
-  /**
-   * Materialises a Tasks entry only when the user explicitly asked to ship an agreed plan.
-   * Never throws into the chat turn: a materialisation failure must not break the reply.
-   *
-   * Idempotent per agreed plan: the guard must look at the whole session, because every turn
-   * produces a NEW assistant message. A per-message check would let a second "ship it" create
-   * a duplicate task for work that is already queued.
-   */
   private async maybeMaterialise(session: ChatSession, assistant: ChatMessage): Promise<void> {
     if (!this.materialiser) return;
     if (assistant.materialisedTaskId) return;
     try {
-      const consensus = detectProjectConsensus(
-        session.messages.map((message) => ({ role: message.role, content: message.content }))
-      );
+      const consensus = detectProjectConsensus(session.messages.map((message) => ({ role: message.role, content: message.content })));
       if (!consensus) return;
-      // Same objective + scope already shipped in this session? Re-point, do not re-create.
       const fingerprint = materialisationFingerprint(consensus);
-      const previous = session.messages.find(
-        (message) => message.materialisedTaskId && message.materialisationFingerprint === fingerprint
-      );
+      const previous = session.messages.find((message) => message.materialisedTaskId && message.materialisationFingerprint === fingerprint);
       if (previous?.materialisedTaskId) {
         assistant.materialisedTaskId = previous.materialisedTaskId;
         assistant.materialisationFingerprint = fingerprint;
@@ -583,12 +555,48 @@ export class ChatService {
 
   private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
     const sessionId = session.sessionId;
-    const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), repositoryTask(session.messages.at(-2)!.content) ? 30 * 60_000 : this.timeoutMs);
+    const userMessage = session.messages.at(-2)!;
+    const taskText = userMessage.content;
+    const naturalSkillTask = isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
+    const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText) || (this.hermesSkillsEveryTurn && naturalSkillTask);
+    const longRunning = Boolean(repositoryTask(taskText)) || skillTask;
+    const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
-      const taskText = session.messages.at(-2)!.content;
       if (repositoryTask(taskText) && this.repositoryExecutor) {
-        await this.repositoryExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: session.messages.at(-2)?.attachments ?? [], signal: controller.signal, emit: delta => {
+        await this.repositoryExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: userMessage.attachments ?? [], signal: controller.signal, emit: delta => {
           assistant.content += delta;
+          this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
+        } });
+        const audited = await this.finalize(session, assistant, "complete");
+        if (!audited) throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+        this.emit(sessionId, { type: "assistant_done", message: assistant });
+        return;
+      }
+      if (skillTask) {
+        const context: SkillContextMessage[] = session.messages
+          .filter((message) => message.id !== assistant.id && message.state !== "error")
+          .slice(-this.maxHistoryMessages)
+          .map((message) => ({
+            role: message.role,
+            content: message.content.slice(0, 12_000),
+            createdAt: message.createdAt,
+            ...(message.model ? { model: message.model } : {}),
+            ...(!message.attachments?.length ? {} : {
+              attachments: message.attachments.map((attachment) => ({
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                size: attachment.size,
+                ...(attachment.extractionStatus ? { extractionStatus: attachment.extractionStatus } : {})
+              }))
+            })
+          }));
+        const attachments = session.messages
+          .filter((message) => message.role === "user")
+          .flatMap((message) => message.attachments ?? [])
+          .filter((attachment, index, values) => values.findIndex((candidate) => candidate.id === attachment.id) === index);
+        await this.skillExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments, context, signal: controller.signal, emit: delta => {
+          assistant.content += delta;
+          session.updatedAt = now();
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         } });
         const audited = await this.finalize(session, assistant, "complete");
@@ -601,6 +609,8 @@ export class ChatService {
       let response: Response | undefined;
       let lastRateLimit: ChatServiceError | undefined;
       for (const model of chain) {
+        const billing = await this.authorizeModel?.(model);
+        if (billing && !billing.allowed) continue;
         const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
@@ -608,13 +618,15 @@ export class ChatService {
           signal: controller.signal
         });
         if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
-        if (attempt.status === 429) {
-          lastRateLimit = new ChatServiceError("CHAT_RATE_LIMITED", 429);
+        if ([429, 502, 503, 504].includes(attempt.status)) {
+          lastRateLimit = new ChatServiceError(attempt.status === 429 ? "CHAT_RATE_LIMITED" : `CHAT_UPSTREAM_${attempt.status}`, attempt.status === 429 ? 429 : 502);
+          await attempt.body?.cancel();
           continue;
         }
         if (!attempt.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${attempt.status}`, 502);
         response = attempt;
         assistant.model = model;
+        if (billing) assistant.billing = billing;
         session.model = model;
         break;
       }
