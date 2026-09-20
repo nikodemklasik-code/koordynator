@@ -3,18 +3,12 @@ import { mkdir, realpath } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { CapabilityLeaseReceipt } from "./receipts.js";
+import { createCapabilityLeaseReceipt, verifyCapabilityLeaseReceipt } from "./receipts.js";
 
 const execFileAsync = promisify(execFile);
 
-export type WorktreeLease = {
-  leaseId: string;
-  taskId: string;
-  stageId: string;
-  candidateId: string;
-  allowedEffects: string[];
-  allowedTools: string[];
-  expiresAt: string;
-};
+export type WorktreeLease = CapabilityLeaseReceipt;
 
 export type PreparedWorktree = {
   worktreeId: string;
@@ -78,20 +72,14 @@ export class EphemeralWorktreeManager {
     taskId: string;
     stageId: string;
     candidateId: string;
+    roleId: string;
+    executorId: string;
+    allowedCapabilities: string[];
     allowedEffects: string[];
     allowedTools: string[];
     ttlMs?: number;
   }): WorktreeLease {
-    const ttlMs = Math.max(1_000, Math.min(input.ttlMs ?? 30 * 60_000, 4 * 60 * 60_000));
-    return {
-      leaseId: `LEASE-${randomUUID().slice(0, 10).toUpperCase()}`,
-      taskId: input.taskId,
-      stageId: input.stageId,
-      candidateId: input.candidateId,
-      allowedEffects: [...new Set(input.allowedEffects)],
-      allowedTools: [...new Set(input.allowedTools)],
-      expiresAt: new Date(Date.now() + ttlMs).toISOString()
-    };
+    return createCapabilityLeaseReceipt(input);
   }
 
   async prepare(input: {
@@ -158,7 +146,7 @@ export class EphemeralWorktreeManager {
   }
 
   assertLease(lease: WorktreeLease, now = new Date()): void {
-    if (Date.parse(lease.expiresAt) <= now.getTime()) throw new Error("WORKTREE_LEASE_EXPIRED");
+    verifyCapabilityLeaseReceipt(lease, now);
     if (!lease.taskId.trim() || !lease.stageId.trim() || !lease.candidateId.trim()) {
       throw new Error("WORKTREE_LEASE_SCOPE_INVALID");
     }
