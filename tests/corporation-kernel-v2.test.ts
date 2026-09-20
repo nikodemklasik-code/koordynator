@@ -361,6 +361,16 @@ describe("CorporationKernel v2", () => {
       providerLineageId: "lineage-local" | "lineage-independent"
     ): VerifiedSolutionCandidate => {
       const artifactFingerprint = `artifact-${id}`;
+      const baseCost = id === "A" ? 0.2 : id === "C" ? 0.4 : 0.3;
+      const cost = {
+        money: baseCost,
+        time: baseCost,
+        compute: baseCost,
+        complexity: baseCost,
+        maintenance: baseCost,
+        externalDependency: baseCost,
+        operationalBurden: baseCost
+      };
       return {
         taskId: task.taskId,
         evidenceRefs: [`tests:${id}`],
@@ -368,6 +378,27 @@ describe("CorporationKernel v2", () => {
         description: `Candidate ${id}`,
         metrics,
         artifactFingerprint,
+        admissibility: {
+          goalSatisfied: true,
+          productCongruence: true,
+          hllValid: true,
+          requiredRelationsPreserved: true,
+          requiredProvenancePreserved: true,
+          constitutionalConstraintsPreserved: true,
+          evidenceRefs: [`admissibility:${id}`]
+        },
+        economics: {
+          cost,
+          burdens: Object.entries(cost).map(([dimension, amount]) => ({
+            burdenId: `BURDEN-${id}-${dimension}`,
+            dimension: dimension as keyof typeof cost,
+            amount,
+            introducedBy: `candidate:${id}`,
+            serves: ["GOAL:task-success"],
+            justificationRefs: [`cost-justification:${id}:${dimension}`],
+            alternatives: ["A", "B", "C"].filter((candidateId) => candidateId !== id)
+          }))
+        },
         verificationReceipt: createVerificationReceipt({
           artifactFingerprint,
           verifierId,
