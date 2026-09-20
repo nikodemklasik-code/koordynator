@@ -6,7 +6,6 @@
   "pull_request": 73,
   "base_branch": "main",
   "base_sha": "4227158293bc68e430f8568335751777a1661e98",
-  "head_sha": "4ca2a30f19b1a02f2ba1f0e588ebbb9ad87593fa",
   "architectural_terms": {
     "Harmonia": "constitutional order",
     "HLL": "internal Corporation language for truth, provenance, ratification, conflict and allowed Brain actions",
@@ -24,7 +23,10 @@
     "HLL_Epistemic_Loop": "prevention, diagnosis, verification and falsification around material corporate claims and work",
     "Novelty_Intake": "pluggable multi-source absorption layer feeding Corporate Intelligence, Innovation Radar and Scientific Research",
     "Portfolio": "simultaneous products, programs and projects with dependencies, priority and capacity allocation",
-    "Growth_Operations": "channel discovery, contacts, campaigns and gated external outreach with legal/QC/finance/authorisation controls"
+    "Growth_Operations": "channel discovery, contacts, campaigns and gated external outreach with legal/QC/finance/authorisation controls",
+    "Receipt_Binding": "string/boolean/enum is not proof; material decisions bind exact statement, payload, scope, authority epoch and artifact via tamper-evident receipts",
+    "Transactional_Audit": "Corporation mutations use revisioned atomic state+event commits when the journal store is wired",
+    "Execution_Isolation": "candidate code work is prepared in leased ephemeral git worktrees; real executor wiring remains blocked until sandbox boundaries are complete"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -71,7 +73,14 @@
     "src/corporation/innovation.ts",
     "src/corporation/novelty-sources.ts",
     "src/corporation/growth-operations.ts",
-    "tests/corporation-portfolio-innovation-growth.test.ts"
+    "tests/corporation-portfolio-innovation-growth.test.ts",
+    "src/corporation/receipts.ts",
+    "src/corporation/verification-trust.ts",
+    "src/corporation/policy-engine.ts",
+    "src/corporation/action-gate.ts",
+    "src/corporation/journal-store.ts",
+    "src/corporation/ephemeral-worktree.ts",
+    "tests/corporation-safety-invariants.test.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -117,7 +126,25 @@
     "venture_studio_structure": "implemented",
     "growth_operations_domain": "implemented",
     "marketing_policy_domain": "implemented",
-    "outreach_external_execution": "pending"
+    "outreach_external_execution": "pending",
+    "hll_decision_receipt_binding": "implemented",
+    "required_authorisation_action_gate": "implemented",
+    "recruitment_capability_ceiling": "implemented",
+    "qc_critical_failure_blocking": "implemented",
+    "verifier_trust_lineage": "implemented",
+    "comparator_verification_receipts": "implemented",
+    "derived_communication_policy": "implemented",
+    "p0_emergency_receipts": "implemented",
+    "model_claim_binding": "implemented",
+    "skill_supply_chain_guardrails": "implemented",
+    "learning_memory_receipt_gate": "implemented",
+    "recipient_bound_outreach_approval": "implemented",
+    "atomic_cas_journal": "implemented",
+    "kernel_atomic_state_event_commit": "implemented",
+    "ephemeral_worktree_isolation": "implemented",
+    "capability_lease_receipts": "implemented",
+    "execution_receipt_schema": "implemented",
+    "hard_network_sandbox": "pending"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
@@ -128,5 +155,6 @@
     "Check PR #73 and CI",
     "Continue from the first pending migration item"
   ],
-  "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Connect Corporation v2 to the authoritative HLL already present in Harmonia Legal."
+  "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Connect Corporation v2 to the authoritative HLL already present in Harmonia Legal.",
+  "head_resolution": "Resolve current branch HEAD from Git/CI at runtime; do not persist a manual current HEAD inside this manifest."
 }
