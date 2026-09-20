@@ -27,6 +27,14 @@ export interface CorporateEventStore {
   list(limit?: number): Promise<CorporateEvent[]>;
 }
 
+export interface CorporationTransactionStore {
+  commit(input: {
+    expectedRevision: number;
+    snapshot: CorporationSnapshot;
+    events: CorporateEvent[];
+  }): Promise<void>;
+}
+
 export interface ExecutorRegistryPort {
   list(): Promise<ExecutorDescriptor[]>;
 }
