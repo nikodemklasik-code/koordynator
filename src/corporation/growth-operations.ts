@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { ApprovalReceipt, AuthorityEpoch } from "./receipts.js";
+import { verifyApprovalReceipt } from "./receipts.js";
 
 export type GrowthChannelKind =
   | "EMAIL"
@@ -37,6 +39,9 @@ export type ContactRecord = {
   sourceRef: string;
   lawfulBasisRef?: string;
   consentRef?: string;
+  doNotContactRef?: string;
+  jurisdiction: string;
+  retentionUntil?: string;
   relevance: string;
   status: "DISCOVERED" | "VERIFIED" | "DO_NOT_CONTACT" | "CONTACTABLE";
   evidenceRefs: string[];
@@ -82,7 +87,7 @@ export type OutreachExecution = {
   contactId: string;
   action: "SEND_EMAIL" | "SEND_MESSAGE" | "CREATE_LEAD" | "BOOK_FOLLOWUP";
   status: "PLANNED" | "AUTHORISED" | "EXECUTED" | "BLOCKED";
-  externalAuthorisationRef?: string;
+  approvalReceiptId?: string;
   receiptRef?: string;
 };
 
@@ -211,6 +216,9 @@ export class GrowthOperations {
     campaignId: string;
     contactId: string;
     action: OutreachExecution["action"];
+    approvalReceipt?: ApprovalReceipt;
+    approvalAuthority?: AuthorityEpoch;
+    now?: Date;
   }): OutreachExecution {
     const campaign = this.requireCampaign(input.campaignId);
     const contact = this.contacts.get(input.contactId);
@@ -219,7 +227,18 @@ export class GrowthOperations {
 
     const externallyEffective = ["SEND_EMAIL", "SEND_MESSAGE", "BOOK_FOLLOWUP"].includes(input.action);
     if (externallyEffective) {
-      if (!campaign.externalAuthorisationRef) {
+      const now = input.now ?? new Date();
+      const legalBasisPresent = Boolean(contact.consentRef || contact.lawfulBasisRef);
+      const retentionValid = !contact.retentionUntil || Date.parse(contact.retentionUntil) > now.getTime();
+
+      if (
+        contact.status !== "CONTACTABLE"
+        || contact.doNotContactRef
+        || !legalBasisPresent
+        || !retentionValid
+        || !input.approvalReceipt
+        || !input.approvalAuthority
+      ) {
         return {
           executionId: `OUTREACH-${randomUUID().slice(0, 10).toUpperCase()}`,
           campaignId: campaign.campaignId,
@@ -228,16 +247,45 @@ export class GrowthOperations {
           status: "BLOCKED"
         };
       }
-      if (!["VERIFIED", "CONTACTABLE"].includes(contact.status)) {
+
+      try {
+        verifyApprovalReceipt({
+          receipt: input.approvalReceipt,
+          authority: input.approvalAuthority,
+          action: `outreach.${input.action.toLowerCase()}`,
+          subjectId: contact.contactId,
+          payload: {
+            campaignId: campaign.campaignId,
+            contactId: contact.contactId,
+            action: input.action,
+            messageArtifactRef: campaign.messageArtifactRef ?? null
+          },
+          scope: {
+            policyId: campaign.policyId,
+            channelId: campaign.channelId,
+            recipient: contact.contactId,
+            jurisdiction: contact.jurisdiction
+          },
+          now
+        });
+      } catch {
         return {
           executionId: `OUTREACH-${randomUUID().slice(0, 10).toUpperCase()}`,
           campaignId: campaign.campaignId,
           contactId: contact.contactId,
           action: input.action,
-          status: "BLOCKED",
-          externalAuthorisationRef: campaign.externalAuthorisationRef
+          status: "BLOCKED"
         };
       }
+
+      return {
+        executionId: `OUTREACH-${randomUUID().slice(0, 10).toUpperCase()}`,
+        campaignId: campaign.campaignId,
+        contactId: contact.contactId,
+        action: input.action,
+        status: "AUTHORISED",
+        approvalReceiptId: input.approvalReceipt.receiptId
+      };
     }
 
     return {
@@ -245,10 +293,7 @@ export class GrowthOperations {
       campaignId: campaign.campaignId,
       contactId: contact.contactId,
       action: input.action,
-      status: externallyEffective ? "AUTHORISED" : "PLANNED",
-      ...(campaign.externalAuthorisationRef === undefined
-        ? {}
-        : { externalAuthorisationRef: campaign.externalAuthorisationRef })
+      status: "PLANNED"
     };
   }
 
