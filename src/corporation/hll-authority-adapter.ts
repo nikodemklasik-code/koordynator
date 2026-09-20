@@ -198,6 +198,12 @@ export class AuthoritativeHllPort implements HllPort {
     if (!response.brainDecisionHash.trim() || !response.canonicalRecordHash.trim()) {
       throw new Error("HLL_AUTHORITY_COMMIT_BINDING_MISSING");
     }
+    if (response.authority.authorityId !== input.assessment.receipt.authorityId) {
+      throw new Error("HLL_AUTHORITY_COMMIT_AUTHORITY_ID_MISMATCH");
+    }
+    if (response.authority.epoch !== input.assessment.receipt.authorityEpoch) {
+      throw new Error("HLL_AUTHORITY_COMMIT_AUTHORITY_EPOCH_MISMATCH");
+    }
 
     const conformance = new Set(response.authority.conformance);
     for (const requirement of REQUIRED_HLL_CONFORMANCE) {
