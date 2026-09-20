@@ -6,9 +6,15 @@ import type {
   HllStatement,
   SolutionCandidate
 } from "./domain.js";
+import type { DecisionReceipt } from "./receipts.js";
+
+export type HllAssessment = {
+  decision: HllDecision;
+  receipt: DecisionReceipt;
+};
 
 export interface HllPort {
-  assess(statement: HllStatement): Promise<HllDecision>;
+  assess(statement: HllStatement): Promise<HllAssessment>;
 }
 
 export interface CorporationStateStore {
