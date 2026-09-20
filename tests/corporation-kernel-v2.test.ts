@@ -16,7 +16,11 @@ import type {
   HllAssessment,
   HllPort
 } from "../src/corporation/ports.js";
-import { createDecisionReceipt, createVerificationReceipt } from "../src/corporation/receipts.js";
+import {
+  createDecisionReceipt,
+  createHllRecordReceipt,
+  createVerificationReceipt
+} from "../src/corporation/receipts.js";
 import { VerifierTrustRegistry } from "../src/corporation/verification-trust.js";
 
 class MemoryState implements CorporationStateStore {
@@ -61,8 +65,7 @@ function allowedDecision(statement: HllStatement): HllDecision {
       scope: action === "EXTERNAL_SEND" ? "EXTERNAL" : "INTERNAL"
     })),
     provenanceIds: [`PROV-${statement.statementId}`],
-    hllVersion: "HLL/1.0",
-    canonicalRecordHash: `REC-${statement.statementId}`
+    hllVersion: "HLL/1.0"
   };
 }
 
@@ -81,6 +84,30 @@ class RecordingHll implements HllPort {
       receipt: createDecisionReceipt({
         statement,
         decision,
+        authority: HLL_AUTHORITY
+      })
+    };
+  }
+
+  async commit(input: {
+    statement: HllStatement;
+    assessment: HllAssessment;
+    action: import("../src/corporation/domain.js").HllBrainAction;
+    rationale: string;
+    targetLedger?: string;
+    orderingKey?: string;
+    externalAuthorisationId?: string;
+  }) {
+    const brainDecisionHash = `BRAIN-${input.statement.statementId}-${input.action}`;
+    const canonicalRecordHash = `REC-${input.statement.statementId}`;
+    return {
+      brainDecisionHash,
+      canonicalRecordHash,
+      receipt: createHllRecordReceipt({
+        statement: input.statement,
+        decision: input.assessment.decision,
+        brainDecisionHash,
+        canonicalRecordHash,
         authority: HLL_AUTHORITY
       })
     };
