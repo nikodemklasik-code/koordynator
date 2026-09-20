@@ -33,7 +33,6 @@ function assessment(subject: HllStatement["subject"], action: "RECORD" | "UPDATE
     allowedBrainActions: [{ action, scope: "INTERNAL" }],
     provenanceIds: [`PROV-${statement.statementId}`],
     hllVersion: "HLL/1.0",
-    canonicalRecordHash: `REC-${statement.statementId}`
   };
   return {
     statement,
