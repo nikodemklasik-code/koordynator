@@ -218,11 +218,11 @@ function initialRoles(at: string): RoleContract[] {
 export class CorporationKernel {
   private readonly capabilities: CapabilityRegistry;
   private serial: Promise<unknown> = Promise.resolve();
-  private transactionContext?: {
+  private transactionContext: {
     expectedRevision?: number;
     snapshot?: CorporationSnapshot;
     events: CorporateEvent[];
-  };
+  } | undefined;
 
   constructor(private readonly ports: {
     hll: HllPort;
