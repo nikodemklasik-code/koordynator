@@ -36,7 +36,9 @@ export type HllStatement = {
     | "EXECUTION_RESULT"
     | "SECURITY_FINDING"
     | "SELF_IMPROVEMENT"
-    | "PRODUCT_DECISION";
+    | "PRODUCT_DECISION"
+    | "COMMUNICATION"
+    | "QUALITY_GATE";
   proposition: string;
   payload: Record<string, unknown>;
   provenance: HllProvenance;
