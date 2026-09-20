@@ -36,7 +36,6 @@ function communicationHll() {
     allowedBrainActions: [{ action: "RECORD", scope: "INTERNAL" }],
     provenanceIds: [`PROV-${statement.statementId}`],
     hllVersion: "HLL/1.0",
-    canonicalRecordHash: `REC-${statement.statementId}`
   };
   return {
     statement,
