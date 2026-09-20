@@ -57,6 +57,8 @@ describe("live runtime regressions", () => {
 
     expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1"');
     expect(main).toContain("omniroute-keeper.mjs");
+    expect(main).toContain("WorkingChatModelCatalogService");
+    expect(main).toContain("KOORDYNATOR_CHAT_WORKING_SET");
     expect(packageJson).toContain("hermes-managed.mjs");
   });
 });
