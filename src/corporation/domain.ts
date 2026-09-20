@@ -70,7 +70,13 @@ export type HllStatement = {
     | "INNOVATION_OPPORTUNITY"
     | "MARKETING_POLICY"
     | "CHANNEL_OPPORTUNITY"
-    | "OUTREACH";
+    | "OUTREACH"
+    | "STAGE_COMMITMENT"
+    | "STAGE_TRACE"
+    | "STAGE_FRAGMENT"
+    | "STAGE_VALIDATION"
+    | "CAPABILITY_LEASE"
+    | "EXECUTION";
   proposition: string;
   payload: Record<string, unknown>;
   provenance: HllProvenance;
