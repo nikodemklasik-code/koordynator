@@ -15,7 +15,12 @@
     "Harmonia_Legal_Platform": "Corporation product",
     "Quality_Control": "independent cross-corporate quality gate below Harmonia Constitution",
     "Provider_Fabric": "replaceable capability/provider composition layer with combos, skills and non-paid/sovereign fallback policy",
-    "Corporate_Communication": "declared typed dependency graph with HLL-gated material handoffs and cross-cutting observers"
+    "Corporate_Communication": "declared typed dependency graph with HLL-gated material handoffs and cross-cutting observers",
+    "Accountability_Contract": "strict role responsibility, forbidden scope, confirmations, consequences and escalation",
+    "Skill_Adaptation": "Koordynator binds task-specific skills without exceeding the officially supported model capability ceiling",
+    "Failure_Memory": "durable recurrence, root-cause, failed-attempt and do-not-repeat memory",
+    "Solution_Memory": "durable verified solution patterns with applicability, contraindications, reliability and cost history",
+    "Plugin_Core": "stable constitutional core with replaceable executors, providers, verifiers, skill sources and transports"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -49,7 +54,15 @@
     "src/corporation/communication.ts",
     "tests/corporation-organization-qc-provider.test.ts",
     "tests/corporation-communication.test.ts",
-    "docs/CORPORATION_COMMUNICATION_MAP.md"
+    "docs/CORPORATION_COMMUNICATION_MAP.md",
+    "src/corporation/accountability.ts",
+    "src/corporation/delegation.ts",
+    "src/corporation/model-selection.ts",
+    "src/corporation/skills.ts",
+    "src/corporation/plugins.ts",
+    "src/corporation/failure-routing.ts",
+    "src/corporation/learning-memory.ts",
+    "tests/corporation-contract-model-skill-memory.test.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -77,7 +90,16 @@
     "provider_fabric": "implemented",
     "communication_dependency_graph": "implemented",
     "department_screens": "pending",
-    "communication_runtime_integration": "pending"
+    "communication_runtime_integration": "pending",
+    "accountability_contracts": "implemented",
+    "separation_of_duties": "implemented",
+    "corporate_chain_delegation": "implemented",
+    "official_model_selection": "implemented",
+    "task_skill_adaptation": "implemented",
+    "plugin_registry": "implemented",
+    "failure_routing": "implemented",
+    "failure_memory": "implemented",
+    "solution_memory": "implemented"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
