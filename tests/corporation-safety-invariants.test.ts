@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeHllStatement } from "../src/corporation/hll.js";
+import {
+  assertCanonicalHllFact,
+  semanticProvenanceFromBindings
+} from "../src/corporation/hll-truth-boundary.js";
 import { authoriseAction } from "../src/corporation/action-gate.js";
 import { JournalCorporationStore } from "../src/corporation/journal-store.js";
 import { EphemeralWorktreeManager, type GitWorktreePort } from "../src/corporation/ephemeral-worktree.js";
@@ -10,6 +14,7 @@ import type { CorporateEvent, CorporationSnapshot, HllDecision } from "../src/co
 import {
   createApprovalReceipt,
   createDecisionReceipt,
+  createHllRecordReceipt,
   verifyApprovalReceipt,
   verifyDecisionReceipt
 } from "../src/corporation/receipts.js";
@@ -152,6 +157,63 @@ describe("receipt binding invariants", () => {
       payload: { capabilities: ["code", "secrets-admin"] },
       scope: { effects: ["fs.write"] }
     })).toThrow("APPROVAL_PAYLOAD_MISMATCH");
+  });
+});
+
+describe("shared HLL truth boundary", () => {
+  it("requires exact decision and canonical-write receipts before downstream canonical use", () => {
+    const statement = makeHllStatement({
+      subject: "TASK",
+      proposition: "A canonical task fact exists.",
+      payload: { taskId: "CORP-BOUNDARY-1" },
+      provenance: {
+        sourceType: "OWNER",
+        sourceId: "owner",
+        evidenceRefs: ["owner:boundary"],
+        observedAt: new Date().toISOString()
+      },
+      requestedBrainActions: ["RECORD"]
+    });
+    const decision: HllDecision = {
+      decisionId: "decision-boundary",
+      statementId: statement.statementId,
+      subjectId: "HLLPROP-BOUNDARY",
+      truthState: "CONFIRMED",
+      eligibleForFact: true,
+      blockers: [],
+      allowedBrainActions: [{ action: "RECORD", scope: "INTERNAL" }],
+      provenanceIds: ["PROV-BOUNDARY"],
+      hllVersion: "HLL/1.0",
+      semanticHash: "semantic-boundary"
+    };
+    const authority = { authorityId: "harmonia-hll", epoch: "corp-v1" };
+    const decisionReceipt = createDecisionReceipt({ statement, decision, authority });
+    const recordReceipt = createHllRecordReceipt({
+      statement,
+      decision,
+      brainDecisionHash: "brain-boundary",
+      canonicalRecordHash: "record-boundary",
+      authority
+    });
+
+    const binding = assertCanonicalHllFact({
+      statement,
+      decision,
+      decisionReceipt,
+      recordReceipt
+    });
+    expect(binding.recordHash).toBe("record-boundary");
+    expect(semanticProvenanceFromBindings([binding]).semanticStateHash).toMatch(/^sha256:/);
+
+    expect(() => assertCanonicalHllFact({
+      statement,
+      decision,
+      decisionReceipt,
+      recordReceipt: {
+        ...recordReceipt,
+        canonicalRecordHash: "substituted-record"
+      }
+    })).toThrow("HLL_RECORD_RECEIPT_TAMPERED");
   });
 });
 
