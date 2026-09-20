@@ -52,14 +52,17 @@ function allowedDecision(statement: HllStatement): HllDecision {
   return {
     decisionId: `DEC-${statement.statementId}`,
     statementId: statement.statementId,
-    truthState: "RATIFIED",
-    verdict: "ALLOW",
-    reasons: [],
-    allowedBrainActions: [...statement.requestedBrainActions],
-    requiredAuthorisations: [],
-    canonicalRecord: `HLL(${statement.subject})`,
-    canonicalFingerprint: statement.fingerprint,
-    decidedAt: new Date().toISOString()
+    subjectId: `SUBJECT-${statement.statementId}`,
+    truthState: "CONFIRMED",
+    eligibleForFact: true,
+    blockers: [],
+    allowedBrainActions: [...statement.requestedBrainActions].map((action) => ({
+      action,
+      scope: action === "EXTERNAL_SEND" ? "EXTERNAL" : "INTERNAL"
+    })),
+    provenanceIds: [`PROV-${statement.statementId}`],
+    hllVersion: "HLL/1.0",
+    canonicalRecordHash: `REC-${statement.statementId}`
   };
 }
 
@@ -204,10 +207,11 @@ describe("CorporationKernel v2", () => {
       if (statement.subject === "TASK") {
         return {
           ...allowedDecision(statement),
-          truthState: "UNKNOWN",
-          verdict: "REVISE",
-          reasons: ["PROVENANCE_INSUFFICIENT"],
-          allowedBrainActions: []
+          truthState: "ERROR",
+          eligibleForFact: false,
+          blockers: ["PROVENANCE_INSUFFICIENT"],
+          allowedBrainActions: [{ action: "DEFER", scope: "INTERNAL" }],
+          canonicalRecordHash: undefined
         };
       }
       return allowedDecision(statement);
@@ -221,7 +225,7 @@ describe("CorporationKernel v2", () => {
 
     const task = await kernel.submitTask(input());
 
-    expect(task.status).toBe("NEEDS_REVISION");
+    expect(task.status).toBe("BLOCKED");
     expect(task.plan).toBeUndefined();
   });
 
