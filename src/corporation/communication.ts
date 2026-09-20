@@ -27,7 +27,14 @@ export type CorporateMessageKind =
   | "INCIDENT"
   | "ESCALATION"
   | "CUSTOMER_FEEDBACK"
-  | "MARKET_FEEDBACK";
+  | "MARKET_FEEDBACK"
+  | "SCIENTIFIC_HYPOTHESIS"
+  | "FALSIFICATION_RESULT"
+  | "INNOVATION_SIGNAL"
+  | "EXPERIMENT_RESULT"
+  | "PRODUCT_IDEA"
+  | "CHANNEL_OPPORTUNITY"
+  | "OUTREACH_PLAN";
 
 export type CommunicationDependency = {
   dependencyId: string;
@@ -186,7 +193,28 @@ export function defaultCommunicationGraph(): CorporateCommunicationGraph {
     dep("DEPT-INTERNAL-DEVELOPMENT", "DEPT-QC", "CONTROL", ["QUALITY_GATE", "HANDOFF"], "Self-improvement and platform changes require QC closure.", { knowledgePackageRequired: true }),
 
     dep("DEPT-OPERATIONS", "DEPT-DATA", "INFORMATION", ["EVIDENCE", "STATUS"], "Operational metrics feed corporate analytics."),
-    dep("DEPT-DATA", "DEPT-STRATEGY", "INFORMATION", ["EVIDENCE", "STATUS"], "Decision-grade metrics feed strategy and portfolio management.")
+    dep("DEPT-DATA", "DEPT-STRATEGY", "INFORMATION", ["EVIDENCE", "STATUS"], "Decision-grade metrics feed strategy and portfolio management."),
+
+    dep("DEPT-CORPORATE-INTELLIGENCE", "DEPT-STRATEGY", "INFORMATION", ["EVIDENCE", "MARKET_FEEDBACK", "INNOVATION_SIGNAL"], "External strategic signals feed portfolio and strategy."),
+    dep("DEPT-CORPORATE-INTELLIGENCE", "DEPT-INNOVATION", "SERVICE", ["INNOVATION_SIGNAL", "EVIDENCE"], "Corporate Intelligence supplies novelty and technology signals to Innovation Radar."),
+    dep("DEPT-INNOVATION", "DEPT-SCIENCE-INNOVATION", "SERVICE", ["INNOVATION_SIGNAL", "SCIENTIFIC_HYPOTHESIS", "REVIEW_REQUEST"], "Promising novelty is transferred for scientific testing and falsification."),
+    dep("DEPT-SCIENCE-INNOVATION", "DEPT-INNOVATION", "FEEDBACK", ["FALSIFICATION_RESULT", "EXPERIMENT_RESULT", "EVIDENCE"], "Scientific research returns supported, falsified or inconclusive evidence."),
+    dep("DEPT-SCIENCE-INNOVATION", "DEPT-VENTURE-STUDIO", "BLOCKING", ["HANDOFF", "EXPERIMENT_RESULT", "PRODUCT_IDEA"], "Verified research opportunities move into incubation.", { knowledgePackageRequired: true }),
+    dep("DEPT-INNOVATION", "DEPT-VENTURE-STUDIO", "SERVICE", ["PRODUCT_IDEA", "INNOVATION_SIGNAL"], "Innovation Radar supplies opportunity candidates to Venture Studio."),
+    dep("DEPT-VENTURE-STUDIO", "DEPT-PRODUCT", "BLOCKING", ["HANDOFF", "PRODUCT_IDEA", "EXPERIMENT_RESULT"], "Validated product candidates move into Product ownership.", { knowledgePackageRequired: true }),
+    dep("DEPT-VENTURE-STUDIO", "DEPT-FINANCE", "CONTROL", ["FINANCE_REVIEW", "APPROVAL_REQUEST"], "Material incubation spend and economics require Finance review.", { blocking: false }),
+    dep("DEPT-VENTURE-STUDIO", "DEPT-LEGAL", "CONTROL", ["LEGAL_REVIEW", "APPROVAL_REQUEST"], "New product concepts with legal implications require Legal review.", { blocking: false }),
+    dep("DEPT-VENTURE-STUDIO", "DEPT-QC", "CONTROL", ["QUALITY_GATE", "REVIEW_REQUEST"], "Incubated products require evidence-quality review before promotion.", { blocking: true }),
+
+    dep("DEPT-MARKETING", "DEPT-GROWTH", "SERVICE", ["TASK_REQUEST", "OUTREACH_PLAN"], "Marketing supplies positioning and campaign constraints to Growth."),
+    dep("DEPT-GROWTH", "DEPT-MARKETING", "FEEDBACK", ["CHANNEL_OPPORTUNITY", "MARKET_FEEDBACK", "EVIDENCE"], "Growth returns channel evidence and campaign learning."),
+    dep("DEPT-GROWTH", "DEPT-SALES", "SERVICE", ["CHANNEL_OPPORTUNITY", "OUTREACH_PLAN"], "Growth supplies qualified channel and outreach opportunities to Sales."),
+    dep("DEPT-SALES", "DEPT-GROWTH", "FEEDBACK", ["MARKET_FEEDBACK", "CUSTOMER_FEEDBACK"], "Sales returns channel performance and customer objections."),
+    dep("DEPT-DATA", "DEPT-GROWTH", "INFORMATION", ["EVIDENCE", "STATUS"], "Data supplies funnel and experiment metrics to Growth."),
+    dep("DEPT-GROWTH", "DEPT-DATA", "SERVICE", ["TASK_REQUEST", "REVIEW_REQUEST"], "Growth requests experiment measurement and attribution."),
+    dep("DEPT-GROWTH", "DEPT-LEGAL", "CONTROL", ["LEGAL_REVIEW", "OUTREACH_PLAN"], "Externally effective outreach and material claims require Legal review.", { blocking: true }),
+    dep("DEPT-GROWTH", "DEPT-QC", "CONTROL", ["QUALITY_GATE", "OUTREACH_PLAN"], "Growth claims and outreach plans require QC evidence review.", { blocking: true }),
+    dep("DEPT-GROWTH", "DEPT-FINANCE", "CONTROL", ["FINANCE_REVIEW", "APPROVAL_REQUEST"], "Material growth spend requires Finance review.", { blocking: false })
   ];
 
   const crossCuttingRules: CrossCuttingCommunicationRule[] = [
