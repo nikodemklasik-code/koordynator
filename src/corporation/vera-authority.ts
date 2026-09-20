@@ -80,6 +80,19 @@ export type VeraPreparedEffect = {
   permitId: string;
 };
 
+export type VeraPrepareEffectInput = {
+  intent: VeraEffectIntent;
+  actorId: string;
+  capabilityId: string;
+  policyRef: VeraOpaqueRef;
+  verifiedEffectReceiptIds: string[];
+  requestedTtlMs: number;
+};
+
+export interface VeraEffectAuthorityPort {
+  prepareEffect(input: VeraPrepareEffectInput): Promise<VeraPreparedEffect>;
+}
+
 export type VeraConsumedEffect = {
   consumedPermit: VeraOpaqueRef;
 };
@@ -100,7 +113,7 @@ function asString(value: unknown, code: string): string {
   return value;
 }
 
-export class VeraCoreAuthority {
+export class VeraCoreAuthority implements VeraEffectAuthorityPort {
   constructor(private readonly rpc: VeraRpcPort) {}
 
   async health(): Promise<VeraHealth> {
@@ -177,14 +190,7 @@ export class VeraCoreAuthority {
     }), "VERA_HUMAN_ACT_RESPONSE_INVALID");
   }
 
-  async prepareEffect(input: {
-    intent: VeraEffectIntent;
-    actorId: string;
-    capabilityId: string;
-    policyRef: VeraOpaqueRef;
-    verifiedEffectReceiptIds: string[];
-    requestedTtlMs: number;
-  }): Promise<VeraPreparedEffect> {
+  async prepareEffect(input: VeraPrepareEffectInput): Promise<VeraPreparedEffect> {
     if (!Number.isSafeInteger(input.requestedTtlMs) || input.requestedTtlMs <= 0) {
       throw new Error("VERA_EFFECT_TTL_INVALID");
     }
