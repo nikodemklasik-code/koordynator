@@ -57,13 +57,15 @@ function bucket(chat, source) {
 async function loadUsage24h() {
   if (!usage24h) return;
   try {
-    const [chatResponse, providerResponse] = await Promise.all([
+    const [chatResponse, providerResponse, catalogResponse] = await Promise.all([
       fetch("/api/chat/usage?hours=24", { headers: { accept: "application/json" } }),
-      fetch("/api/provider-receipts?limit=200", { headers: { accept: "application/json" } })
+      fetch("/api/provider-receipts?limit=200", { headers: { accept: "application/json" } }),
+      fetch("/api/chat/models", { headers: { accept: "application/json" } })
     ]);
     if (!chatResponse.ok || !providerResponse.ok) throw new Error("USAGE_HTTP_ERROR");
     const chat = await chatResponse.json();
     const providerPayload = await providerResponse.json();
+    const catalog = catalogResponse.ok ? await catalogResponse.json() : {};
     const provider = providerReceiptUsage(providerPayload.receipts);
 
     const confirmedFree = bucket(chat, "FREE_CONFIRMED");
@@ -79,17 +81,35 @@ async function loadUsage24h() {
     const unknownRequests = Number(unknown.requests || 0) + Number(requested.requests || 0);
     const unreported = Number(chat.tokenTelemetryUnreported || 0) + provider.unreported;
 
-    usage24h.textContent = `24H · FREE/OAUTH ${compactNumber(freeTokens)} · SUBSCRIPTION ${compactNumber(harnessTokens)} · PAYG ${compactNumber(paidTokens)} · UNKNOWN ${unknownRequests} · UNREPORTED ${unreported}`;
+    const working = catalog?.workingSet && typeof catalog.workingSet === "object" ? catalog.workingSet : {};
+    const activeModels = Array.isArray(working.activeModels) ? working.activeModels : [];
+    const activeFree = Array.isArray(working.freeModels) ? working.freeModels : [];
+    const activeSubscription = Array.isArray(working.subscriptionModels) ? working.subscriptionModels : [];
+    const budget = catalog?.billing?.budget;
+    const budgetText = budget && typeof budget.remaining === "number"
+      ? ` · PAYG BAL ${compactNumber(budget.remaining)}${typeof budget.limit === "number" ? `/${compactNumber(budget.limit)}` : ""}`
+      : "";
+
+    usage24h.textContent = activeModels.length
+      ? `ACTIVE ${activeModels.length} · FREE ${activeFree.length} · FREE USED 24H ${compactNumber(freeTokens)} · SUB USED 24H ${compactNumber(harnessTokens)}${budgetText}`
+      : `USED 24H · FREE/OAUTH ${compactNumber(freeTokens)} · SUBSCRIPTION ${compactNumber(harnessTokens)} · PAYG ${compactNumber(paidTokens)}`;
     usage24h.className = `usage-24h ${paidTokens > 0 || unknownRequests > 0 ? "attention" : "clean"}`;
     usage24h.title = [
-      `Confirmed free API: ${confirmedFree.requests || 0} requests / ${confirmedFree.totalTokens || 0} reported tokens`,
-      `Free OAuth: ${freeOauth.requests || 0} requests / ${freeOauth.totalTokens || 0} reported tokens`,
-      `Live Chat subscription harness: ${liveHarness.requests || 0} requests / ${liveHarness.totalTokens || 0} reported tokens`,
+      `Active live routes: ${activeModels.length || "unavailable"}`,
+      `Active free routes: ${activeFree.length}${activeFree.length ? ` · ${activeFree.join(", ")}` : ""}`,
+      `Active subscription routes: ${activeSubscription.length}${activeSubscription.length ? ` · ${activeSubscription.join(", ")}` : ""}`,
+      `Confirmed free API: ${confirmedFree.requests || 0} requests / ${confirmedFree.totalTokens || 0} reported tokens used in the last 24h`,
+      `Free OAuth: ${freeOauth.requests || 0} requests / ${freeOauth.totalTokens || 0} reported tokens used in the last 24h`,
+      `Live Chat subscription harness: ${liveHarness.requests || 0} requests / ${liveHarness.totalTokens || 0} reported tokens used in the last 24h`,
       `Other provider subscription receipts: ${provider.harnessRequests} requests / ${provider.harnessTokens} reported tokens`,
       `PAYG API: ${Number(chatPaid.requests || 0) + provider.paidRequests} requests / ${paidTokens} reported tokens`,
+      budget && typeof budget.remaining === "number"
+        ? `PAYG budget balance reported upstream: ${budget.remaining}${typeof budget.limit === "number" ? ` / ${budget.limit}` : ""}`
+        : "PAYG budget balance: not reported",
+      "Remaining FREE token quota is not fabricated: many free/OAuth providers expose rate/quota state rather than a numeric remaining-token balance.",
       `Unconfirmed or unknown billing: ${unknownRequests} requests`,
       `Requests without provider token telemetry: ${unreported}`,
-      "Token totals include only provider-reported usage. No estimates are presented as facts."
+      "Token totals are provider-reported usage, not an estimate of remaining quota."
     ].join("\n");
   } catch {
     usage24h.textContent = "24H USAGE · TELEMETRY UNAVAILABLE";
@@ -167,8 +187,14 @@ function rebuildNoAuthOptions(models) {
     runtimeModelSelect.appendChild(group);
   }
   group.textContent = "";
+  const existing = new Set(
+    [...runtimeModelSelect.options]
+      .filter((option) => option.parentElement !== group)
+      .map((option) => option.value)
+      .filter(Boolean)
+  );
   const freeModels = (Array.isArray(models) ? models : [])
-    .filter((model) => isSafeModelId(model) && isNoAuthFree(model))
+    .filter((model) => isSafeModelId(model) && isNoAuthFree(model) && !existing.has(model))
     .sort((a, b) => a.localeCompare(b));
   for (const model of freeModels) {
     const option = document.createElement("option");
@@ -183,10 +209,16 @@ function rebuildNoAuthOptions(models) {
 
 function annotateRuntimeOptions(routes) {
   if (!runtimeModelSelect) return;
+  const verifiedWorkingSet = runtimeModelSelect.dataset.workingSet === "verified";
   const byFamily = new Map(routes.map((route) => [route.family, route]));
   for (const option of [...runtimeModelSelect.options]) {
     const model = option.value;
     if (!model) continue;
+    if (verifiedWorkingSet) {
+      option.disabled = false;
+      option.dataset.runtimeHealth = "HEALTHY";
+      continue;
+    }
     if (isNoAuthFree(model)) {
       option.disabled = false;
       option.textContent = `${baseOptionLabel(option).replace(/ · (?:✓ LIVE|NOT PROBED|QUOTA|AUTH|DEGRADED|OFFLINE)$/, "")} · ✓ NO LOGIN`;
@@ -224,6 +256,10 @@ function applyAuditedFreeUi() {
 
 function selectHealthyRuntimeRoute(routes) {
   if (!runtimeModelSelect || !runtimeModelSelect.value) return;
+  if (runtimeModelSelect.dataset.workingSet === "verified") {
+    if (isNoAuthFree(runtimeModelSelect.value)) applyAuditedFreeUi();
+    return;
+  }
   const current = runtimeModelSelect.value;
   if (isNoAuthFree(current)) {
     applyAuditedFreeUi();
@@ -257,6 +293,12 @@ function renderRuntimeRouteBadge(routes) {
   const badge = runtimeBadge();
   if (!badge || !runtimeModelSelect) return;
   const selected = runtimeModelSelect.value;
+  if (runtimeModelSelect.dataset.workingSet === "verified") {
+    badge.textContent = `LIVE · ${selected}`;
+    badge.className = "runtime-route-badge live";
+    badge.title = "Exact model passed the Koordynator live working-set probe.";
+    return;
+  }
   if (isNoAuthFree(selected)) {
     badge.textContent = `LIVE · ${selected}`;
     badge.className = "runtime-route-badge live free";
