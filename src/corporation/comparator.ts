@@ -1,5 +1,12 @@
 import { canonicalDigest } from "../crypto/canonical-digest.js";
-import type { SolutionCandidate, SolutionMetrics } from "./domain.js";
+import type { SolutionCandidate } from "./domain.js";
+import {
+  admissibilityReasons,
+  costDominates,
+  reviewCostProportionality,
+  type RouteEconomics,
+  type SolutionAdmissibility
+} from "./cost-proportionality.js";
 import type { VerificationReceipt } from "./receipts.js";
 import { verifyVerificationReceipt } from "./receipts.js";
 import { VerifierTrustRegistry } from "./verification-trust.js";
@@ -7,6 +14,8 @@ import { VerifierTrustRegistry } from "./verification-trust.js";
 export type VerifiedSolutionCandidate = Omit<SolutionCandidate, "verified"> & {
   artifactFingerprint: string;
   verificationReceipt: VerificationReceipt;
+  admissibility: SolutionAdmissibility;
+  economics: RouteEconomics;
 };
 
 export type CandidatePolicy = {
@@ -16,10 +25,16 @@ export type CandidatePolicy = {
 };
 
 export type CandidateComparison = {
-  eligible: VerifiedSolutionCandidate[];
+  admissible: VerifiedSolutionCandidate[];
+  costRevision: Array<{ candidate: VerifiedSolutionCandidate; reasons: string[] }>;
   rejected: Array<{ candidate: VerifiedSolutionCandidate; reasons: string[] }>;
   paretoFront: VerifiedSolutionCandidate[];
   selected?: VerifiedSolutionCandidate;
+  selectionState:
+    | "NO_ADMISSIBLE_CANDIDATE"
+    | "COST_REVISION_REQUIRED"
+    | "UNIQUE_PARETO"
+    | "BRAIN_DECISION_REQUIRED";
 };
 
 const DEFAULT_POLICY: CandidatePolicy = {
@@ -28,59 +43,13 @@ const DEFAULT_POLICY: CandidatePolicy = {
   requireVerified: true
 };
 
-function bounded(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
-
-function benefit(metrics: SolutionMetrics): number {
-  return (
-    bounded(metrics.correctness) * 0.25
-    + bounded(metrics.security) * 0.20
-    + bounded(metrics.maintainability) * 0.12
-    + bounded(metrics.reversibility) * 0.10
-    + bounded(metrics.architectureFit) * 0.13
-    + bounded(metrics.productValue) * 0.10
-    - bounded(metrics.regressionRisk) * 0.05
-    - bounded(metrics.complexity) * 0.02
-    - bounded(metrics.moneyCost) * 0.01
-    - bounded(metrics.tokenCost) * 0.01
-    - bounded(metrics.latency) * 0.01
-  );
-}
-
-function dominates(left: VerifiedSolutionCandidate, right: VerifiedSolutionCandidate): boolean {
-  const l = left.metrics;
-  const r = right.metrics;
-  const benefits: Array<keyof SolutionMetrics> = [
-    "correctness",
-    "security",
-    "maintainability",
-    "reversibility",
-    "architectureFit",
-    "productValue"
-  ];
-  const costs: Array<keyof SolutionMetrics> = [
-    "regressionRisk",
-    "complexity",
-    "moneyCost",
-    "tokenCost",
-    "latency"
-  ];
-
-  const noWorse = benefits.every((key) => l[key] >= r[key])
-    && costs.every((key) => l[key] <= r[key]);
-  const strictlyBetter = benefits.some((key) => l[key] > r[key])
-    || costs.some((key) => l[key] < r[key]);
-
-  return noWorse && strictlyBetter;
-}
-
 export function compareCandidates(
   candidates: VerifiedSolutionCandidate[],
   trustRegistry: VerifierTrustRegistry,
   policy: CandidatePolicy = DEFAULT_POLICY
 ): CandidateComparison {
-  const eligible: VerifiedSolutionCandidate[] = [];
+  const semanticallyAdmissible: VerifiedSolutionCandidate[] = [];
+  const costRevision: CandidateComparison["costRevision"] = [];
   const rejected: CandidateComparison["rejected"] = [];
 
   for (const candidate of candidates) {
@@ -117,24 +86,45 @@ export function compareCandidates(
       reasons.push("CRITICAL_VERIFICATION_FAILURE");
     }
 
-    if (reasons.length) rejected.push({ candidate, reasons });
-    else eligible.push(candidate);
+    reasons.push(...admissibilityReasons(candidate.admissibility));
+
+    if (reasons.length) {
+      rejected.push({ candidate, reasons });
+      continue;
+    }
+
+    const costReview = reviewCostProportionality(candidate.economics);
+    if (!costReview.proportional) {
+      costRevision.push({ candidate, reasons: costReview.reasons });
+      continue;
+    }
+
+    semanticallyAdmissible.push(candidate);
   }
 
-  const paretoFront = eligible.filter((candidate) =>
-    !eligible.some((other) => other.candidateId !== candidate.candidateId && dominates(other, candidate))
+  const paretoFront = semanticallyAdmissible.filter((candidate) =>
+    !semanticallyAdmissible.some((other) =>
+      other.candidateId !== candidate.candidateId
+      && costDominates(other.economics.cost, candidate.economics.cost)
+    )
   );
 
-  const selected = [...paretoFront].sort((a, b) => {
-    const byScore = benefit(b.metrics) - benefit(a.metrics);
-    if (byScore !== 0) return byScore;
-    return a.candidateId.localeCompare(b.candidateId);
-  })[0];
+  const selected = paretoFront.length === 1 ? paretoFront[0] : undefined;
+  const selectionState: CandidateComparison["selectionState"] =
+    semanticallyAdmissible.length === 0
+      ? costRevision.length
+        ? "COST_REVISION_REQUIRED"
+        : "NO_ADMISSIBLE_CANDIDATE"
+      : paretoFront.length === 1
+        ? "UNIQUE_PARETO"
+        : "BRAIN_DECISION_REQUIRED";
 
   return {
-    eligible,
+    admissible: semanticallyAdmissible,
+    costRevision,
     rejected,
     paretoFront,
-    ...(selected === undefined ? {} : { selected })
+    ...(selected === undefined ? {} : { selected }),
+    selectionState
   };
 }
