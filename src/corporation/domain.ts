@@ -122,7 +122,6 @@ export type HllDecision = {
   allowedBrainActions: HllActionPermission[];
   provenanceIds: string[];
   hllVersion: string;
-  canonicalRecordHash?: string;
   semanticHash?: string;
 };
 
