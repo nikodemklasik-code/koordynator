@@ -197,7 +197,7 @@ describe("CorporationKernel v2", () => {
     expect(task.status).toBe("READY");
     expect(task.assignedRoleIds).toContain("ROLE-BUILDER");
     expect(task.plan?.stages.length).toBeGreaterThan(0);
-    expect(task.plan?.hllDecision?.truthState).toBe("RATIFIED");
+    expect(task.plan?.hllDecision?.truthState).toBe("CONFIRMED");
     expect(task.hllReceipt.statementFingerprint).toBe(task.hllStatement.fingerprint);
     expect(hll.statements.map((item) => item.subject)).toEqual(["TASK", "DELEGATION"]);
   });
@@ -210,8 +210,7 @@ describe("CorporationKernel v2", () => {
           truthState: "ERROR",
           eligibleForFact: false,
           blockers: ["PROVENANCE_INSUFFICIENT"],
-          allowedBrainActions: [{ action: "DEFER", scope: "INTERNAL" }],
-          canonicalRecordHash: undefined
+          allowedBrainActions: [{ action: "DEFER", scope: "INTERNAL" }]
         };
       }
       return allowedDecision(statement);
