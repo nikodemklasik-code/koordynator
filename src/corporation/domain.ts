@@ -129,6 +129,13 @@ export type RoleContract = {
   hllReceipt?: DecisionReceipt;
 };
 
+export type RecruitmentCapabilityCeiling = {
+  capabilities: string[];
+  effects: string[];
+  tools: string[];
+  decisionRights: string[];
+};
+
 export type RecruitmentRequest = {
   recruitmentId: string;
   taskId: string;
@@ -138,6 +145,8 @@ export type RecruitmentRequest = {
   missingCapabilities: string[];
   requestedEffects: string[];
   requestedTools: string[];
+  requestedDecisionRights: string[];
+  capabilityCeiling: RecruitmentCapabilityCeiling;
   risk: CorporateRisk;
   status: "PROPOSED" | "OPEN" | "NEEDS_REVISION" | "BLOCKED" | "HIRED" | "REJECTED";
   approvalRequired: boolean;
