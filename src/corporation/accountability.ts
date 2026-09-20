@@ -81,7 +81,7 @@ export function accountabilityForRole(
       ...confirmation,
       confirmationId: `CONF-${randomUUID().slice(0, 8).toUpperCase()}`
     })),
-    failureConsequences: [...new Set(input.failureConsequences ?? [
+    failureConsequences: [...new Set<ResponsibilityConsequence>(input.failureConsequences ?? [
       "RETURN_TO_MANAGER",
       "ESCALATE_DIAGNOSTICS",
       "BLOCK_HANDOFF"
