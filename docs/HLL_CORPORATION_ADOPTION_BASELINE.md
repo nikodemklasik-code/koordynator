@@ -461,3 +461,163 @@ Corporation implementation order:
 ```
 
 Any implementation that does not meet this baseline remains `NOT_CONFORMANT` and may not become the Corporation truth/effect authority.
+
+
+## 11. Blind Execution & Dynamic HLL Synthesis
+
+HLL stage semantics are computed locally from execution evidence after the stage,
+rather than disclosed to the executor before execution.
+
+The executor receives only a **BlindStageAssignment**:
+
+- exact task/stage identity;
+- its own short-lived capability lease;
+- direct stage inputs;
+- an ordered list of deterministic micro-operations;
+- the instruction and input fingerprints needed to bind the trace;
+- an opaque commitment identifier/fingerprint.
+
+It MUST NOT receive:
+
+- `HLL_global`;
+- the hidden expected local HLL fragment;
+- the commitment nonce;
+- semantic targets that are not required to perform the micro-operation;
+- future-stage knowledge.
+
+Authority-side state contains a private, pre-execution commitment:
+
+```
+PrivateStageCommitment {
+  taskId
+  stageId
+  executorId
+  capabilityLeaseId
+  expectedFragment
+  commitmentNonce
+  commitmentFingerprint
+}
+```
+
+The expected fragment is committed before execution. The nonce prevents the public
+commitment fingerprint from becoming a useful low-entropy oracle for guessing the
+hidden target.
+
+The executor performs the stage and a trusted trace writer records an ordered,
+hash-chained execution trace. Each trace event binds:
+
+- task;
+- stage;
+- element;
+- operation;
+- executor;
+- capability lease;
+- instruction fingerprint;
+- input fingerprint;
+- output fingerprint;
+- effect fingerprints;
+- evidence fingerprints;
+- previous trace-event fingerprint.
+
+After execution:
+
+```
+HLL_computed_K = f_HLL(BlindStageAssignment, Trace_K)
+```
+
+The computed fragment is normalised to semantic content and compared against the
+authority-side committed fragment:
+
+```
+semantic(HLL_computed_K) == semantic(HLL_expected_K)
+```
+
+Only an exact semantic match produces a PASS validation receipt.
+
+A PASS validation receipt may unlock the next stage by minting a new
+`CapabilityLeaseReceipt`. A FAIL cannot mint the next lease.
+
+The initial reference implementation lives in:
+
+```
+src/corporation/hll-stage-protocol.ts
+tests/corporation-hll-blind-stage.test.ts
+```
+
+### Composition into the global graph
+
+The executor does not see the global graph.
+
+The constitutional flow is:
+
+```
+HLL_global(t)
+  + private StageCommitment_K
+  -> BlindStageAssignment_K
+  -> execution
+  -> Trace_K
+  -> HLL_computed_K
+  -> Harmonia validation
+  -> PASS only
+  -> canonical local-fragment promotion
+  -> HLL_global(t+1)
+  -> CapabilityLease_(K+1)
+```
+
+Thus local HLL is **derived from what happened**, not supplied by the worker as a
+declaration.
+
+### Determinism boundary
+
+Exact hidden-fragment equality is permitted only for stages whose semantic result
+can genuinely be precommitted and deterministically reconstructed.
+
+Creative/generative/model-dependent work MUST NOT be falsely labelled deterministic.
+Such work produces a candidate artifact/fragment and enters independent verification,
+falsification and QC. It cannot obtain PASS merely because an LLM output looks
+similar to an expected answer.
+
+### Security boundary
+
+Blind execution materially reduces target-shaping and prompt-injection surface, but
+the architecture MUST NOT claim that the risk is mathematically zero.
+
+Predefinition alone does not make a trace unforgeable.
+
+For material stages the trace writer must be outside the worker's authority and
+bound to:
+
+- capability lease;
+- executor identity;
+- ordered sequence;
+- previous-event digest;
+- actual artifact/effect evidence;
+- trusted time where relevant.
+
+Application-level hash chaining is tamper-evident, not hardware attestation. Higher
+risk levels may require independent OS/runtime observation, signed receipts,
+sandbox-level effect interception, or hardware-backed attestation.
+
+The invariant is therefore:
+
+```
+worker declaration != execution truth
+trusted trace + artifacts + deterministic synthesis + HLL validation = admissible evidence
+```
+
+## 12. Stage knowledge minimisation
+
+Knowledge is provided by least-knowledge principle.
+
+Each stage receives only the knowledge necessary to perform its contract. Knowledge
+packages are stage-scoped and capability-scoped.
+
+A later stage may receive ratified outputs of an earlier stage, but not the hidden
+commitment used to judge that earlier stage.
+
+No stage is entitled to the global HLL merely because it participates in the same
+project.
+
+Knowledge visibility is therefore a capability in its own right and must eventually
+be enforced by the same authority/effect substrate as filesystem, network, secret,
+external-send and canonical-write rights.
