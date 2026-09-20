@@ -11,6 +11,8 @@ export type ProviderCapability = {
   providerId: string;
   modelId: string;
   family: string;
+  providerLineageId: string;
+  trustRootId: string;
   capabilities: string[];
   toolsets: string[];
   skills: string[];
@@ -44,6 +46,7 @@ export type ProviderStrategy = {
   hasNonPaidPath: boolean;
   hasNonExternalPath: boolean;
   providerFamilies: string[];
+  providerLineages: string[];
 };
 
 export type ProviderFabricPolicy = {
@@ -147,7 +150,8 @@ export class ProviderFabric {
       rationale,
       hasNonPaidPath: members.some((member) => ["LOCAL", "FREE", "INCLUDED_CREDITS"].includes(member.costClass)),
       hasNonExternalPath: members.some((member) => !member.externalDependency),
-      providerFamilies: [...new Set(members.map((member) => member.family))]
+      providerFamilies: [...new Set(members.map((member) => member.family))],
+      providerLineages: [...new Set(members.map((member) => member.providerLineageId))]
     });
 
     const primary = eligible[0]!;
@@ -169,7 +173,9 @@ export class ProviderFabric {
     }
 
     const diverse = eligible.filter((provider, index, all) =>
-      all.findIndex((other) => other.family === provider.family) === index
+      provider.trustRootId.trim().length > 0
+      && provider.providerLineageId.trim().length > 0
+      && all.findIndex((other) => other.providerLineageId === provider.providerLineageId) === index
     ).slice(0, this.policy.maxMembers);
 
     if (diverse.length >= 2) {
@@ -197,7 +203,7 @@ export class ProviderFabric {
       if (
         strategy.kind === "CROSS_CHECK"
         && this.policy.requireFamilyDiversityForCrossCheck
-        && strategy.providerFamilies.length < 2
+        && strategy.providerLineages.length < 2
       ) return false;
 
       if (
