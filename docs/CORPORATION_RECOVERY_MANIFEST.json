@@ -92,7 +92,7 @@
     "role_contract_activation": "implemented",
     "baseline_planner": "implemented",
     "comparator": "implemented",
-    "production_hll_adapter": "pending",
+    "production_hll_adapter": "blocked_pending_inspectable_authoritative_hll_interface",
     "ephemeral_worktree_executor": "pending",
     "executor_adapters": "pending",
     "independent_verifier": "pending",
@@ -140,11 +140,12 @@
     "learning_memory_receipt_gate": "implemented",
     "recipient_bound_outreach_approval": "implemented",
     "atomic_cas_journal": "implemented",
-    "kernel_atomic_state_event_commit": "implemented",
+    "kernel_atomic_state_event_commit": "implemented_when_transaction_port_is_wired",
     "ephemeral_worktree_isolation": "implemented",
     "capability_lease_receipts": "implemented",
     "execution_receipt_schema": "implemented",
-    "hard_network_sandbox": "pending"
+    "hard_network_sandbox": "pending",
+    "transactional_runtime_wiring": "pending"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
@@ -156,5 +157,6 @@
     "Continue from the first pending migration item"
   ],
   "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Connect Corporation v2 to the authoritative HLL already present in Harmonia Legal.",
-  "head_resolution": "Resolve current branch HEAD from Git/CI at runtime; do not persist a manual current HEAD inside this manifest."
+  "head_resolution": "Resolve current branch HEAD from Git/CI at runtime; do not persist a manual current HEAD inside this manifest.",
+  "hll_adapter_blocker": "The current Harmonia-Legal-Platform main ref exposes a single non-UTF8 preview blob and no inspectable HLL API/contract in GitHub. Do not invent a production adapter until the authoritative HLL interface is available as source/API contract."
 }
