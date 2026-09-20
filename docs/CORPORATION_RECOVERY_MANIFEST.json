@@ -27,8 +27,8 @@
     "Receipt_Binding": "string/boolean/enum is not proof; material decisions bind exact statement, payload, scope, authority epoch and artifact via tamper-evident receipts",
     "Transactional_Audit": "Corporation mutations use revisioned atomic state+event commits when the journal store is wired",
     "Execution_Isolation": "candidate code work is prepared in leased ephemeral git worktrees; real executor wiring remains blocked until sandbox boundaries are complete",
-    "Blind_Execution": "executor receives only stage-scoped inputs, deterministic micro-operations and a lease; expected local HLL and global HLL remain authority-side",
-    "Dynamic_HLL_Synthesis": "HLL fragment is reconstructed after execution from trace and artifacts, then matched against the precommitted hidden semantic fragment"
+    "Blind_Execution": "executor receives only stage-scoped inputs, bounded micro-operations, a capability lease and an opaque authoritative stage-contract binding; it emits evidence, not truth",
+    "Dynamic_HLL_Synthesis": "authoritative HLL Engine derives semantic state from trace/artifacts/effects/evidence; Koordynator does not implement a competing local truth engine"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -40,7 +40,9 @@
     "Autonomous code repair must use isolated ephemeral worktrees",
     "Repair success requires independent verification",
     "Solution selection means best verified available candidate",
-    "No automatic secret scraping, paid fallback activation, OAuth consent, billing change, destructive action, production deployment or protected merge"
+    "No automatic secret scraping, paid fallback activation, OAuth consent, billing change, destructive action, production deployment or protected merge",
+    "Koordynator MUST NOT mint, synthesize or ratify HLL truth independently of the authoritative HLL Engine",
+    "Blind execution produces trace/artifact/effect/evidence only; semantic truth and next-stage authority come from HLL/VERA"
   ],
   "current_files": [
     "src/corporation/domain.ts",
@@ -83,9 +85,9 @@
     "src/corporation/journal-store.ts",
     "src/corporation/ephemeral-worktree.ts",
     "tests/corporation-safety-invariants.test.ts",
-    "src/corporation/hll-stage-protocol.ts",
-    "tests/corporation-hll-blind-stage.test.ts",
-    "docs/HLL_CORPORATION_ADOPTION_BASELINE.md"
+    "docs/HLL_CORPORATION_ADOPTION_BASELINE.md",
+    "src/corporation/blind-stage-execution.ts",
+    "tests/corporation-blind-stage-execution.test.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -97,7 +99,7 @@
     "role_contract_activation": "implemented",
     "baseline_planner": "implemented",
     "comparator": "implemented",
-    "production_hll_adapter": "blocked_pending_inspectable_authoritative_hll_interface",
+    "production_hll_adapter": "pending_semantic_mapping_and_conformance",
     "ephemeral_worktree_executor": "pending",
     "executor_adapters": "pending",
     "independent_verifier": "pending",
@@ -151,13 +153,15 @@
     "execution_receipt_schema": "implemented",
     "hard_network_sandbox": "pending",
     "transactional_runtime_wiring": "pending",
-    "blind_stage_protocol": "implemented_reference",
-    "local_hll_synthesis": "implemented_reference",
-    "hidden_stage_commitment": "implemented_reference",
-    "stage_validation_receipt": "implemented_reference",
-    "next_stage_lease_from_pass": "implemented_reference",
+    "blind_stage_protocol": "superseded_removed",
+    "local_hll_synthesis": "removed_from_koordynator_pending_authoritative_hll_adapter",
+    "hidden_stage_commitment": "not_general_hll_rule",
+    "stage_validation_receipt": "removed_as_local_truth_authority",
+    "next_stage_lease_from_pass": "pending_authoritative_hll_vera_gate",
     "trusted_trace_runtime": "pending",
-    "hardware_or_os_attestation": "pending_high_risk_only"
+    "hardware_or_os_attestation": "pending_high_risk_only",
+    "blind_stage_execution_transport": "implemented_reference",
+    "execution_evidence_bundle": "implemented_reference"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
@@ -170,5 +174,5 @@
   ],
   "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Connect Corporation v2 to the authoritative HLL already present in Harmonia Legal.",
   "head_resolution": "Resolve current branch HEAD from Git/CI at runtime; do not persist a manual current HEAD inside this manifest.",
-  "hll_adapter_blocker": "The current Harmonia-Legal-Platform main ref exposes a single non-UTF8 preview blob and no inspectable HLL API/contract in GitHub. Do not invent a production adapter until the authoritative HLL interface is available as source/API contract."
+  "hll_adapter_blocker": "Authoritative HLL sources are now inspectable. Remaining work is semantic mapping and conformance: Corporation objects/relations must map onto the existing HLL ontology/grounding/write-barrier model plus K1/K2 and VERA invariants. Do not invent local substitute semantics."
 }
