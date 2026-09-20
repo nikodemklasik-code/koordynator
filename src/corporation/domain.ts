@@ -205,7 +205,22 @@ export type CorporateTaskStatus =
   | "DONE"
   | "BLOCKED";
 
+export type CorporateGoalContext = {
+  goalId: string;
+  statement: string;
+  product?: {
+    productId: string;
+    mission: string;
+  };
+  project?: {
+    projectId: string;
+    objective: string;
+    productId?: string;
+  };
+};
+
 export type CorporateTaskInput = {
+  goal: CorporateGoalContext;
   objective: string;
   plane: CorporatePlane;
   departmentId?: string;
