@@ -22,6 +22,7 @@ import { verifyApprovalReceipt } from "./receipts.js";
 import type {
   CorporateEventStore,
   CorporationStateStore,
+  CorporationTransactionStore,
   ExecutorRegistryPort,
   HllPort
 } from "./ports.js";
@@ -217,12 +218,18 @@ function initialRoles(at: string): RoleContract[] {
 export class CorporationKernel {
   private readonly capabilities: CapabilityRegistry;
   private serial: Promise<unknown> = Promise.resolve();
+  private transactionContext?: {
+    expectedRevision?: number;
+    snapshot?: CorporationSnapshot;
+    events: CorporateEvent[];
+  };
 
   constructor(private readonly ports: {
     hll: HllPort;
     state: CorporationStateStore;
     events: CorporateEventStore;
     executors: ExecutorRegistryPort;
+    transactional?: CorporationTransactionStore;
     verifierTrust?: VerifierTrustRegistry;
     approvalAuthority?: AuthorityEpoch;
   }) {
@@ -236,6 +243,7 @@ export class CorporationKernel {
     const at = iso();
     const created: CorporationSnapshot = {
       schemaVersion: 1,
+      revision: 0,
       language: "HLL",
       departments: initialDepartments(at),
       roles: initialRoles(at),
@@ -243,7 +251,7 @@ export class CorporationKernel {
       tasks: [],
       updatedAt: at
     };
-    await this.ports.state.save(created);
+    await this.saveState(created);
     await this.event("CORPORATION_INITIALISED", "CORPORATION", {
       schemaVersion: 1,
       language: "HLL"
@@ -330,7 +338,7 @@ export class CorporationKernel {
 
       state.tasks.push(task);
       state.updatedAt = at;
-      await this.ports.state.save(state);
+      await this.saveState(state);
       await this.event("TASK_SUBMITTED", task.taskId, {
         status: task.status,
         hllDecisionId: hllDecision.decisionId
@@ -454,7 +462,7 @@ export class CorporationKernel {
       request.resultingRoleId = role.roleId;
       request.updatedAt = at;
       state.updatedAt = at;
-      await this.ports.state.save(state);
+      await this.saveState(state);
       await this.event("ROLE_ACTIVATED", role.roleId, {
         recruitmentId,
         hllDecisionId: decision.decisionId
@@ -597,7 +605,7 @@ export class CorporationKernel {
         : "WAITING_FOR_ROLE";
       task.updatedAt = iso();
       state.updatedAt = task.updatedAt;
-      await this.ports.state.save(state);
+      await this.saveState(state);
       return task;
     }
 
@@ -638,7 +646,7 @@ export class CorporationKernel {
         : "NEEDS_REVISION";
     task.updatedAt = iso();
     state.updatedAt = task.updatedAt;
-    await this.ports.state.save(state);
+    await this.saveState(state);
     await this.event("TASK_PLANNED", task.taskId, {
       planId: plan.planId,
       status: task.status,
@@ -675,6 +683,29 @@ export class CorporationKernel {
     }
   }
 
+  private async saveState(state: CorporationSnapshot): Promise<void> {
+    const context = this.transactionContext;
+    if (context) {
+      if (context.expectedRevision === undefined) context.expectedRevision = state.revision;
+      context.snapshot = structuredClone({
+        ...state,
+        revision: context.expectedRevision + 1
+      });
+      return;
+    }
+
+    const next = structuredClone({ ...state, revision: state.revision + 1 });
+    if (this.ports.transactional) {
+      await this.ports.transactional.commit({
+        expectedRevision: state.revision,
+        snapshot: next,
+        events: []
+      });
+      return;
+    }
+    await this.ports.state.save(next);
+  }
+
   private async event(type: string, subjectId: string, payload: Record<string, unknown>): Promise<void> {
     const event: CorporateEvent = {
       eventId: `EVT-${randomUUID().slice(0, 12).toUpperCase()}`,
@@ -683,11 +714,49 @@ export class CorporationKernel {
       at: iso(),
       payload
     };
+    if (this.transactionContext) {
+      this.transactionContext.events.push(event);
+      return;
+    }
     await this.ports.events.append(event);
   }
 
+  private async flushTransaction(): Promise<void> {
+    const context = this.transactionContext;
+    if (!context) return;
+
+    if (context.snapshot) {
+      const expectedRevision = context.expectedRevision ?? 0;
+      if (this.ports.transactional) {
+        await this.ports.transactional.commit({
+          expectedRevision,
+          snapshot: context.snapshot,
+          events: context.events
+        });
+      } else {
+        await this.ports.state.save(context.snapshot);
+        for (const event of context.events) await this.ports.events.append(event);
+      }
+      return;
+    }
+
+    for (const event of context.events) await this.ports.events.append(event);
+  }
+
   private async mutate<T>(fn: () => Promise<T>): Promise<T> {
-    const run = this.serial.then(fn, fn);
+    const execute = async (): Promise<T> => {
+      if (this.transactionContext) throw new CorporationKernelError("NESTED_CORPORATION_TRANSACTION", 500);
+      this.transactionContext = { events: [] };
+      try {
+        const result = await fn();
+        await this.flushTransaction();
+        return result;
+      } finally {
+        this.transactionContext = undefined;
+      }
+    };
+
+    const run = this.serial.then(execute, execute);
     this.serial = run.then(() => undefined, () => undefined);
     return run;
   }
