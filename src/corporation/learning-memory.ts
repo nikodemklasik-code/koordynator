@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import type { VerificationReceipt } from "./receipts.js";
+import { verifyVerificationReceipt } from "./receipts.js";
+import { VerifierTrustRegistry } from "./verification-trust.js";
 
 export type FailureMemoryStatus =
   | "OPEN"
@@ -42,6 +45,9 @@ export type SolutionMemoryRecord = {
   skillIds: string[];
   modelFamilies: string[];
   verificationRefs: string[];
+  verificationReceiptIds: string[];
+  independentGroupIds: string[];
+  providerLineageIds: string[];
   contraindications: string[];
   successCount: number;
   failureCount: number;
@@ -87,7 +93,10 @@ function overlap(a: string, b: string): number {
 export class CorporateLearningMemory {
   private readonly path: string;
 
-  constructor(stateDir: string) {
+  constructor(
+    stateDir: string,
+    private readonly verifierTrust: VerifierTrustRegistry = new VerifierTrustRegistry()
+  ) {
     this.path = join(resolve(stateDir), "corporation-v2", "learning-memory.json");
   }
 
@@ -183,9 +192,8 @@ export class CorporateLearningMemory {
     strategyRefs?: string[];
     skillIds?: string[];
     modelFamilies?: string[];
-    verificationRefs: string[];
+    verificationReceipts: VerificationReceipt[];
     contraindications?: string[];
-    passed: boolean;
     regression: boolean;
     moneyCost?: number;
     tokenCost?: number;
@@ -193,6 +201,35 @@ export class CorporateLearningMemory {
     promotedSkillId?: string;
   }): Promise<SolutionMemoryRecord> {
     const state = await this.snapshot();
+    if (!input.verificationReceipts.length) throw new Error("LEARNING_VERIFICATION_RECEIPT_REQUIRED");
+
+    for (const receipt of input.verificationReceipts) {
+      verifyVerificationReceipt(receipt);
+      this.verifierTrust.assertReceiptLineage({
+        trustRootId: receipt.trustRootId,
+        verifierId: receipt.verifierId,
+        independentGroupId: receipt.independentGroupId,
+        providerLineageId: receipt.providerLineageId
+      });
+    }
+
+    const passing = input.verificationReceipts.filter((receipt) => receipt.result === "PASS");
+    const independentGroups = new Set(passing.map((receipt) => receipt.independentGroupId));
+    const criticalFailure = input.verificationReceipts.some((receipt) =>
+      receipt.result === "FAIL"
+      && receipt.severity === "CRITICAL"
+      && receipt.failureClass !== undefined
+      && ["CORRECTNESS", "SECURITY", "INTEGRITY", "PRIVACY", "COMPLIANCE"].includes(receipt.failureClass)
+    );
+    const passed = !criticalFailure && passing.length >= 2 && independentGroups.size >= 2;
+    if (!passed && !input.verificationReceipts.some((receipt) => receipt.result === "FAIL")) {
+      throw new Error("LEARNING_VERIFICATION_INSUFFICIENT");
+    }
+
+    const verificationRefs = [...new Set(input.verificationReceipts.flatMap((receipt) => receipt.evidenceRefs))];
+    const verificationReceiptIds = [...new Set(input.verificationReceipts.map((receipt) => receipt.receiptId))];
+    const providerLineageIds = [...new Set(input.verificationReceipts.map((receipt) => receipt.providerLineageId))];
+
     const existing = state.solutions.find((item) =>
       item.problemFingerprint === input.problemFingerprint
       && item.solutionFingerprint === input.solutionFingerprint
@@ -205,13 +242,16 @@ export class CorporateLearningMemory {
       const avg = (previous: number, current: number) =>
         ((previous * observations) + current) / nextObservations;
 
-      if (input.passed) existing.successCount += 1;
+      if (passed) existing.successCount += 1;
       else existing.failureCount += 1;
       if (input.regression) existing.regressionCount += 1;
       existing.meanMoneyCost = avg(existing.meanMoneyCost, input.moneyCost ?? 0);
       existing.meanTokenCost = avg(existing.meanTokenCost, input.tokenCost ?? 0);
       existing.meanLatency = avg(existing.meanLatency, input.latency ?? 0);
-      existing.verificationRefs = [...new Set([...existing.verificationRefs, ...input.verificationRefs])];
+      existing.verificationRefs = [...new Set([...existing.verificationRefs, ...verificationRefs])];
+      existing.verificationReceiptIds = [...new Set([...existing.verificationReceiptIds, ...verificationReceiptIds])];
+      existing.independentGroupIds = [...new Set([...existing.independentGroupIds, ...independentGroups])];
+      existing.providerLineageIds = [...new Set([...existing.providerLineageIds, ...providerLineageIds])];
       existing.applicableContexts = [...new Set([...existing.applicableContexts, ...input.applicableContexts])];
       existing.prerequisites = [...new Set([...existing.prerequisites, ...(input.prerequisites ?? [])])];
       existing.strategyRefs = [...new Set([...existing.strategyRefs, ...(input.strategyRefs ?? [])])];
@@ -220,7 +260,12 @@ export class CorporateLearningMemory {
       existing.contraindications = [...new Set([...existing.contraindications, ...(input.contraindications ?? [])])];
       existing.version += 1;
       existing.lastVerifiedAt = at;
-      if (input.promotedSkillId) existing.promotedSkillId = input.promotedSkillId;
+      if (input.promotedSkillId) {
+        if (existing.successCount < 3 || existing.independentGroupIds.length < 2 || existing.regressionCount > 0) {
+          throw new Error("LEARNING_SKILL_PROMOTION_THRESHOLD_NOT_MET");
+        }
+        existing.promotedSkillId = input.promotedSkillId;
+      }
       state.updatedAt = at;
       await this.persist(state);
       return structuredClone(existing);
@@ -236,16 +281,23 @@ export class CorporateLearningMemory {
       strategyRefs: [...new Set(input.strategyRefs ?? [])],
       skillIds: [...new Set(input.skillIds ?? [])],
       modelFamilies: [...new Set(input.modelFamilies ?? [])],
-      verificationRefs: [...new Set(input.verificationRefs)],
+      verificationRefs,
+      verificationReceiptIds,
+      independentGroupIds: [...independentGroups],
+      providerLineageIds,
       contraindications: [...new Set(input.contraindications ?? [])],
-      successCount: input.passed ? 1 : 0,
-      failureCount: input.passed ? 0 : 1,
+      successCount: passed ? 1 : 0,
+      failureCount: passed ? 0 : 1,
       regressionCount: input.regression ? 1 : 0,
       meanMoneyCost: input.moneyCost ?? 0,
       meanTokenCost: input.tokenCost ?? 0,
       meanLatency: input.latency ?? 0,
       version: 1,
-      ...(input.promotedSkillId === undefined ? {} : { promotedSkillId: input.promotedSkillId }),
+      ...(input.promotedSkillId === undefined
+        ? {}
+        : passed && independentGroups.size >= 2 && !input.regression
+          ? { promotedSkillId: input.promotedSkillId }
+          : {}),
       firstVerifiedAt: at,
       lastVerifiedAt: at
     };
