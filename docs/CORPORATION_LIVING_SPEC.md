@@ -131,10 +131,18 @@ src/corporation/knowledge.ts
 src/corporation/quality-control.ts
 src/corporation/provider-fabric.ts
 src/corporation/communication.ts
+src/corporation/accountability.ts
+src/corporation/delegation.ts
+src/corporation/model-selection.ts
+src/corporation/skills.ts
+src/corporation/plugins.ts
+src/corporation/failure-routing.ts
+src/corporation/learning-memory.ts
 
 tests/corporation-kernel-v2.test.ts
 tests/corporation-organization-qc-provider.test.ts
 tests/corporation-communication.test.ts
+tests/corporation-contract-model-skill-memory.test.ts
 docs/CORPORATION_KERNEL_V2.md
 docs/CORPORATION_LIVING_SPEC.md
 docs/CORPORATION_COMMUNICATION_MAP.md
@@ -164,7 +172,14 @@ Implemented:
 - Provider Fabric with single/fallback/ensemble/role-split/cross-check strategies;
 - interdepartmental communication dependency graph;
 - cross-cutting QC/Security/Legal/Finance/Risk observers;
-- tests for ratification, recruitment, executor ceilings, candidate comparison, organization, QC, provider resilience and communication routing.
+- tests for ratification, recruitment, executor ceilings, candidate comparison, organization, QC, provider resilience and communication routing;
+- strict Accountability Contracts with responsibility, confirmation and consequence rules;
+- corporate-chain delegation with atomic/emergency direct fast paths;
+- model selection from official capability evidence;
+- task-specific skill binding within official model capability ceilings;
+- stable plugin registry for replaceable providers/executors/verifiers/memory;
+- strict separation of build/diagnostics/repair/verification/QC duties;
+- durable Failure Memory and Solution Memory with recurrence and do-not-repeat knowledge.
 
 ## 6. Self-improvement target architecture
 
@@ -646,3 +661,254 @@ Each department screen must expose:
 The source model is `src/corporation/communication.ts`. No cross-department material
 flow should be executable unless its dependency is declared or a new dependency has
 been constitutionally introduced.
+
+
+## 17. Strict responsibility contracts and separation of duties
+
+Every organizational role is backed by a Role Contract and an Accountability Contract.
+
+The Accountability Contract defines:
+
+- exact responsibility scope;
+- explicitly forbidden scope;
+- expected outputs;
+- mandatory confirmations/evidence;
+- consequences of failure;
+- escalation targets;
+- domain standards;
+- risk class.
+
+Default constitutional rule:
+
+```
+Builder builds.
+Diagnostics diagnoses.
+Repair repairs.
+Verifier verifies.
+QC controls quality.
+Security handles security.
+```
+
+A Builder that encounters an error does not turn into a repair agent. It emits a
+failure record and returns control. A separate Diagnostics unit analyses the problem,
+a separate Repair unit creates the fix, an independent Verifier checks it, and QC
+closes the gate.
+
+A failed Repair is also not allowed to recursively repair itself. It returns to
+Diagnostics/Escalation.
+
+This protects focus, makes responsibility attributable and prevents one agent from
+silently becoming author, debugger, reviewer and certifier of its own work.
+
+## 18. Delegation policy: corporate chain with bounded fast paths
+
+Default material work follows the organizational chain:
+
+```
+Koordynator
+  -> Department Head
+     -> Director
+        -> Manager
+           -> Lead
+              -> Agent
+```
+
+Koordynator does not normally micromanage the concrete Agent. It assigns corporate
+ownership to the correct department and Role Contract; the hierarchy decomposes and
+delegates the stage.
+
+Two bounded exceptions exist:
+
+1. DIRECT_ATOMIC: a small atomic task may go directly to an Agent only when the
+   relevant Role Contract pre-authorises direct execution. Department Head remains
+   accountable.
+
+2. EMERGENCY_DIRECT: P0 containment/diagnostics may bypass intermediate management
+   to reduce response latency. The action still produces receipts and escalation
+   evidence.
+
+This hybrid model avoids both extremes: central micromanagement by Koordynator and
+slow ceremonial routing of every trivial operation through five layers.
+
+## 19. Model selection from official properties
+
+AI model eligibility is determined from officially described properties:
+
+- official provider documentation;
+- official model cards;
+- official API metadata.
+
+No model is eligible merely because another model claims that it is good at a task.
+
+Internal verified benchmarks may rank models that are already officially eligible,
+but they cannot invent unsupported capabilities.
+
+Selection sequence:
+
+```
+task requirements
+  -> official capability eligibility
+  -> tool/context/structured-output constraints
+  -> officially declared strengths
+  -> verified internal benchmark evidence
+  -> provider/cost/resilience strategy
+  -> selected model
+```
+
+This keeps model assignment evidence-backed while still allowing the Corporation to
+learn which eligible models perform better in its own workloads.
+
+## 20. Skill adaptation is a constitutional Koordynator capability
+
+One of Koordynator's constitutive capabilities is adapting model skills to the task.
+
+Skills are modular manifests with:
+
+- capability coverage;
+- required toolsets;
+- compatible model families;
+- incompatible models;
+- risk;
+- provenance/evidence;
+- version.
+
+Koordynator selects the model first, then binds a minimal task-specific skill set.
+
+A skill may specialise or structure a model's work, but it may never expand beyond
+the model's officially supported capability ceiling.
+
+If skills cannot cover the task within that ceiling, Koordynator must select another
+model, split the work, use another provider strategy, or create Recruitment. It must
+not pretend that a prompt created a capability the underlying model does not have.
+
+## 21. Plugin architecture over a durable core
+
+Corporation v2 uses a durable constitutional core with replaceable plugins.
+
+Stable core owns:
+
+- Harmonia/HLL boundary;
+- canonical corporate state;
+- organization;
+- Role Contracts;
+- accountability;
+- portfolio;
+- task/stage identity;
+- knowledge/provenance;
+- communication graph;
+- QC policy;
+- authorisation;
+- error/solution memory;
+- audit/event history.
+
+Replaceable plugins may provide:
+
+- executors;
+- AI providers/models;
+- skill sources;
+- verifiers;
+- transports;
+- authentication;
+- storage implementations;
+- UI extensions.
+
+A plugin declares version, kind, capabilities, required kernel API, external
+dependency and risk. The core does not make an external provider constitutionally
+indispensable.
+
+## 22. Failure Memory and Solution Memory
+
+Corporate learning is split into two linked memories.
+
+### Failure Memory
+
+Failure Memory answers:
+
+- what failed?
+- where did it fail?
+- under what environment/model/skill/provider context?
+- what was the symptom?
+- what was the root cause, if established?
+- which attempts already failed?
+- what must not be repeated?
+- how often has this problem recurred?
+- what evidence supports the record?
+
+Failure records have durable fingerprints and recurrence counts. Repeated failures
+are recognised as recurrence rather than rediscovered from zero.
+
+### Solution Memory
+
+Solution Memory answers:
+
+- which verified solution addressed a given failure fingerprint?
+- in which contexts does it apply?
+- what prerequisites are required?
+- which strategies, skills and model families were used?
+- what independent verification exists?
+- what are its contraindications?
+- success/failure/regression history;
+- observed money/token/latency cost;
+- current version;
+- whether it has been promoted into a reusable skill.
+
+A solution is not remembered merely because it once produced PASS. Its reliability
+changes as more verification evidence accumulates.
+
+### Navigation
+
+Before new diagnosis or candidate generation, Koordynator queries Failure Memory and
+Solution Memory.
+
+```
+new failure
+  -> fingerprint / error code / semantic match
+  -> matching historical failures
+  -> do-not-repeat knowledge
+  -> historically verified candidate solutions
+  -> current environment compatibility check
+  -> candidate generation / comparison
+```
+
+Historical memory accelerates reasoning but never overrides current HLL, security,
+QC or environment evidence.
+
+The durable implementation starts in
+`src/corporation/learning-memory.ts`.
+
+## 23. Error ownership and escalation
+
+Errors are first-class corporate objects, not text buried in logs.
+
+A work failure records task, stage, originating unit, role, error code, summary,
+evidence and whether it is security-relevant.
+
+Default routing:
+
+```
+BUILD failure
+  -> Diagnostics
+  -> Repair
+  -> Independent Verification
+  -> QC
+
+SECURITY-relevant failure
+  -> Security
+  -> Diagnostics
+  -> Repair
+  -> Independent Verification
+  -> QC
+
+REPAIR failure
+  -> Diagnostics
+  -> Escalation if required
+  -> Independent Verification
+  -> QC
+
+VERIFICATION/QC failure
+  -> Diagnostics / Escalation
+  (control function does not mutate the artifact it controls)
+```
+
+This is the basis for learning, recurrence detection and reliable autonomous error
+management.
