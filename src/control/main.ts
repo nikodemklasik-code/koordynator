@@ -6,7 +6,7 @@ import { loadOrCreateControlSigningKey } from "./control-signing-key.js";
 import { ChatService } from "./chat-service.js";
 import { ChatExportService } from "./chat-export-service.js";
 import { installChatExportHttp } from "./chat-export-http.js";
-import { LiveChatModelCatalogService } from "./live-chat-model-catalog.js";
+import { WorkingChatModelCatalogService } from "./working-chat-model-catalog.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -36,10 +36,41 @@ const keeper = spawn(process.execPath, [resolve("scripts/omniroute-keeper.mjs")]
 });
 keeper.unref();
 
-const chatModelCatalog = new LiveChatModelCatalogService({
+const configuredFallbackModels = (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "")
+  .split(",")
+  .map((model) => model.trim())
+  .filter(Boolean);
+
+const chatModelCatalog = new WorkingChatModelCatalogService({
   endpoint: route.endpoint,
-  apiKeyEnv: "OMNIROUTE_API_KEY"
+  apiKeyEnv: "OMNIROUTE_API_KEY",
+  preferredModels: [route.model, ...configuredFallbackModels],
+  maxCandidates: 16,
+  targetActive: 10,
+  probeConcurrency: 4,
+  cacheTtlMs: 20_000
 });
+
+let startupWorkingSet: Awaited<ReturnType<WorkingChatModelCatalogService["list"]>> | null = null;
+try {
+  startupWorkingSet = await chatModelCatalog.list();
+  process.stdout.write(
+    `KOORDYNATOR_CHAT_WORKING_SET active=${startupWorkingSet.workingSet.activeModels.length} ` +
+    `free=${startupWorkingSet.workingSet.freeModels.length} ` +
+    `subscription=${startupWorkingSet.workingSet.subscriptionModels.length}\n`
+  );
+} catch (error) {
+  process.stderr.write(
+    `KOORDYNATOR_CHAT_WORKING_SET degraded=${error instanceof Error ? error.message : "unknown"}\n`
+  );
+}
+
+const chatDefaultModel = startupWorkingSet?.models.includes(route.model)
+  ? route.model
+  : startupWorkingSet?.models[0] ?? route.model;
+const chatFallbackModels = startupWorkingSet
+  ? startupWorkingSet.models.filter((model) => model !== chatDefaultModel).slice(0, 4)
+  : configuredFallbackModels;
 
 const server = createControlServer({
   stateDir,
@@ -56,13 +87,13 @@ const server = createControlServer({
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
-  chatDefaultModel: route.model,
+  chatDefaultModel,
   chatModelCatalog,
   chatBillingPolicy: { freeOnly: process.env.KOORDYNATOR_FREE_ONLY === "1" },
   ...(process.env.KOORDYNATOR_HARMONIA_MODEL?.trim()
     ? { chatHarmoniaModel: process.env.KOORDYNATOR_HARMONIA_MODEL.trim() }
     : {}),
-  chatFallbackModels: (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "").split(",").map((model) => model.trim()).filter(Boolean),
+  chatFallbackModels,
   ciVerify: process.env.KOORDYNATOR_CI_VERIFY === "PASS" ? "PASS" : process.env.KOORDYNATOR_CI_VERIFY === "FAIL" ? "FAIL" : "UNKNOWN",
   ...(signing === null ? {} : {
     materialisationPrivateKeyPem: signing.privateKeyPem,
