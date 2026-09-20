@@ -1230,41 +1230,42 @@ The production runtime must continuously detect:
 Any unresolved material drift produces BLOCKED/INCONCLUSIVE rather than PASS.
 
 
-## 33. Blind stages and local HLL synthesis
+## 33. Blind stages as evidence producers, not truth authorities
 
 Material execution stages do not receive the full corporate HLL graph.
 
 Each stage receives only:
 
 - direct input;
-- deterministic micro-operations required by its contract;
+- bounded micro-operations required by its contract;
 - the current stage capability lease;
-- stage-scoped knowledge necessary to act.
+- stage-scoped knowledge necessary to act;
+- an opaque reference/fingerprint to the authoritative stage contract.
 
-The expected HLL fragment is committed before execution and kept authority-side.
+The stage executor produces trace, artifacts, effects and evidence.
 
-After execution, HLL is synthesised from the trusted execution trace and produced
-artifacts. The resulting local fragment is compared with the hidden committed
-fragment. PASS alone may unlock the next capability lease.
+It does **not** produce authoritative HLL truth and does not decide whether the
+stage is semantically ratified.
 
 ```
-hidden expected HLL_K
-        |
 BlindStage_K
   -> trusted Trace_K
-  -> HLL_computed_K
-  -> semantic equality / validation
-        |
-        +-- PASS -> ratify local fragment -> next lease
-        +-- FAIL -> halt / diagnostics / repair
+  -> ExecutionEvidenceBundle_K
+  -> authoritative HLL Engine
+  -> computed semantic state
+  -> Harmonia admissibility / falsification / ratification
+  -> only then may authority mint the next lease
 ```
 
-The worker never earns authority by declaring success. Authority follows from the
-validation receipt.
+The product/project purpose and GOAL determine what the work is for. Harmonia/HLL
+defines the legal semantic space. Koordynator/Brain chooses among permitted
+strategies. The executor operates inside its much narrower task/role/capability
+scope.
 
-Exact fragment matching applies only to genuinely deterministic micro-stages.
-Generative/creative work remains candidate generation and must be independently
-verified rather than pretending to be deterministic.
+A deterministic micro-operation may have a hidden expected value used to verify the
+operation itself, but digest equality is execution evidence, not an alternative HLL
+truth engine.
 
-The protocol reference implementation is
-`src/corporation/hll-stage-protocol.ts`.
+The current transport implementation is
+`src/corporation/blind-stage-execution.ts`.
+
