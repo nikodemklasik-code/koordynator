@@ -149,6 +149,19 @@ function executors(extra: ExecutorDescriptor[] = []): ExecutorDescriptor[] {
 
 function input(requiredCapabilities = ["code"]) {
   return {
+    goal: {
+      goalId: "GOAL-CORPORATION-V2",
+      statement: "Corporation v2 must support safe autonomous multi-project execution without weakening HLL integrity.",
+      product: {
+        productId: "PRODUCT-KOORDYNATOR",
+        mission: "Operate the Harmonia Corporation safely across products and projects."
+      },
+      project: {
+        projectId: "PROJECT-CORPORATION-KERNEL-V2",
+        objective: "Build the constitutional Corporation kernel beside the legacy runtime.",
+        productId: "PRODUCT-KOORDYNATOR"
+      }
+    },
     objective: "Implement a verified improvement without modifying the legacy kernel",
     plane: "INTERNAL_DEVELOPMENT" as const,
     whyNow: "The legacy orchestration model is becoming a bottleneck for safe autonomous work.",
