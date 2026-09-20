@@ -216,6 +216,9 @@ describe("ephemeral worktree isolation", () => {
       taskId: "CORP-1",
       stageId: "STAGE-BUILD",
       candidateId: "A",
+      roleId: "ROLE-BUILDER",
+      executorId: "executor-code",
+      allowedCapabilities: ["code", "typescript"],
       allowedEffects: ["fs.write"],
       allowedTools: ["git", "node"]
     });
