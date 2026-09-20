@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import type { HllDecision } from "./domain.js";
+import type { HllDecision, HllStatement } from "./domain.js";
+import { assertHllAllows } from "./hll.js";
+import type { ApprovalReceipt, AuthorityEpoch, DecisionReceipt } from "./receipts.js";
+import { verifyApprovalReceipt } from "./receipts.js";
+import { classifyCommunication, type DestinationClass, type PolicyClassification } from "./policy-engine.js";
 import type { DepartmentCharter, OrganizationModel } from "./organization.js";
 
 export type CommunicationDependencyKind =
@@ -84,6 +88,8 @@ export type CorporateMessage = {
   requiresAcknowledgement: boolean;
   blocking: boolean;
   hllDecision?: HllDecision;
+  hllReceipt?: DecisionReceipt;
+  policyClassification: PolicyClassification;
   createdAt: string;
   dueAt?: string;
 };
@@ -315,12 +321,17 @@ export function routeCorporateMessage(input: {
   bodyRef?: string;
   knowledgePackageId?: string;
   evidenceRefs?: string[];
-  material?: boolean;
-  highRisk?: boolean;
-  externalEffect?: boolean;
+  effects?: string[];
+  dataClasses?: string[];
+  destinationClass?: DestinationClass;
+  monetaryValue?: number;
   correlationId?: string;
   parentMessageId?: string;
+  hllStatement?: HllStatement;
   hllDecision?: HllDecision;
+  hllReceipt?: DecisionReceipt;
+  emergencyApproval?: ApprovalReceipt;
+  emergencyAuthority?: AuthorityEpoch;
 }): RoutedCorporateMessage {
   validateCommunicationGraph(input.graph, input.organization);
   const dependency = communicationDependency(
@@ -351,9 +362,35 @@ export function routeCorporateMessage(input: {
     throw new Error("COMM_TO_POSITION_DEPARTMENT_MISMATCH");
   }
 
+  const policyInput = {
+    kind: input.kind,
+    priority: input.priority,
+    dependencyKind: dependency.kind,
+    effects: input.effects ?? [],
+    dataClasses: input.dataClasses ?? [],
+    destinationClass: input.destinationClass ?? "INTERNAL",
+    ...(input.monetaryValue === undefined ? {} : { monetaryValue: input.monetaryValue })
+  };
+  const classification = classifyCommunication(policyInput);
+
   const emergencyBypass = input.priority === "P0"
     && ["INCIDENT", "ESCALATION", "RISK_ALERT"].includes(input.kind);
-  const materialCrossDepartment = dependency.blocking || input.material === true;
+
+  if (input.priority === "P0") {
+    if (!input.emergencyApproval || !input.emergencyAuthority) {
+      throw new Error("COMM_P0_EMERGENCY_RECEIPT_REQUIRED");
+    }
+    verifyApprovalReceipt({
+      receipt: input.emergencyApproval,
+      authority: input.emergencyAuthority,
+      action: "corporation.declare-p0",
+      subjectId: input.taskId ?? input.stageId ?? `${input.fromDepartmentId}->${input.toDepartmentId}:${input.kind}`,
+      payload: policyInput,
+      scope: { priority: "P0", kind: input.kind }
+    });
+  }
+
+  const materialCrossDepartment = classification.material;
   if (
     fromPosition
     && materialCrossDepartment
@@ -367,8 +404,16 @@ export function routeCorporateMessage(input: {
   if (dependency.knowledgePackageRequired && !input.knowledgePackageId) {
     throw new Error("COMM_KNOWLEDGE_PACKAGE_REQUIRED");
   }
-  if (dependency.hllRequired && input.hllDecision?.truthState !== "RATIFIED") {
-    throw new Error("COMM_HLL_RATIFICATION_REQUIRED");
+  if (dependency.hllRequired) {
+    if (!input.hllStatement || !input.hllDecision || !input.hllReceipt) {
+      throw new Error("COMM_HLL_DECISION_RECEIPT_REQUIRED");
+    }
+    assertHllAllows({
+      statement: input.hllStatement,
+      decision: input.hllDecision,
+      receipt: input.hllReceipt,
+      action: "corporation.communicate"
+    });
   }
 
   const observers = new Set<string>();
@@ -379,9 +424,9 @@ export function routeCorporateMessage(input: {
   for (const rule of input.graph.crossCuttingRules) {
     if (!rule.kinds.includes(input.kind)) continue;
     const applies = rule.when === "ALWAYS"
-      || (rule.when === "MATERIAL" && input.material === true)
-      || (rule.when === "HIGH_RISK" && input.highRisk === true)
-      || (rule.when === "EXTERNAL_EFFECT" && input.externalEffect === true);
+      || (rule.when === "MATERIAL" && classification.material)
+      || (rule.when === "HIGH_RISK" && classification.highRisk)
+      || (rule.when === "EXTERNAL_EFFECT" && classification.externalEffect);
 
     if (applies && rule.observerDepartmentId !== input.fromDepartmentId && rule.observerDepartmentId !== input.toDepartmentId) {
       observers.add(rule.observerDepartmentId);
@@ -407,6 +452,8 @@ export function routeCorporateMessage(input: {
     requiresAcknowledgement: dependency.blocking || ["P0", "P1"].includes(input.priority),
     blocking: dependency.blocking,
     ...(input.hllDecision === undefined ? {} : { hllDecision: input.hllDecision }),
+    ...(input.hllReceipt === undefined ? {} : { hllReceipt: input.hllReceipt }),
+    policyClassification: classification,
     createdAt: new Date().toISOString()
   };
 
