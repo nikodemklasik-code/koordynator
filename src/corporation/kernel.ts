@@ -16,6 +16,7 @@ import type {
 } from "./domain.js";
 import { assertHllAllows, makeHllStatement } from "./hll.js";
 import { buildBaselinePlan } from "./planner.js";
+import { defaultDepartmentCharters, type CorporateFunction } from "./organization.js";
 import type {
   CorporateEventStore,
   CorporationStateStore,
@@ -60,13 +61,37 @@ function cleanList(values: string[], code: string): string[] {
 
 function departmentForPlane(plane: CorporateTaskInput["plane"]): string {
   return {
-    INTERNAL_DEVELOPMENT: "DEPT-INTERNAL-DEVELOPMENT",
+    EXECUTIVE: "DEPT-CEO",
+    STRATEGY: "DEPT-STRATEGY",
     PRODUCT: "DEPT-PRODUCT",
+    MARKETING: "DEPT-MARKETING",
+    SALES: "DEPT-SALES",
+    LEGAL: "DEPT-LEGAL",
+    HR: "DEPT-HR",
+    FINANCE: "DEPT-FINANCE",
+    PRODUCTION: "DEPT-PRODUCTION",
+    TESTING: "DEPT-TESTING",
+    QUALITY_CONTROL: "DEPT-QC",
     SECURITY: "DEPT-SECURITY",
     OPERATIONS: "DEPT-OPERATIONS",
-    HR: "DEPT-HR",
+    INTERNAL_DEVELOPMENT: "DEPT-INTERNAL-DEVELOPMENT",
+    RESEARCH: "DEPT-RESEARCH",
+    DATA: "DEPT-DATA",
+    CUSTOMER_SUCCESS: "DEPT-CUSTOMER-SUCCESS",
+    PROCUREMENT: "DEPT-PROCUREMENT",
+    COMPLIANCE_RISK: "DEPT-COMPLIANCE-RISK",
+    SCIENTIFIC_RESEARCH: "DEPT-SCIENCE-INNOVATION",
+    INNOVATION: "DEPT-INNOVATION",
+    VENTURE_STUDIO: "DEPT-VENTURE-STUDIO",
+    GROWTH: "DEPT-GROWTH",
+    CORPORATE_INTELLIGENCE: "DEPT-CORPORATE-INTELLIGENCE",
     LEGAL_PRODUCT: "DEPT-HARMONIA-LEGAL"
   }[plane];
+}
+
+function planeForFunction(fn: CorporateFunction): CorporateTaskInput["plane"] {
+  if (fn === "CUSTOM") throw new CorporationKernelError("CUSTOM_DEPARTMENT_REQUIRES_EXPLICIT_PLANE", 400);
+  return fn;
 }
 
 function riskForEffects(effects: string[]): CorporateRisk {
@@ -78,74 +103,17 @@ function riskForEffects(effects: string[]): CorporateRisk {
 }
 
 function initialDepartments(at: string): Department[] {
-  return [
-    {
-      departmentId: "DEPT-INTERNAL-DEVELOPMENT",
-      name: "Internal Development",
-      plane: "INTERNAL_DEVELOPMENT",
-      mission: "Improve Koordynator architecture, runtime reliability and autonomous capability.",
-      responsibilities: ["architecture", "runtime", "developer tooling", "self-improvement"],
-      risk: "HIGH",
-      status: "ACTIVE",
-      constitutionalSeed: true,
-      createdAt: at
-    },
-    {
-      departmentId: "DEPT-PRODUCT",
-      name: "Product",
-      plane: "PRODUCT",
-      mission: "Turn strategy and user needs into coherent product outcomes.",
-      responsibilities: ["product design", "requirements", "roadmap", "UX"],
-      risk: "MEDIUM",
-      status: "ACTIVE",
-      constitutionalSeed: true,
-      createdAt: at
-    },
-    {
-      departmentId: "DEPT-SECURITY",
-      name: "Security",
-      plane: "SECURITY",
-      mission: "Protect systems, users, data and constitutional capability boundaries.",
-      responsibilities: ["threat modelling", "security gates", "access control", "incident response"],
-      risk: "CRITICAL",
-      status: "ACTIVE",
-      constitutionalSeed: true,
-      createdAt: at
-    },
-    {
-      departmentId: "DEPT-OPERATIONS",
-      name: "Operations",
-      plane: "OPERATIONS",
-      mission: "Keep services observable, healthy and recoverable.",
-      responsibilities: ["health", "availability", "backups", "operational response"],
-      risk: "HIGH",
-      status: "ACTIVE",
-      constitutionalSeed: true,
-      createdAt: at
-    },
-    {
-      departmentId: "DEPT-HR",
-      name: "HR / Recruitment",
-      plane: "HR",
-      mission: "Create bounded Role Contracts for real capability gaps.",
-      responsibilities: ["recruitment", "role contracts", "capability mapping", "role lifecycle"],
-      risk: "MEDIUM",
-      status: "ACTIVE",
-      constitutionalSeed: true,
-      createdAt: at
-    },
-    {
-      departmentId: "DEPT-HARMONIA-LEGAL",
-      name: "Harmonia Legal Platform",
-      plane: "LEGAL_PRODUCT",
-      mission: "Build and maintain the Harmonia Legal Platform product.",
-      responsibilities: ["legal workflows", "law-firm product needs", "legal UX", "legal product delivery"],
-      risk: "HIGH",
-      status: "ACTIVE",
-      constitutionalSeed: true,
-      createdAt: at
-    }
-  ];
+  return defaultDepartmentCharters().map((charter) => ({
+    departmentId: charter.departmentId,
+    name: charter.name,
+    plane: planeForFunction(charter.function),
+    mission: charter.mission,
+    responsibilities: [...charter.responsibilities],
+    risk: charter.risk,
+    status: charter.status,
+    constitutionalSeed: true,
+    createdAt: at
+  }));
 }
 
 function initialRoles(at: string): RoleContract[] {
