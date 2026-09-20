@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeHllStatement } from "../src/corporation/hll.js";
+import { authoriseAction } from "../src/corporation/action-gate.js";
 import { JournalCorporationStore } from "../src/corporation/journal-store.js";
 import { EphemeralWorktreeManager, type GitWorktreePort } from "../src/corporation/ephemeral-worktree.js";
 import type { CorporateEvent, CorporationSnapshot, HllDecision } from "../src/corporation/domain.js";
@@ -64,6 +65,73 @@ describe("receipt binding invariants", () => {
       action: "corporation.plan-task",
       expectedAuthority: { authorityId: "hll", epoch: "42" }
     })).toThrow("HLL_RECEIPT_STATEMENT_FINGERPRINT_MISMATCH");
+  });
+
+  it("requires every HLL-declared authorisation before an action can execute", () => {
+    const statement = makeHllStatement({
+      subject: "OUTREACH",
+      proposition: "A specific external action may be executed.",
+      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
+      provenance: {
+        sourceType: "DEPARTMENT",
+        sourceId: "DEPT-GROWTH",
+        evidenceRefs: ["campaign:1"],
+        observedAt: new Date().toISOString()
+      },
+      requestedBrainActions: ["corporation.external-send"]
+    });
+    const decision: HllDecision = {
+      decisionId: "DEC-OUTREACH",
+      statementId: statement.statementId,
+      truthState: "RATIFIED",
+      verdict: "ALLOW",
+      reasons: [],
+      allowedBrainActions: ["corporation.external-send"],
+      requiredAuthorisations: ["owner.external-send"],
+      decidedAt: new Date().toISOString()
+    };
+    const decisionReceipt = createDecisionReceipt({
+      statement,
+      decision,
+      authority: { authorityId: "hll", epoch: "42" }
+    });
+
+    expect(() => authoriseAction({
+      statement,
+      decision,
+      decisionReceipt,
+      brainAction: "corporation.external-send",
+      subjectId: "CONTACT-1",
+      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
+      scope: { channel: "email" },
+      approvals: [],
+      authorities: {
+        "owner.external-send": { authorityId: "owner", epoch: "9" }
+      }
+    })).toThrow("ACTION_APPROVAL_MISSING:owner.external-send");
+
+    const approval = createApprovalReceipt({
+      authority: { authorityId: "owner", epoch: "9" },
+      action: "owner.external-send",
+      subjectId: "CONTACT-1",
+      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
+      scope: { channel: "email" },
+      validUntil: new Date(Date.now() + 60_000).toISOString()
+    });
+
+    expect(authoriseAction({
+      statement,
+      decision,
+      decisionReceipt,
+      brainAction: "corporation.external-send",
+      subjectId: "CONTACT-1",
+      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
+      scope: { channel: "email" },
+      approvals: [approval],
+      authorities: {
+        "owner.external-send": { authorityId: "owner", epoch: "9" }
+      }
+    }).approvalReceiptIds).toEqual([approval.receiptId]);
   });
 
   it("binds approval to exact actor epoch, action, subject, payload and scope", () => {
