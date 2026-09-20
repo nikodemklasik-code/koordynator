@@ -9,6 +9,7 @@ import {
   type HllAuthorityResponse,
   type HllAuthorityTransport
 } from "../src/corporation/hll-authority-adapter.js";
+import { SubprocessHllAuthorityTransport } from "../src/corporation/hll-subprocess-transport.js";
 
 function statement() {
   return makeHllStatement({
@@ -147,6 +148,48 @@ describe("AuthoritativeHllPort", () => {
       action: "RECORD",
       rationale: "record"
     })).rejects.toThrow("HLL_AUTHORITY_COMMIT_DECISION_MISMATCH");
+  });
+
+
+
+  it("can cross the process boundary without shell interpolation", async () => {
+    const script = [
+      "let data='';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', c => data += c);",
+      "process.stdin.on('end', () => {",
+      " const req = JSON.parse(data);",
+      " const s = req.statement;",
+      " const out = {",
+      "   schema:'corporation-hll-authority-response/1',",
+      "   statementId:s.statementId,",
+      "   statementFingerprint:s.fingerprint,",
+      "   subjectId:'HLLCORP:'+s.statementId,",
+      "   truthState:'CONFIRMED',",
+      "   eligibleForFact:true,",
+      "   blockers:[],",
+      "   allowedBrainActions:[{action:'RECORD',scope:'INTERNAL'}],",
+      "   provenanceIds:['PROV:'+s.statementId],",
+      "   hllVersion:'HLL/1.0',",
+      "   decisionHash:'d'.repeat(64),",
+      "   canonicalRecordHash:'r'.repeat(64),",
+      "   semanticHash:'s'.repeat(64),",
+      "   authority:{authorityId:'harmonia-hll',epoch:'test',conformance:['HLL/1.0','K1_PUBLIC_RATIFIED_INGRESS_BLOCKED','K2_COMMIT_TIME_REVALIDATION','CORPORATION_EXTENSION_V1']}",
+      " };",
+      " process.stdout.write(JSON.stringify(out));",
+      "});"
+    ].join("");
+
+    const transport = new SubprocessHllAuthorityTransport({
+      executable: process.execPath,
+      args: ["-e", script],
+      timeoutMs: 5_000
+    });
+    const port = new AuthoritativeHllPort(transport);
+
+    const result = await port.assess(statement());
+    expect(result.decision.truthState).toBe("CONFIRMED");
+    expect(result.receipt.authorityEpoch).toBe("test");
   });
 
   it("rejects a response bound to another statement fingerprint", async () => {
