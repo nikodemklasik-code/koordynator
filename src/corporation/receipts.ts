@@ -37,6 +37,41 @@ export type ApprovalReceipt = {
   receiptFingerprint: string;
 };
 
+export type CapabilityLeaseReceipt = {
+  leaseId: string;
+  taskId: string;
+  stageId: string;
+  candidateId: string;
+  roleId: string;
+  executorId: string;
+  allowedCapabilities: string[];
+  allowedEffects: string[];
+  allowedTools: string[];
+  issuedAt: string;
+  expiresAt: string;
+  receiptFingerprint: string;
+};
+
+export type ExecutionReceipt = {
+  executionReceiptId: string;
+  actionDecisionId?: string;
+  capabilityLeaseId: string;
+  taskId: string;
+  stageId: string;
+  candidateId: string;
+  executorId: string;
+  worktreeId?: string;
+  artifactFingerprint: string;
+  changedPaths: string[];
+  exitStatus: number;
+  stdoutDigest?: string;
+  stderrDigest?: string;
+  evidenceRefs: string[];
+  startedAt: string;
+  completedAt: string;
+  receiptFingerprint: string;
+};
+
 export type VerificationFailureClass =
   | "CORRECTNESS"
   | "SECURITY"
@@ -188,6 +223,60 @@ export function verifyApprovalReceipt(input: {
   if (Date.parse(r.validUntil) <= (input.now ?? new Date()).getTime()) throw new Error("APPROVAL_EXPIRED");
   const { receiptFingerprint, ...base } = r;
   if (receiptFingerprint !== canonicalDigest(base)) throw new Error("APPROVAL_RECEIPT_TAMPERED");
+}
+
+export function createCapabilityLeaseReceipt(input: {
+  taskId: string;
+  stageId: string;
+  candidateId: string;
+  roleId: string;
+  executorId: string;
+  allowedCapabilities: string[];
+  allowedEffects: string[];
+  allowedTools: string[];
+  ttlMs?: number;
+}): CapabilityLeaseReceipt {
+  const ttlMs = Math.max(1_000, Math.min(input.ttlMs ?? 30 * 60_000, 4 * 60 * 60_000));
+  const issuedAt = new Date();
+  const base = {
+    leaseId: `LEASE-${randomUUID().slice(0, 10).toUpperCase()}`,
+    taskId: input.taskId,
+    stageId: input.stageId,
+    candidateId: input.candidateId,
+    roleId: input.roleId,
+    executorId: input.executorId,
+    allowedCapabilities: [...new Set(input.allowedCapabilities)].sort(),
+    allowedEffects: [...new Set(input.allowedEffects)].sort(),
+    allowedTools: [...new Set(input.allowedTools)].sort(),
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: new Date(issuedAt.getTime() + ttlMs).toISOString()
+  };
+  return { ...base, receiptFingerprint: canonicalDigest(base) };
+}
+
+export function verifyCapabilityLeaseReceipt(
+  lease: CapabilityLeaseReceipt,
+  now = new Date()
+): void {
+  const { receiptFingerprint, ...base } = lease;
+  if (receiptFingerprint !== canonicalDigest(base)) throw new Error("CAPABILITY_LEASE_TAMPERED");
+  if (Date.parse(lease.expiresAt) <= now.getTime()) throw new Error("CAPABILITY_LEASE_EXPIRED");
+}
+
+export function createExecutionReceipt(input: Omit<ExecutionReceipt, "executionReceiptId" | "receiptFingerprint">): ExecutionReceipt {
+  const base = {
+    ...input,
+    executionReceiptId: `EXEC-${randomUUID().slice(0, 10).toUpperCase()}`,
+    changedPaths: [...new Set(input.changedPaths)].sort(),
+    evidenceRefs: [...new Set(input.evidenceRefs)].sort()
+  };
+  return { ...base, receiptFingerprint: canonicalDigest(base) };
+}
+
+export function verifyExecutionReceipt(receipt: ExecutionReceipt): void {
+  const { receiptFingerprint, ...base } = receipt;
+  if (receiptFingerprint !== canonicalDigest(base)) throw new Error("EXECUTION_RECEIPT_TAMPERED");
+  if (Date.parse(receipt.completedAt) < Date.parse(receipt.startedAt)) throw new Error("EXECUTION_RECEIPT_TIME_INVALID");
 }
 
 export function createVerificationReceipt(input: Omit<VerificationReceipt, "receiptId" | "metricsFingerprint" | "issuedAt" | "receiptFingerprint">): VerificationReceipt {
