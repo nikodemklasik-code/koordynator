@@ -234,6 +234,8 @@ describe("Provider Fabric", () => {
       providerId: "local",
       modelId: "local-reasoner",
       family: "local",
+      providerLineageId: "lineage-local",
+      trustRootId: "trust-local-provider",
       capabilities: ["reasoning", "code-review"],
       toolsets: ["fs.read"],
       skills: ["review"],
@@ -252,6 +254,8 @@ describe("Provider Fabric", () => {
       providerId: "free-a",
       modelId: "model-a",
       family: "family-a",
+      providerLineageId: "lineage-family-a",
+      trustRootId: "trust-family-a",
       capabilities: ["reasoning", "code-review"],
       toolsets: ["fs.read"],
       skills: ["review"],
@@ -270,6 +274,8 @@ describe("Provider Fabric", () => {
       providerId: "paid-b",
       modelId: "model-b",
       family: "family-b",
+      providerLineageId: "lineage-family-b",
+      trustRootId: "trust-family-b",
       capabilities: ["reasoning", "code-review"],
       toolsets: ["fs.read"],
       skills: ["review"],
@@ -297,7 +303,7 @@ describe("Provider Fabric", () => {
 
     expect(strategies.some((item) => item.kind === "SINGLE" && item.members[0]?.providerId === "local")).toBe(true);
     expect(strategies.some((item) => item.kind === "FALLBACK_CHAIN")).toBe(true);
-    expect(strategies.some((item) => item.kind === "CROSS_CHECK" && item.providerFamilies.length >= 2)).toBe(true);
+    expect(strategies.some((item) => item.kind === "CROSS_CHECK" && item.providerLineages.length >= 2)).toBe(true);
     expect(strategies.filter((item) => item.members.some((member) => member.costClass === "PAID_API"))
       .every((item) => item.hasNonPaidPath)).toBe(true);
   });
