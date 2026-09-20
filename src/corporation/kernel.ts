@@ -13,7 +13,12 @@ import type {
   RecruitmentRequest,
   RoleContract,
 } from "./domain.js";
-import { assertHllAllows, makeHllStatement } from "./hll.js";
+import {
+  assertHllAllows,
+  hllDecisionBlocksProgress,
+  hllDecisionMayBeRecorded,
+  makeHllStatement
+} from "./hll.js";
 import { buildBaselinePlan } from "./planner.js";
 import { defaultDepartmentCharters, type CorporateFunction } from "./organization.js";
 import { VerifierTrustRegistry } from "./verification-trust.js";
@@ -309,9 +314,9 @@ export class CorporationKernel {
         },
         provenance: normalized.provenance,
         requestedBrainActions: [
-          "corporation.plan-task",
-          "corporation.recruit",
-          "corporation.delegate-task"
+          "RECORD",
+          "DEFER",
+          "REGISTER_UNRESOLVED"
         ]
       });
       const hllAssessment = await this.ports.hll.assess(statement);
@@ -322,9 +327,9 @@ export class CorporationKernel {
         ...normalized,
         taskId,
         departmentId,
-        status: hllDecision.verdict === "BLOCK" || hllDecision.truthState === "REJECTED"
+        status: hllDecisionBlocksProgress(hllDecision)
           ? "BLOCKED"
-          : this.isAllowed(statement, hllDecision, hllReceipt, "corporation.plan-task")
+          : hllDecisionMayBeRecorded(hllDecision)
             ? "PROPOSED"
             : "NEEDS_REVISION",
         assignedRoleIds: [],
@@ -445,11 +450,11 @@ export class CorporationKernel {
           evidenceRefs: [`recruitment:${request.recruitmentId}`],
           observedAt: at
         },
-        requestedBrainActions: ["corporation.activate-role"]
+        requestedBrainActions: ["RECORD"]
       });
       const assessment = await this.ports.hll.assess(statement);
       const decision = assessment.decision;
-      this.requireAllowed(statement, decision, assessment.receipt, "corporation.activate-role");
+      this.requireAllowed(statement, decision, assessment.receipt, "RECORD");
 
       const role: RoleContract = {
         ...candidate,
@@ -500,7 +505,9 @@ export class CorporationKernel {
   private async planUnlocked(state: CorporationSnapshot, taskId: string): Promise<CorporateTask> {
     const task = state.tasks.find((item) => item.taskId === taskId);
     if (!task) throw new CorporationKernelError("TASK_NOT_FOUND", 404);
-    this.requireAllowed(task.hllStatement, task.hllDecision, task.hllReceipt, "corporation.plan-task");
+    if (hllDecisionBlocksProgress(task.hllDecision) || !hllDecisionMayBeRecorded(task.hllDecision)) {
+      throw new CorporationKernelError("HLL_TASK_NOT_SEMANTICALLY_USABLE", 409);
+    }
 
     const assigned = new Set<string>();
     const missing: string[] = [];
@@ -514,8 +521,6 @@ export class CorporationKernel {
 
     const recruitmentIds = new Set(task.recruitmentIds);
     for (const capability of missing) {
-      this.requireAllowed(task.hllStatement, task.hllDecision, task.hllReceipt, "corporation.recruit");
-
       let request = state.recruitments.find((item) =>
         item.taskId === task.taskId
         && item.status !== "REJECTED"
@@ -570,7 +575,7 @@ export class CorporationKernel {
             evidenceRefs: [`task:${task.taskId}`],
             observedAt: at
           },
-          requestedBrainActions: ["corporation.open-recruitment"]
+          requestedBrainActions: ["RECORD"]
         });
         const assessment = await this.ports.hll.assess(statement);
         const decision = assessment.decision;
@@ -579,9 +584,9 @@ export class CorporationKernel {
           hllDecision: decision,
           hllStatement: statement,
           hllReceipt: assessment.receipt,
-          status: decision.verdict === "BLOCK"
+          status: hllDecisionBlocksProgress(decision)
             ? "BLOCKED"
-            : this.isAllowed(statement, decision, assessment.receipt, "corporation.open-recruitment")
+            : hllDecisionMayBeRecorded(decision)
               ? "OPEN"
               : "NEEDS_REVISION"
         };
@@ -628,7 +633,7 @@ export class CorporationKernel {
         ],
         observedAt: iso()
       },
-      requestedBrainActions: ["corporation.delegate-task"]
+      requestedBrainActions: ["RECORD"]
     });
     const assessment = await this.ports.hll.assess(statement);
     const decision = assessment.decision;
@@ -639,9 +644,9 @@ export class CorporationKernel {
       hllReceipt: assessment.receipt
     };
     task.plan = finalPlan;
-    task.status = decision.verdict === "BLOCK"
+    task.status = hllDecisionBlocksProgress(decision)
       ? "BLOCKED"
-      : this.isAllowed(statement, decision, assessment.receipt, "corporation.delegate-task")
+      : hllDecisionMayBeRecorded(decision)
         ? "READY"
         : "NEEDS_REVISION";
     task.updatedAt = iso();
@@ -655,25 +660,11 @@ export class CorporationKernel {
     return task;
   }
 
-  private isAllowed(
-    statement: import("./domain.js").HllStatement,
-    decision: HllDecision,
-    receipt: DecisionReceipt,
-    action: string
-  ): boolean {
-    try {
-      assertHllAllows({ statement, decision, receipt, action });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   private requireAllowed(
     statement: import("./domain.js").HllStatement,
     decision: HllDecision,
     receipt: DecisionReceipt,
-    action: string
+    action: import("./domain.js").HllBrainAction
   ): void {
     try {
       assertHllAllows({ statement, decision, receipt, action });
