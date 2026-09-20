@@ -2,6 +2,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { TaskRole } from "../domain/task-envelope.js";
+import {
+  assertHllAllows,
+  corporateHllStatement,
+  type CorporateHllDecision,
+  type CorporateHllPort,
+  type CorporateHllProvenance,
+  type CorporateHllSubject
+} from "./corporate-hll.js";
 
 export type CorporatePlane =
   | "INTERNAL_DEVELOPMENT"
@@ -13,7 +21,7 @@ export type CorporatePlane =
 
 export type DepartmentStatus = "ACTIVE" | "PAUSED";
 export type RoleContractStatus = "ACTIVE" | "PAUSED" | "RETIRED";
-export type RecruitmentStatus = "OPEN" | "HIRED" | "REJECTED";
+export type RecruitmentStatus = "OPEN" | "NEEDS_REVISION" | "HIRED" | "REJECTED";
 export type CorporateTaskStatus =
   | "PROPOSED"
   | "NEEDS_REVISION"
@@ -23,8 +31,6 @@ export type CorporateTaskStatus =
   | "DELEGATED"
   | "DONE";
 
-export type HarmoniaVerdict = "ALLOW" | "REVISE" | "BLOCK";
-
 export type Department = {
   departmentId: string;
   name: string;
@@ -33,6 +39,8 @@ export type Department = {
   responsibilities: string[];
   riskClass: "STANDARD" | "ELEVATED" | "HIGH";
   status: DepartmentStatus;
+  constitutionalSeed: boolean;
+  hllDecision?: CorporateHllDecision;
   createdAt: string;
 };
 
@@ -49,8 +57,10 @@ export type RoleContract = {
   riskClass: "LOW" | "MEDIUM" | "HIGH";
   status: RoleContractStatus;
   version: number;
-  createdBy: "SYSTEM" | "HR";
+  createdBy: "CONSTITUTION" | "HR";
+  constitutionalSeed: boolean;
   recruitmentId?: string;
+  hllDecision?: CorporateHllDecision;
   createdAt: string;
   updatedAt: string;
 };
@@ -67,16 +77,10 @@ export type RecruitmentRequest = {
   approvalRequired: boolean;
   taskIds: string[];
   status: RecruitmentStatus;
+  hllDecision: CorporateHllDecision;
   resultingRoleId?: string;
   createdAt: string;
   updatedAt: string;
-};
-
-export type HarmoniaTaskReview = {
-  verdict: HarmoniaVerdict;
-  reasons: string[];
-  reviewedAt: string;
-  product: "HARMONIA";
 };
 
 export type ExecutionPhase = {
@@ -100,7 +104,8 @@ export type CorporateTask = {
   requiredCapabilities: string[];
   priority: "P0" | "P1" | "P2" | "P3";
   status: CorporateTaskStatus;
-  harmonia: HarmoniaTaskReview;
+  hllDecision: CorporateHllDecision;
+  planHllDecision?: CorporateHllDecision;
   assignedRoleIds: string[];
   recruitmentIds: string[];
   plan: ExecutionPhase[];
@@ -110,6 +115,7 @@ export type CorporateTask = {
 };
 
 export type CorporateState = {
+  language: "HLL";
   departments: Department[];
   roles: RoleContract[];
   recruitments: RecruitmentRequest[];
@@ -129,6 +135,9 @@ export type CorporateTaskRequest = {
   requiredCapabilities: string[];
   priority?: "P0" | "P1" | "P2" | "P3";
   successDefinition: string;
+  sourceType?: CorporateHllProvenance["sourceType"];
+  sourceId?: string;
+  evidenceRefs?: string[];
 };
 
 export class CorporateOrchestratorError extends Error {
@@ -146,7 +155,8 @@ const DEFAULT_DEPARTMENTS: Array<Omit<Department, "createdAt">> = [
     mission: "Improve Koordynator's own architecture, reliability and autonomous operating capability.",
     responsibilities: ["platform architecture", "runtime", "developer tooling", "self-improvement"],
     riskClass: "ELEVATED",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    constitutionalSeed: true
   },
   {
     departmentId: "DEPT-PRODUCT",
@@ -155,7 +165,8 @@ const DEFAULT_DEPARTMENTS: Array<Omit<Department, "createdAt">> = [
     mission: "Turn strategy and user needs into coherent product outcomes.",
     responsibilities: ["product design", "requirements", "roadmap", "UX"],
     riskClass: "STANDARD",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    constitutionalSeed: true
   },
   {
     departmentId: "DEPT-SECURITY",
@@ -164,7 +175,8 @@ const DEFAULT_DEPARTMENTS: Array<Omit<Department, "createdAt">> = [
     mission: "Prevent unsafe capability expansion and protect systems, users and data.",
     responsibilities: ["threat modelling", "security gates", "access control", "incident response"],
     riskClass: "HIGH",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    constitutionalSeed: true
   },
   {
     departmentId: "DEPT-OPERATIONS",
@@ -173,7 +185,8 @@ const DEFAULT_DEPARTMENTS: Array<Omit<Department, "createdAt">> = [
     mission: "Keep services healthy, observable and recoverable.",
     responsibilities: ["health", "availability", "backups", "operational response"],
     riskClass: "ELEVATED",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    constitutionalSeed: true
   },
   {
     departmentId: "DEPT-HR",
@@ -182,16 +195,18 @@ const DEFAULT_DEPARTMENTS: Array<Omit<Department, "createdAt">> = [
     mission: "Create bounded internal roles and contracts when the Corporation lacks required capability.",
     responsibilities: ["role contracts", "recruitment", "capability mapping", "role lifecycle"],
     riskClass: "STANDARD",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    constitutionalSeed: true
   },
   {
-    departmentId: "DEPT-HARMONIA",
-    name: "Legal Product / Harmonia",
+    departmentId: "DEPT-HARMONIA-LEGAL",
+    name: "Harmonia Legal Platform",
     plane: "LEGAL_PRODUCT",
-    mission: "Protect the coherence, legal-product value and governance of Harmonia.",
-    responsibilities: ["product sense", "legal workflow fit", "governance review", "quality criteria"],
+    mission: "Build and maintain the Harmonia Legal Platform product.",
+    responsibilities: ["legal workflows", "law-firm product needs", "legal UX", "legal product delivery"],
     riskClass: "ELEVATED",
-    status: "ACTIVE"
+    status: "ACTIVE",
+    constitutionalSeed: true
   }
 ];
 
@@ -209,7 +224,8 @@ const DEFAULT_ROLES: Array<Omit<RoleContract, "createdAt" | "updatedAt">> = [
     riskClass: "LOW",
     status: "ACTIVE",
     version: 1,
-    createdBy: "SYSTEM"
+    createdBy: "CONSTITUTION",
+    constitutionalSeed: true
   },
   {
     roleId: "ROLE-BUILDER",
@@ -224,7 +240,8 @@ const DEFAULT_ROLES: Array<Omit<RoleContract, "createdAt" | "updatedAt">> = [
     riskClass: "MEDIUM",
     status: "ACTIVE",
     version: 1,
-    createdBy: "SYSTEM"
+    createdBy: "CONSTITUTION",
+    constitutionalSeed: true
   },
   {
     roleId: "ROLE-BROWSER",
@@ -239,7 +256,8 @@ const DEFAULT_ROLES: Array<Omit<RoleContract, "createdAt" | "updatedAt">> = [
     riskClass: "MEDIUM",
     status: "ACTIVE",
     version: 1,
-    createdBy: "SYSTEM"
+    createdBy: "CONSTITUTION",
+    constitutionalSeed: true
   },
   {
     roleId: "ROLE-AUDITOR",
@@ -254,7 +272,8 @@ const DEFAULT_ROLES: Array<Omit<RoleContract, "createdAt" | "updatedAt">> = [
     riskClass: "LOW",
     status: "ACTIVE",
     version: 1,
-    createdBy: "SYSTEM"
+    createdBy: "CONSTITUTION",
+    constitutionalSeed: true
   },
   {
     roleId: "ROLE-DEPLOY",
@@ -269,7 +288,8 @@ const DEFAULT_ROLES: Array<Omit<RoleContract, "createdAt" | "updatedAt">> = [
     riskClass: "HIGH",
     status: "ACTIVE",
     version: 1,
-    createdBy: "SYSTEM"
+    createdBy: "CONSTITUTION",
+    constitutionalSeed: true
   }
 ];
 
@@ -311,6 +331,10 @@ function recruitmentId(): string {
   return `RECRUIT-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
+function statementId(subject: CorporateHllSubject): string {
+  return `HLL-${subject}-${randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
 function roleId(name: string): string {
   const slug = name
     .normalize("NFKD")
@@ -319,34 +343,6 @@ function roleId(name: string): string {
     .toUpperCase()
     .slice(0, 36) || "ROLE";
   return `ROLE-${slug}-${randomUUID().slice(0, 6).toUpperCase()}`;
-}
-
-function reviewTask(input: CorporateTaskRequest): HarmoniaTaskReview {
-  const reasons: string[] = [];
-
-  if (input.objective.trim().length < 12) reasons.push("OBJECTIVE_TOO_VAGUE");
-  if (input.whyNow.trim().length < 12) reasons.push("WHY_NOW_INSUFFICIENT");
-  if (input.productImpact.trim().length < 12) reasons.push("PRODUCT_IMPACT_INSUFFICIENT");
-  if (!input.acceptanceCriteria.length) reasons.push("ACCEPTANCE_CRITERIA_MISSING");
-  if (!input.requiredCapabilities.length) reasons.push("CAPABILITIES_MISSING");
-  if (input.successDefinition.trim().length < 12) reasons.push("SUCCESS_DEFINITION_INSUFFICIENT");
-
-  const security = input.securityImpact.trim().toUpperCase();
-  if (security.includes("BYPASS") || security.includes("DISABLE SECURITY") || security.includes("STEAL")) {
-    return {
-      verdict: "BLOCK",
-      reasons: ["SECURITY_CONFLICT"],
-      reviewedAt: now(),
-      product: "HARMONIA"
-    };
-  }
-
-  return {
-    verdict: reasons.length ? "REVISE" : "ALLOW",
-    reasons,
-    reviewedAt: now(),
-    product: "HARMONIA"
-  };
 }
 
 function mapExecutionRole(capabilities: string[]): TaskRole {
@@ -375,8 +371,32 @@ function departmentForPlane(plane: CorporatePlane): string {
     SECURITY: "DEPT-SECURITY",
     OPERATIONS: "DEPT-OPERATIONS",
     HR: "DEPT-HR",
-    LEGAL_PRODUCT: "DEPT-HARMONIA"
+    LEGAL_PRODUCT: "DEPT-HARMONIA-LEGAL"
   }[plane];
+}
+
+function taskStatusFromHll(decision: CorporateHllDecision): CorporateTaskStatus {
+  if (decision.verdict === "BLOCK" || decision.truthState === "REJECTED") return "BLOCKED";
+  if (decision.verdict === "REVISE" || decision.truthState !== "RATIFIED") return "NEEDS_REVISION";
+  return "PROPOSED";
+}
+
+function requireAllowed(decision: CorporateHllDecision, action: string): void {
+  try {
+    assertHllAllows(decision, action);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "HLL_ACTION_BLOCKED";
+    throw new CorporateOrchestratorError(code, code === "HLL_BRAIN_ACTION_NOT_ALLOWED" ? 403 : 409);
+  }
+}
+
+function provenance(input: CorporateTaskRequest): CorporateHllProvenance {
+  return {
+    sourceType: input.sourceType ?? "OWNER",
+    sourceId: input.sourceId?.trim() || "owner",
+    evidenceRefs: uniq(input.evidenceRefs ?? []),
+    observedAt: now()
+  };
 }
 
 export class CorporateOrchestrator {
@@ -384,7 +404,10 @@ export class CorporateOrchestrator {
   private readonly statePath: string;
   private writing: Promise<unknown> = Promise.resolve();
 
-  constructor(stateDir: string) {
+  constructor(
+    stateDir: string,
+    private readonly hll: CorporateHllPort
+  ) {
     this.root = join(resolve(stateDir), "corporation");
     this.statePath = join(this.root, "state.json");
   }
@@ -396,6 +419,7 @@ export class CorporateOrchestrator {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       const createdAt = now();
       const state: CorporateState = {
+        language: "HLL",
         departments: DEFAULT_DEPARTMENTS.map((item) => ({ ...item, createdAt })),
         roles: DEFAULT_ROLES.map((item) => ({ ...item, createdAt, updatedAt: createdAt })),
         recruitments: [],
@@ -413,6 +437,7 @@ export class CorporateOrchestrator {
     mission: string;
     responsibilities: string[];
     riskClass?: "STANDARD" | "ELEVATED" | "HIGH";
+    evidenceRefs?: string[];
   }): Promise<Department> {
     return this.serial(async () => {
       const state = await this.snapshot();
@@ -420,7 +445,7 @@ export class CorporateOrchestrator {
       const existing = state.departments.find((item) => item.name.toLowerCase() === name.toLowerCase());
       if (existing) return existing;
 
-      const department: Department = {
+      const candidate: Department = {
         departmentId: `DEPT-${randomUUID().slice(0, 8).toUpperCase()}`,
         name,
         plane: input.plane,
@@ -428,8 +453,26 @@ export class CorporateOrchestrator {
         responsibilities: requireList(input.responsibilities, "DEPARTMENT_RESPONSIBILITIES_INVALID"),
         riskClass: input.riskClass ?? "STANDARD",
         status: "ACTIVE",
+        constitutionalSeed: false,
         createdAt: now()
       };
+
+      const decision = await this.hll.assess(corporateHllStatement({
+        statementId: statementId("DEPARTMENT"),
+        subject: "DEPARTMENT",
+        proposition: `The Corporation requires department ${candidate.name} with the declared charter.`,
+        payload: candidate,
+        provenance: {
+          sourceType: "SYSTEM",
+          sourceId: "koordynator",
+          evidenceRefs: uniq(input.evidenceRefs ?? []),
+          observedAt: now()
+        },
+        requestedBrainActions: ["corporation.create-department"]
+      }));
+      requireAllowed(decision, "corporation.create-department");
+
+      const department: Department = { ...candidate, hllDecision: decision };
       state.departments.push(department);
       state.updatedAt = now();
       await this.persist(state);
@@ -455,13 +498,42 @@ export class CorporateOrchestrator {
         dependencies: uniq(input.dependencies ?? []),
         requiredCapabilities: requireList(input.requiredCapabilities, "CORPORATE_TASK_CAPABILITIES_INVALID"),
         priority: input.priority ?? "P2",
-        successDefinition: requireText(input.successDefinition, "CORPORATE_TASK_SUCCESS_INVALID")
+        successDefinition: requireText(input.successDefinition, "CORPORATE_TASK_SUCCESS_INVALID"),
+        ...(input.sourceType === undefined ? {} : { sourceType: input.sourceType }),
+        ...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
+        ...(input.evidenceRefs === undefined ? {} : { evidenceRefs: uniq(input.evidenceRefs) })
       };
 
-      const harmonia = reviewTask(normalized);
+      const corporateTaskId = taskId();
+      const hllDecision = await this.hll.assess(corporateHllStatement({
+        statementId: statementId("TASK"),
+        subject: "TASK",
+        proposition: `Corporate task ${corporateTaskId} is a traceable proposition for executive consideration.`,
+        payload: {
+          corporateTaskId,
+          objective: normalized.objective,
+          plane: normalized.plane,
+          departmentId,
+          whyNow: normalized.whyNow,
+          productImpact: normalized.productImpact,
+          securityImpact: normalized.securityImpact,
+          acceptanceCriteria: normalized.acceptanceCriteria,
+          dependencies: normalized.dependencies ?? [],
+          requiredCapabilities: normalized.requiredCapabilities,
+          priority: normalized.priority ?? "P2",
+          successDefinition: normalized.successDefinition
+        },
+        provenance: provenance(normalized),
+        requestedBrainActions: [
+          "corporation.plan-task",
+          "corporation.recruit",
+          "corporation.delegate-task"
+        ]
+      }));
+
       const createdAt = now();
       const task: CorporateTask = {
-        corporateTaskId: taskId(),
+        corporateTaskId,
         objective: normalized.objective,
         plane: normalized.plane,
         departmentId,
@@ -472,8 +544,8 @@ export class CorporateOrchestrator {
         dependencies: normalized.dependencies ?? [],
         requiredCapabilities: normalized.requiredCapabilities,
         priority: normalized.priority ?? "P2",
-        status: harmonia.verdict === "ALLOW" ? "PROPOSED" : harmonia.verdict === "REVISE" ? "NEEDS_REVISION" : "BLOCKED",
-        harmonia,
+        status: taskStatusFromHll(hllDecision),
+        hllDecision,
         assignedRoleIds: [],
         recruitmentIds: [],
         plan: [],
@@ -486,7 +558,7 @@ export class CorporateOrchestrator {
       state.updatedAt = createdAt;
       await this.persist(state);
 
-      if (harmonia.verdict !== "ALLOW") return task;
+      if (task.status !== "PROPOSED") return task;
       return this.planUnlocked(state, task.corporateTaskId);
     });
   }
@@ -507,6 +579,7 @@ export class CorporateOrchestrator {
         const role = state.roles.find((item) => item.roleId === request.resultingRoleId);
         if (role) return role;
       }
+      if (request.status !== "OPEN") throw new CorporateOrchestratorError("RECRUITMENT_NOT_OPEN", 409);
       if (request.approvalRequired && approved !== true) {
         throw new CorporateOrchestratorError("RECRUITMENT_APPROVAL_REQUIRED", 400);
       }
@@ -517,7 +590,7 @@ export class CorporateOrchestrator {
       }
 
       const createdAt = now();
-      const role: RoleContract = {
+      const candidate: RoleContract = {
         roleId: roleId(request.requestedRoleName),
         name: request.requestedRoleName,
         departmentId: request.departmentId,
@@ -535,11 +608,28 @@ export class CorporateOrchestrator {
         status: "ACTIVE",
         version: 1,
         createdBy: "HR",
+        constitutionalSeed: false,
         recruitmentId: request.recruitmentId,
         createdAt,
         updatedAt: createdAt
       };
 
+      const decision = await this.hll.assess(corporateHllStatement({
+        statementId: statementId("ROLE_CONTRACT"),
+        subject: "ROLE_CONTRACT",
+        proposition: `Role contract ${candidate.roleId} may become an active corporate capability.`,
+        payload: candidate,
+        provenance: {
+          sourceType: "DEPARTMENT",
+          sourceId: "DEPT-HR",
+          evidenceRefs: [`recruitment:${request.recruitmentId}`],
+          observedAt: now()
+        },
+        requestedBrainActions: ["corporation.activate-role"]
+      }));
+      requireAllowed(decision, "corporation.activate-role");
+
+      const role: RoleContract = { ...candidate, hllDecision: decision };
       state.roles.push(role);
       request.status = "HIRED";
       request.resultingRoleId = role.roleId;
@@ -566,7 +656,7 @@ export class CorporateOrchestrator {
   private async planUnlocked(state: CorporateState, corporateTaskId: string): Promise<CorporateTask> {
     const task = state.tasks.find((item) => item.corporateTaskId === corporateTaskId);
     if (!task) throw new CorporateOrchestratorError("CORPORATE_TASK_NOT_FOUND", 404);
-    if (task.harmonia.verdict !== "ALLOW") return task;
+    requireAllowed(task.hllDecision, "corporation.plan-task");
 
     const missing: string[] = [];
     const assigned = new Set<string>();
@@ -582,13 +672,15 @@ export class CorporateOrchestrator {
 
     const recruitmentIds = new Set(task.recruitmentIds);
     if (missing.length) {
+      requireAllowed(task.hllDecision, "corporation.recruit");
+
       const executionRole = mapExecutionRole(missing);
       const requestedTools = toolsFor(executionRole);
       const riskClass = riskFor(executionRole, requestedTools);
       const roleName = `${task.plane.replace(/_/g, " ")} ${executionRole} specialist`;
 
       let recruitment = state.recruitments.find((item) =>
-        item.status === "OPEN"
+        (item.status === "OPEN" || item.status === "NEEDS_REVISION")
         && item.departmentId === task.departmentId
         && item.executionRole === executionRole
         && missing.every((capability) => item.requiredCapabilities.includes(capability))
@@ -596,7 +688,7 @@ export class CorporateOrchestrator {
 
       if (!recruitment) {
         const createdAt = now();
-        recruitment = {
+        const base = {
           recruitmentId: recruitmentId(),
           requestedRoleName: roleName,
           departmentId: task.departmentId,
@@ -607,9 +699,32 @@ export class CorporateOrchestrator {
           riskClass,
           approvalRequired: riskClass === "HIGH",
           taskIds: [task.corporateTaskId],
-          status: "OPEN",
           createdAt,
           updatedAt: createdAt
+        };
+
+        const hllDecision = await this.hll.assess(corporateHllStatement({
+          statementId: statementId("RECRUITMENT"),
+          subject: "RECRUITMENT",
+          proposition: `The Corporation has a capability gap requiring recruitment ${base.recruitmentId}.`,
+          payload: base,
+          provenance: {
+            sourceType: "SYSTEM",
+            sourceId: "koordynator",
+            evidenceRefs: [`task:${task.corporateTaskId}`],
+            observedAt: now()
+          },
+          requestedBrainActions: ["corporation.open-recruitment"]
+        }));
+
+        recruitment = {
+          ...base,
+          status: hllDecision.verdict === "BLOCK"
+            ? "REJECTED"
+            : hllDecision.truthState === "RATIFIED" && hllDecision.allowedBrainActions.includes("corporation.open-recruitment")
+              ? "OPEN"
+              : "NEEDS_REVISION",
+          hllDecision
         };
         state.recruitments.push(recruitment);
       } else if (!recruitment.taskIds.includes(task.corporateTaskId)) {
@@ -622,8 +737,48 @@ export class CorporateOrchestrator {
 
     task.assignedRoleIds = [...assigned];
     task.recruitmentIds = [...recruitmentIds];
-    task.status = missing.length ? "WAITING_FOR_ROLE" : "READY";
     task.plan = this.executionPlan(task, state.roles.filter((role) => assigned.has(role.roleId)));
+
+    const planDecision = await this.hll.assess(corporateHllStatement({
+      statementId: statementId("DELEGATION"),
+      subject: "DELEGATION",
+      proposition: `Execution plan for ${task.corporateTaskId} is sufficiently grounded for corporate delegation.`,
+      payload: {
+        corporateTaskId: task.corporateTaskId,
+        assignedRoleIds: task.assignedRoleIds,
+        recruitmentIds: task.recruitmentIds,
+        plan: task.plan,
+        missingCapabilities: missing
+      },
+      provenance: {
+        sourceType: "SYSTEM",
+        sourceId: "koordynator",
+        evidenceRefs: [
+          `task-hll:${task.hllDecision.decisionId}`,
+          ...task.recruitmentIds.map((id) => `recruitment:${id}`)
+        ],
+        observedAt: now()
+      },
+      requestedBrainActions: ["corporation.delegate-task"]
+    }));
+    task.planHllDecision = planDecision;
+
+    if (missing.length) {
+      task.status = state.recruitments
+        .filter((item) => task.recruitmentIds.includes(item.recruitmentId))
+        .some((item) => item.status === "REJECTED")
+        ? "BLOCKED"
+        : "WAITING_FOR_ROLE";
+    } else if (
+      planDecision.verdict === "ALLOW"
+      && planDecision.truthState === "RATIFIED"
+      && planDecision.allowedBrainActions.includes("corporation.delegate-task")
+    ) {
+      task.status = "READY";
+    } else {
+      task.status = planDecision.verdict === "BLOCK" ? "BLOCKED" : "NEEDS_REVISION";
+    }
+
     task.updatedAt = now();
     state.updatedAt = task.updatedAt;
     await this.persist(state);
@@ -640,8 +795,8 @@ export class CorporateOrchestrator {
         phase: "DISCOVERY",
         roleId: research.roleId,
         executionRole: "research",
-        objective: `Establish evidence, dependencies and constraints for: ${task.objective}`,
-        successCondition: "Inputs and risks are explicit enough to execute without guessing."
+        objective: `Establish HLL-traceable evidence, dependencies and constraints for: ${task.objective}`,
+        successCondition: "Inputs, provenance, uncertainties and risks are explicit enough to execute without guessing."
       }
     ];
 
@@ -659,23 +814,23 @@ export class CorporateOrchestrator {
       phase: "SECURITY",
       roleId: security.roleId,
       executionRole: "audit",
-      objective: `Review security and mandate impact: ${task.securityImpact}`,
-      successCondition: "No unresolved security or mandate conflict remains."
+      objective: `Review security and constitutional impact: ${task.securityImpact}`,
+      successCondition: "No unresolved security, provenance or mandate conflict remains."
     });
 
     phases.push({
       phase: "VERIFY",
       roleId: security.roleId,
       executionRole: "audit",
-      objective: "Verify acceptance criteria and execution receipts independently.",
+      objective: "Verify acceptance criteria and execution receipts independently and express the result through HLL.",
       successCondition: task.acceptanceCriteria.join("; ")
     });
 
     phases.push({
       phase: "DELIVERY",
       executionRole: "deploy",
-      objective: "Prepare the verified result for explicit release approval.",
-      successCondition: "All required receipts pass and release remains operator-approved."
+      objective: "Prepare the ratified result for the required internal or external authorisation gate.",
+      successCondition: "All required receipts pass; external effects remain separately authorised."
     });
 
     return phases;
