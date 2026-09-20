@@ -307,6 +307,35 @@ export function routeCorporateMessage(input: {
     );
   }
 
+  const fromPosition = input.fromPositionId
+    ? input.organization.positions.find((position) => position.positionId === input.fromPositionId)
+    : undefined;
+  const toPosition = input.toPositionId
+    ? input.organization.positions.find((position) => position.positionId === input.toPositionId)
+    : undefined;
+
+  if (input.fromPositionId && !fromPosition) throw new Error("COMM_FROM_POSITION_UNKNOWN");
+  if (input.toPositionId && !toPosition) throw new Error("COMM_TO_POSITION_UNKNOWN");
+  if (fromPosition && fromPosition.departmentId !== input.fromDepartmentId) {
+    throw new Error("COMM_FROM_POSITION_DEPARTMENT_MISMATCH");
+  }
+  if (toPosition && toPosition.departmentId !== input.toDepartmentId) {
+    throw new Error("COMM_TO_POSITION_DEPARTMENT_MISMATCH");
+  }
+
+  const emergencyBypass = input.priority === "P0"
+    && ["INCIDENT", "ESCALATION", "RISK_ALERT"].includes(input.kind);
+  const materialCrossDepartment = dependency.blocking || input.material === true;
+  if (
+    fromPosition
+    && materialCrossDepartment
+    && fromPosition.rank === "AGENT"
+    && !fromPosition.decisionRights.includes("cross-department-handoff")
+    && !emergencyBypass
+  ) {
+    throw new Error("COMM_AGENT_MATERIAL_CROSS_DEPARTMENT_REQUIRES_DELEGATION");
+  }
+
   if (dependency.knowledgePackageRequired && !input.knowledgePackageId) {
     throw new Error("COMM_KNOWLEDGE_PACKAGE_REQUIRED");
   }
