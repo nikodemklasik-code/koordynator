@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GrowthOperations } from "../src/corporation/growth-operations.js";
 import { InnovationRadar } from "../src/corporation/innovation.js";
+import { NoveltySourceRegistry } from "../src/corporation/novelty-sources.js";
 import { defaultOrganizationModel } from "../src/corporation/organization.js";
 import { CorporatePortfolio } from "../src/corporation/portfolio.js";
 import type { HllDecision } from "../src/corporation/domain.js";
@@ -199,6 +200,42 @@ describe("growth operations", () => {
       action: "SEND_EMAIL"
     });
     expect(authorised.status).toBe("AUTHORISED");
+  });
+});
+
+
+describe("novelty source absorption", () => {
+  it("ingests new external novelty through replaceable connectors and deduplicates repeated items", async () => {
+    const registry = new NoveltySourceRegistry();
+    registry.registerConnector({
+      connectorId: "official-docs",
+      fetch: async (source) => [{
+        intakeId: "",
+        sourceId: source.sourceId,
+        externalId: "release-1",
+        title: "New model release",
+        summary: "Official release introduces a relevant capability.",
+        publishedAt: new Date().toISOString(),
+        sourceRef: "official:release-1",
+        evidenceRefs: ["official:release-1"],
+        observedAt: new Date().toISOString()
+      }]
+    });
+    const source = registry.registerSource({
+      name: "Official provider releases",
+      kind: "MODEL_RELEASE",
+      connectorId: "official-docs",
+      topics: ["models", "tool calling"],
+      enabled: true,
+      externalDependency: true,
+      costClass: "FREE",
+      trustClass: "OFFICIAL",
+      pollingPolicy: "DAILY"
+    });
+
+    expect((await registry.ingest(source.sourceId))).toHaveLength(1);
+    expect((await registry.ingest(source.sourceId))).toHaveLength(0);
+    expect(registry.coverage().primaryOrOfficial).toBe(1);
   });
 });
 
