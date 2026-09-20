@@ -29,15 +29,39 @@ export type CorporatePlane =
   | "CORPORATE_INTELLIGENCE"
   | "LEGAL_PRODUCT";
 
-export type CorporateTruthState =
-  | "PROPOSED"
+export type HllTruthState =
+  | "UNKNOWN"
+  | "STATEMENT"
+  | "HYPOTHESIS"
+  | "ANTITHESIS"
   | "SUPPORTED"
-  | "CONTESTED"
-  | "RATIFIED"
-  | "REJECTED"
-  | "UNKNOWN";
+  | "CONFIRMED"
+  | "FALSE"
+  | "CONTRADICTED"
+  | "ERROR"
+  | "UNRESOLVED"
+  | "EXPIRED";
 
-export type HllVerdict = "ALLOW" | "REVISE" | "BLOCK";
+export type HllBrainAction =
+  | "RECORD"
+  | "DO_NOT_RECORD"
+  | "DEFER"
+  | "REGISTER_UNRESOLVED"
+  | "NAME"
+  | "RENAME_REPRESENTATION"
+  | "ORDER"
+  | "INDEX"
+  | "EVIDENCE"
+  | "RENDER"
+  | "UPDATE_RECORD"
+  | "EXTERNAL_SEND";
+
+export type HllActionScope = "INTERNAL" | "EXTERNAL";
+
+export type HllActionPermission = {
+  action: HllBrainAction;
+  scope: HllActionScope;
+};
 
 export type HllProvenance = {
   sourceType: "OWNER" | "SYSTEM" | "DEPARTMENT" | "ROLE" | "TOOL" | "EXTERNAL";
@@ -49,6 +73,7 @@ export type HllProvenance = {
 export type HllStatement = {
   statementId: string;
   subject:
+    | "GOAL"
     | "TASK"
     | "DEPARTMENT"
     | "ROLE_CONTRACT"
@@ -80,21 +105,22 @@ export type HllStatement = {
   proposition: string;
   payload: Record<string, unknown>;
   provenance: HllProvenance;
-  requestedBrainActions: string[];
+  requestedBrainActions: HllBrainAction[];
   fingerprint: string;
 };
 
 export type HllDecision = {
   decisionId: string;
   statementId: string;
-  truthState: CorporateTruthState;
-  verdict: HllVerdict;
-  reasons: string[];
-  allowedBrainActions: string[];
-  requiredAuthorisations: string[];
-  decidedAt: string;
-  canonicalRecord?: string;
-  canonicalFingerprint?: string;
+  subjectId: string;
+  truthState: HllTruthState;
+  eligibleForFact: boolean;
+  blockers: string[];
+  allowedBrainActions: HllActionPermission[];
+  provenanceIds: string[];
+  hllVersion: string;
+  canonicalRecordHash?: string;
+  semanticHash?: string;
 };
 
 export type Department = {
