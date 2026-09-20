@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { CapabilityRegistry } from "./capability-registry.js";
-import { compareCandidates, type CandidateComparison, type CandidatePolicy } from "./comparator.js";
+import { compareCandidates, type CandidateComparison, type CandidatePolicy, type VerifiedSolutionCandidate } from "./comparator.js";
 import type {
   CorporateEvent,
   CorporateRisk,
@@ -12,11 +12,11 @@ import type {
   HllDecision,
   RecruitmentRequest,
   RoleContract,
-  SolutionCandidate
 } from "./domain.js";
 import { assertHllAllows, makeHllStatement } from "./hll.js";
 import { buildBaselinePlan } from "./planner.js";
 import { defaultDepartmentCharters, type CorporateFunction } from "./organization.js";
+import { VerifierTrustRegistry } from "./verification-trust.js";
 import type {
   CorporateEventStore,
   CorporationStateStore,
@@ -202,6 +202,7 @@ export class CorporationKernel {
     state: CorporationStateStore;
     events: CorporateEventStore;
     executors: ExecutorRegistryPort;
+    verifierTrust?: VerifierTrustRegistry;
   }) {
     this.capabilities = new CapabilityRegistry(ports.executors);
   }
@@ -397,7 +398,7 @@ export class CorporationKernel {
 
   async compareSolutions(
     taskId: string,
-    candidates: SolutionCandidate[],
+    candidates: VerifiedSolutionCandidate[],
     policy?: CandidatePolicy
   ): Promise<CandidateComparison> {
     const state = await this.snapshot();
@@ -408,7 +409,8 @@ export class CorporationKernel {
       throw new CorporationKernelError("CANDIDATE_TASK_MISMATCH", 400);
     }
 
-    const result = compareCandidates(candidates, policy);
+    const trust = this.ports.verifierTrust ?? new VerifierTrustRegistry();
+    const result = compareCandidates(candidates, trust, policy);
     await this.event("CANDIDATES_COMPARED", taskId, {
       candidates: candidates.length,
       eligible: result.eligible.length,
