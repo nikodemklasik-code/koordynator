@@ -11,7 +11,12 @@ export type ModelPropertyEvidence = {
   sourceId: string;
   kind: ModelPropertySourceKind;
   reference: string;
+  providerId: string;
+  modelId: string;
+  modelVersion?: string;
+  documentDigest: string;
   observedAt: string;
+  validUntil?: string;
   claims: string[];
 };
 
@@ -65,12 +70,28 @@ function includesAll(haystack: string[], needles: string[]): boolean {
   return needles.every((item) => set.has(item.toLowerCase()));
 }
 
-function officialEvidence(profile: ModelProfile): ModelPropertyEvidence[] {
+function officialEvidence(profile: ModelProfile, now = new Date()): ModelPropertyEvidence[] {
   return profile.evidence.filter((item) =>
-    item.kind === "OFFICIAL_PROVIDER_DOCS"
-    || item.kind === "OFFICIAL_MODEL_CARD"
-    || item.kind === "OFFICIAL_API_METADATA"
+    (item.kind === "OFFICIAL_PROVIDER_DOCS"
+      || item.kind === "OFFICIAL_MODEL_CARD"
+      || item.kind === "OFFICIAL_API_METADATA")
+    && item.providerId === profile.providerId
+    && item.modelId === profile.modelId
+    && item.documentDigest.trim().length > 0
+    && (!item.validUntil || Date.parse(item.validUntil) > now.getTime())
   );
+}
+
+function officialClaims(profile: ModelProfile): Set<string> {
+  return new Set(
+    officialEvidence(profile)
+      .flatMap((item) => item.claims)
+      .map((item) => item.trim().toLowerCase())
+  );
+}
+
+function hasClaim(claims: Set<string>, prefix: string, value: string): boolean {
+  return claims.has(`${prefix}:${value.toLowerCase()}`);
 }
 
 export function modelEligible(
@@ -79,13 +100,29 @@ export function modelEligible(
 ): boolean {
   const official = officialEvidence(profile);
   if (!official.length) return false;
+  const claims = officialClaims(profile);
 
-  return includesAll(profile.supportedCapabilities, requirement.requiredCapabilities)
-    && includesAll(profile.supportedToolsets, requirement.requiredToolsets)
-    && (!requirement.requireStructuredOutput || profile.structuredOutput)
-    && (!requirement.requireToolCalling || profile.toolCalling)
-    && (!requirement.requireVision || profile.vision)
-    && contextRank[profile.contextClass] >= contextRank[requirement.minimumContextClass];
+  const capabilitiesBound = requirement.requiredCapabilities.every((capability) =>
+    hasClaim(claims, "capability", capability)
+  );
+  const toolsBound = requirement.requiredToolsets.every((tool) =>
+    hasClaim(claims, "tool", tool)
+  );
+  const structuredBound = !requirement.requireStructuredOutput
+    || (profile.structuredOutput && claims.has("feature:structured-output"));
+  const toolCallingBound = !requirement.requireToolCalling
+    || (profile.toolCalling && claims.has("feature:tool-calling"));
+  const visionBound = !requirement.requireVision
+    || (profile.vision && claims.has("feature:vision"));
+  const contextBound = contextRank[profile.contextClass] >= contextRank[requirement.minimumContextClass]
+    && claims.has(`context:${profile.contextClass.toLowerCase()}`);
+
+  return capabilitiesBound
+    && toolsBound
+    && structuredBound
+    && toolCallingBound
+    && visionBound
+    && contextBound;
 }
 
 export function selectModel(
@@ -96,16 +133,30 @@ export function selectModel(
   if (!eligible.length) throw new Error("MODEL_SELECTION_NO_OFFICIALLY_ELIGIBLE_MODEL");
 
   const ranked = [...eligible].sort((a, b) => {
+    const claimsA = officialClaims(a);
+    const claimsB = officialClaims(b);
     const strengthA = requirement.preferredStrengths.filter((item) =>
       a.declaredStrengths.map((value) => value.toLowerCase()).includes(item.toLowerCase())
+      && hasClaim(claimsA, "strength", item)
     ).length;
     const strengthB = requirement.preferredStrengths.filter((item) =>
       b.declaredStrengths.map((value) => value.toLowerCase()).includes(item.toLowerCase())
+      && hasClaim(claimsB, "strength", item)
     ).length;
     if (strengthA !== strengthB) return strengthB - strengthA;
 
-    const benchmarksA = a.evidence.filter((item) => item.kind === "VERIFIED_INTERNAL_BENCHMARK").length;
-    const benchmarksB = b.evidence.filter((item) => item.kind === "VERIFIED_INTERNAL_BENCHMARK").length;
+    const benchmarksA = a.evidence.filter((item) =>
+      item.kind === "VERIFIED_INTERNAL_BENCHMARK"
+      && item.providerId === a.providerId
+      && item.modelId === a.modelId
+      && item.documentDigest.trim().length > 0
+    ).length;
+    const benchmarksB = b.evidence.filter((item) =>
+      item.kind === "VERIFIED_INTERNAL_BENCHMARK"
+      && item.providerId === b.providerId
+      && item.modelId === b.modelId
+      && item.documentDigest.trim().length > 0
+    ).length;
     if (benchmarksA !== benchmarksB) return benchmarksB - benchmarksA;
 
     return a.providerId.localeCompare(b.providerId) || a.modelId.localeCompare(b.modelId);
