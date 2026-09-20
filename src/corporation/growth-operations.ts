@@ -190,9 +190,9 @@ export class GrowthOperations {
     }
     if (!input.qcReviewRef) throw new Error("GROWTH_QC_REVIEW_REQUIRED");
 
-    campaign.legalReviewRef = input.legalReviewRef;
-    campaign.qcReviewRef = input.qcReviewRef;
-    campaign.financeReviewRef = input.financeReviewRef;
+    if (input.legalReviewRef !== undefined) campaign.legalReviewRef = input.legalReviewRef;
+    if (input.qcReviewRef !== undefined) campaign.qcReviewRef = input.qcReviewRef;
+    if (input.financeReviewRef !== undefined) campaign.financeReviewRef = input.financeReviewRef;
     campaign.status = "READY";
     campaign.updatedAt = iso();
     return structuredClone(campaign);
