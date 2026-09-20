@@ -63,6 +63,25 @@ export class CapabilityRegistry {
     return requiredCapabilities.filter((item) => !available.has(item.toLowerCase()));
   }
 
+
+
+  async ceilingForCapabilities(requiredCapabilities: string[]): Promise<{
+    capabilities: string[];
+    effects: string[];
+    tools: string[];
+  }> {
+    const healthy = await this.healthyExecutors();
+    const matching = healthy.filter((executor) =>
+      includesAll(executor.capabilities, requiredCapabilities)
+    );
+
+    return {
+      capabilities: [...new Set(matching.flatMap((executor) => executor.capabilities))],
+      effects: [...new Set(matching.flatMap((executor) => executor.effects))],
+      tools: [...new Set(matching.flatMap((executor) => executor.tools))]
+    };
+  }
+
   async roleWithinExecutorCeiling(role: RoleContract): Promise<boolean> {
     return (await this.executorsForRole(role)).length > 0;
   }
