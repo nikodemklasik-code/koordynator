@@ -4,19 +4,39 @@ import { InnovationRadar } from "../src/corporation/innovation.js";
 import { NoveltySourceRegistry } from "../src/corporation/novelty-sources.js";
 import { defaultOrganizationModel } from "../src/corporation/organization.js";
 import { CorporatePortfolio } from "../src/corporation/portfolio.js";
-import { createApprovalReceipt } from "../src/corporation/receipts.js";
-import type { HllDecision } from "../src/corporation/domain.js";
+import { makeHllStatement } from "../src/corporation/hll.js";
+import { createApprovalReceipt, createDecisionReceipt } from "../src/corporation/receipts.js";
+import type { HllDecision, HllStatement } from "../src/corporation/domain.js";
 
-function ratified(statementId = "HLL-SIGNAL-1"): HllDecision {
-  return {
-    decisionId: `DEC-${statementId}`,
-    statementId,
+const HLL_AUTHORITY = { authorityId: "hll-test", epoch: "1" };
+
+function assessment(subject: HllStatement["subject"], action: string, payload: Record<string, unknown>) {
+  const statement = makeHllStatement({
+    subject,
+    proposition: "Innovation evidence may enter canonical corporate knowledge.",
+    payload,
+    provenance: {
+      sourceType: "SYSTEM",
+      sourceId: "innovation-test",
+      evidenceRefs: ["experiment:test"],
+      observedAt: new Date().toISOString()
+    },
+    requestedBrainActions: [action]
+  });
+  const decision: HllDecision = {
+    decisionId: `DEC-${statement.statementId}`,
+    statementId: statement.statementId,
     truthState: "RATIFIED",
     verdict: "ALLOW",
     reasons: [],
-    allowedBrainActions: ["corporation.absorb-innovation"],
+    allowedBrainActions: [action],
     requiredAuthorisations: [],
     decidedAt: new Date().toISOString()
+  };
+  return {
+    statement,
+    decision,
+    receipt: createDecisionReceipt({ statement, decision, authority: HLL_AUTHORITY })
   };
 }
 
@@ -101,7 +121,11 @@ describe("scientific innovation and novelty absorption", () => {
       confidenceScore: 0.7
     });
 
-    radar.verifySignal(signal.signalId, ratified());
+    radar.verifySignal(signal.signalId, assessment(
+      "INNOVATION_SIGNAL",
+      "corporation.verify-innovation-signal",
+      { signalId: signal.signalId }
+    ));
 
     const hypothesis = radar.createHypothesis({
       signalIds: [signal.signalId],
@@ -136,7 +160,14 @@ describe("scientific innovation and novelty absorption", () => {
       evidenceRefs: ["benchmark:pass"]
     });
 
-    expect(radar.absorbOpportunity(opportunity.opportunityId).status).toBe("ABSORBED");
+    expect(radar.absorbOpportunity(
+      opportunity.opportunityId,
+      assessment(
+        "INNOVATION_OPPORTUNITY",
+        "corporation.absorb-innovation",
+        { opportunityId: opportunity.opportunityId }
+      )
+    ).status).toBe("ABSORBED");
   });
 });
 
