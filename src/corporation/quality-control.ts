@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { CorporateRisk } from "./domain.js";
+import type { VerificationReceipt } from "./receipts.js";
+import { verifyVerificationReceipt } from "./receipts.js";
+import { VerifierTrustRegistry } from "./verification-trust.js";
 
 export type VerificationPathKind =
   | "DETERMINISTIC_TEST"
@@ -16,19 +20,16 @@ export type VerificationPathKind =
 export type VerificationPath = {
   pathId: string;
   kind: VerificationPathKind;
-  executorId: string;
-  providerFamily?: string;
-  independentGroup: string;
   externalDependency: boolean;
   metered: boolean;
-  result: "PASS" | "FAIL" | "INCONCLUSIVE" | "NOT_RUN";
-  evidenceRefs: string[];
+  receipt: VerificationReceipt;
   detail?: string;
 };
 
 export type QualityGatePolicy = {
   gateId: string;
   name: string;
+  gateRisk: CorporateRisk;
   minimumPassingPaths: number;
   minimumIndependentGroups: number;
   requireNonMeteredPassingPath: boolean;
@@ -51,31 +52,72 @@ export type QualityGateDecision = {
 export const DEFAULT_QC_POLICY: QualityGatePolicy = {
   gateId: "QC-MATERIAL-STAGE",
   name: "Material Stage Quality Gate",
+  gateRisk: "HIGH",
   minimumPassingPaths: 2,
   minimumIndependentGroups: 2,
   requireNonMeteredPassingPath: true,
   requireNonExternalPassingPath: true,
-  requireDeterministicPassingPath: false,
-  blockOnAnyCriticalFailure: false
+  requireDeterministicPassingPath: true,
+  blockOnAnyCriticalFailure: true
 };
 
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
+function deterministic(kind: VerificationPathKind): boolean {
+  return ["DETERMINISTIC_TEST", "STATIC_ANALYSIS", "RULE_ENGINE", "REPLAY"].includes(kind);
+}
+
+function criticalFailure(path: VerificationPath): boolean {
+  const receipt = path.receipt;
+  return receipt.result === "FAIL"
+    && receipt.severity === "CRITICAL"
+    && receipt.failureClass !== undefined
+    && ["CORRECTNESS", "SECURITY", "INTEGRITY", "PRIVACY", "COMPLIANCE"].includes(receipt.failureClass);
+}
+
 export function evaluateQualityGate(
   paths: VerificationPath[],
+  trustRegistry: VerifierTrustRegistry,
   policy: QualityGatePolicy = DEFAULT_QC_POLICY
 ): QualityGateDecision {
-  const passing = paths.filter((path) => path.result === "PASS");
-  const failing = paths.filter((path) => path.result === "FAIL");
   const reasons: string[] = [];
+  const trusted: VerificationPath[] = [];
+
+  for (const path of paths) {
+    try {
+      verifyVerificationReceipt(path.receipt);
+      trustRegistry.assertReceiptLineage({
+        trustRootId: path.receipt.trustRootId,
+        verifierId: path.receipt.verifierId,
+        independentGroupId: path.receipt.independentGroupId,
+        providerLineageId: path.receipt.providerLineageId
+      });
+      trusted.push(path);
+    } catch {
+      reasons.push(`UNTRUSTED_VERIFICATION_PATH:${path.pathId}`);
+    }
+  }
+
+  const passing = trusted.filter((path) => path.receipt.result === "PASS");
+  const failing = trusted.filter((path) => path.receipt.result === "FAIL");
+  const critical = trusted.filter(criticalFailure);
+
+  if (critical.length && policy.blockOnAnyCriticalFailure) {
+    reasons.push("CRITICAL_VERIFICATION_FAILURE_PRESENT");
+  }
 
   if (passing.length < policy.minimumPassingPaths) reasons.push("INSUFFICIENT_PASSING_PATHS");
 
-  const independentGroups = unique(passing.map((path) => path.independentGroup));
+  const independentGroups = unique(passing.map((path) => path.receipt.independentGroupId));
   if (independentGroups.length < policy.minimumIndependentGroups) {
     reasons.push("INSUFFICIENT_VERIFICATION_INDEPENDENCE");
+  }
+
+  const independentLineages = unique(passing.map((path) => path.receipt.providerLineageId));
+  if (independentLineages.length < Math.min(policy.minimumIndependentGroups, 2)) {
+    reasons.push("INSUFFICIENT_PROVIDER_LINEAGE_DIVERSITY");
   }
 
   if (policy.requireNonMeteredPassingPath && !passing.some((path) => !path.metered)) {
@@ -86,24 +128,19 @@ export function evaluateQualityGate(
     reasons.push("NO_SOVEREIGN_CLOSURE_PATH");
   }
 
-  if (
-    policy.requireDeterministicPassingPath
-    && !passing.some((path) =>
-      ["DETERMINISTIC_TEST", "STATIC_ANALYSIS", "RULE_ENGINE", "REPLAY"].includes(path.kind)
-    )
-  ) {
+  const deterministicRequired = policy.requireDeterministicPassingPath
+    || policy.gateRisk === "HIGH"
+    || policy.gateRisk === "CRITICAL";
+
+  if (deterministicRequired && !passing.some((path) => deterministic(path.kind))) {
     reasons.push("NO_DETERMINISTIC_CLOSURE_PATH");
   }
 
-  if (policy.blockOnAnyCriticalFailure && failing.length) {
-    reasons.push("VERIFICATION_FAILURE_PRESENT");
-  }
-
-  const status: QualityGateDecision["status"] = reasons.length
-    ? failing.length && policy.blockOnAnyCriticalFailure
-      ? "FAIL"
-      : "INCONCLUSIVE"
-    : "PASS";
+  const status: QualityGateDecision["status"] = critical.length && policy.blockOnAnyCriticalFailure
+    ? "FAIL"
+    : reasons.length
+      ? "INCONCLUSIVE"
+      : "PASS";
 
   return {
     decisionId: `QC-${randomUUID().slice(0, 10).toUpperCase()}`,
@@ -112,7 +149,7 @@ export function evaluateQualityGate(
     passingPathIds: passing.map((path) => path.pathId),
     failingPathIds: failing.map((path) => path.pathId),
     reasons,
-    evidenceRefs: unique(paths.flatMap((path) => path.evidenceRefs)),
+    evidenceRefs: unique(trusted.flatMap((path) => path.receipt.evidenceRefs)),
     decidedAt: new Date().toISOString()
   };
 }
@@ -125,14 +162,14 @@ export function assertQualityGatePassed(decision: QualityGateDecision): void {
 
 export function paidVerificationNeedsFallback(paths: VerificationPath[]): boolean {
   const passingPaid = paths.some((path) =>
-    path.result === "PASS"
+    path.receipt.result === "PASS"
     && path.metered
     && ["PAID_PROVIDER", "SUBSCRIPTION_PROVIDER"].includes(path.kind)
   );
   if (!passingPaid) return false;
 
   return !paths.some((path) =>
-    path.result === "PASS"
+    path.receipt.result === "PASS"
     && (!path.metered || !path.externalDependency)
   );
 }
