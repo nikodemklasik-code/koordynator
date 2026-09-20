@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
-import type { HllDecision, HllStatement } from "./domain.js";
+import type { HllBrainAction, HllDecision, HllStatement } from "./domain.js";
 import type {
   ApprovalReceipt,
   AuthorityEpoch,
@@ -13,7 +13,7 @@ import {
 
 export type ActionDecisionReceipt = {
   actionDecisionId: string;
-  brainAction: string;
+  brainAction: HllBrainAction;
   subjectId: string;
   payloadFingerprint: string;
   scopeFingerprint: string;
@@ -27,10 +27,11 @@ export function authoriseAction(input: {
   statement: HllStatement;
   decision: HllDecision;
   decisionReceipt: DecisionReceipt;
-  brainAction: string;
+  brainAction: HllBrainAction;
   subjectId: string;
   payload: unknown;
   scope: unknown;
+  requiredAuthorisations: string[];
   approvals: ApprovalReceipt[];
   authorities: Record<string, AuthorityEpoch>;
   now?: Date;
@@ -39,13 +40,18 @@ export function authoriseAction(input: {
     statement: input.statement,
     decision: input.decision,
     receipt: input.decisionReceipt,
-    action: input.brainAction,
     ...(input.now === undefined ? {} : { now: input.now })
   });
 
+  if (!input.decision.allowedBrainActions.some((permission) =>
+    permission.action === input.brainAction
+  )) {
+    throw new Error("HLL_BRAIN_ACTION_NOT_ALLOWED");
+  }
+
   const used: ApprovalReceipt[] = [];
 
-  for (const requirement of input.decision.requiredAuthorisations) {
+  for (const requirement of [...new Set(input.requiredAuthorisations)]) {
     const authority = input.authorities[requirement];
     if (!authority) throw new Error(`ACTION_AUTHORITY_NOT_REGISTERED:${requirement}`);
 
