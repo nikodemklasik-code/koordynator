@@ -463,147 +463,71 @@ Corporation implementation order:
 Any implementation that does not meet this baseline remains `NOT_CONFORMANT` and may not become the Corporation truth/effect authority.
 
 
-## 11. Blind Execution & Dynamic HLL Synthesis
+## 11. Blind execution without local truth authority
 
-HLL stage semantics are computed locally from execution evidence after the stage,
-rather than disclosed to the executor before execution.
+Blind execution remains a valid least-knowledge execution pattern, but Corporation
+MUST NOT implement a second HLL semantic engine inside Koordynator.
 
-The executor receives only a **BlindStageAssignment**:
+The executor receives only a stage-scoped assignment:
 
 - exact task/stage identity;
 - its own short-lived capability lease;
-- direct stage inputs;
-- an ordered list of deterministic micro-operations;
-- the instruction and input fingerprints needed to bind the trace;
-- an opaque commitment identifier/fingerprint.
+- direct inputs;
+- an ordered list of bounded micro-operations;
+- the stage-contract reference/fingerprint;
+- only the knowledge needed to perform the stage.
 
-It MUST NOT receive:
+It MUST NOT receive the global HLL graph or unrelated future-stage knowledge.
 
-- `HLL_global`;
-- the hidden expected local HLL fragment;
-- the commitment nonce;
-- semantic targets that are not required to perform the micro-operation;
-- future-stage knowledge.
-
-Authority-side state contains a private, pre-execution commitment:
+The execution layer may create only evidence:
 
 ```
-PrivateStageCommitment {
-  taskId
-  stageId
-  executorId
-  capabilityLeaseId
-  expectedFragment
-  commitmentNonce
-  commitmentFingerprint
-}
-```
-
-The expected fragment is committed before execution. The nonce prevents the public
-commitment fingerprint from becoming a useful low-entropy oracle for guessing the
-hidden target.
-
-The executor performs the stage and a trusted trace writer records an ordered,
-hash-chained execution trace. Each trace event binds:
-
-- task;
-- stage;
-- element;
-- operation;
-- executor;
-- capability lease;
-- instruction fingerprint;
-- input fingerprint;
-- output fingerprint;
-- effect fingerprints;
-- evidence fingerprints;
-- previous trace-event fingerprint.
-
-After execution:
-
-```
-HLL_computed_K = f_HLL(BlindStageAssignment, Trace_K)
-```
-
-The computed fragment is normalised to semantic content and compared against the
-authority-side committed fragment:
-
-```
-semantic(HLL_computed_K) == semantic(HLL_expected_K)
-```
-
-Only an exact semantic match produces a PASS validation receipt.
-
-A PASS validation receipt may unlock the next stage by minting a new
-`CapabilityLeaseReceipt`. A FAIL cannot mint the next lease.
-
-The initial reference implementation lives in:
-
-```
-src/corporation/hll-stage-protocol.ts
-tests/corporation-hll-blind-stage.test.ts
-```
-
-### Composition into the global graph
-
-The executor does not see the global graph.
-
-The constitutional flow is:
-
-```
-HLL_global(t)
-  + private StageCommitment_K
-  -> BlindStageAssignment_K
+BlindStageAssignment
   -> execution
-  -> Trace_K
-  -> HLL_computed_K
-  -> Harmonia validation
-  -> PASS only
-  -> canonical local-fragment promotion
-  -> HLL_global(t+1)
-  -> CapabilityLease_(K+1)
+  -> trusted trace
+  -> artifacts / effects / evidence
+  -> ExecutionEvidenceBundle
 ```
 
-Thus local HLL is **derived from what happened**, not supplied by the worker as a
-declaration.
+The execution layer MUST NOT:
 
-### Determinism boundary
+- mint HLL truth;
+- create a local substitute for HLL epistemology;
+- decide CONFIRMED / REJECTED / RATIFIED;
+- treat digest equality as semantic truth;
+- issue the next capability lease merely from its own local PASS;
+- predefine one complete future truth fragment for non-deterministic work.
 
-Exact hidden-fragment equality is permitted only for stages whose semantic result
-can genuinely be precommitted and deterministically reconstructed.
+The authoritative HLL Engine interprets the execution evidence using the existing
+ontology, RelationRegistry, grounding rules, provenance, temporality, contradiction,
+K1/K2 write barrier and Harmonia decision process.
 
-Creative/generative/model-dependent work MUST NOT be falsely labelled deterministic.
-Such work produces a candidate artifact/fragment and enters independent verification,
-falsification and QC. It cannot obtain PASS merely because an LLM output looks
-similar to an expected answer.
-
-### Security boundary
-
-Blind execution materially reduces target-shaping and prompt-injection surface, but
-the architecture MUST NOT claim that the risk is mathematically zero.
-
-Predefinition alone does not make a trace unforgeable.
-
-For material stages the trace writer must be outside the worker's authority and
-bound to:
-
-- capability lease;
-- executor identity;
-- ordered sequence;
-- previous-event digest;
-- actual artifact/effect evidence;
-- trusted time where relevant.
-
-Application-level hash chaining is tamper-evident, not hardware attestation. Higher
-risk levels may require independent OS/runtime observation, signed receipts,
-sandbox-level effect interception, or hardware-backed attestation.
-
-The invariant is therefore:
+The general rule is therefore:
 
 ```
-worker declaration != execution truth
-trusted trace + artifacts + deterministic synthesis + HLL validation = admissible evidence
+Trace_K + Output_K + Effects_K + Evidence_K
+  -> authoritative HLL interpretation
+  -> actual local semantic state
+  -> Harmonia admissibility / falsification / ratification
 ```
+
+Project/product meaning and GOAL constrain the semantic space. The Brain/Koordynator
+has discretion inside the actions and states admitted by Harmonia. An executor does
+not receive one complete future HLL answer that it must reproduce.
+
+Exact expected-value comparison is valid only inside genuinely deterministic
+micro-operations such as canonicalization, hashing, schema validation or other
+operations whose result is mathematically fixed by the contract. Such comparisons
+produce execution evidence; they do not independently mint HLL truth.
+
+The Corporation reference transport now lives in:
+
+```
+src/corporation/blind-stage-execution.ts
+tests/corporation-blind-stage-execution.test.ts
+```
+
+It intentionally has no HLL PASS/FAIL/ratification API.
 
 ## 12. Stage knowledge minimisation
 
