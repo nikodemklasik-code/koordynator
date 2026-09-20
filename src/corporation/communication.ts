@@ -412,7 +412,7 @@ export function routeCorporateMessage(input: {
       statement: input.hllStatement,
       decision: input.hllDecision,
       receipt: input.hllReceipt,
-      action: "corporation.communicate"
+      action: "RECORD"
     });
   }
 
