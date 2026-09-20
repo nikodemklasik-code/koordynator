@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { authoriseVeraEffect } from "../src/corporation/action-gate.js";
+import { authoriseVeraEffect, veraEffectBinding } from "../src/corporation/action-gate.js";
 import { makeHllStatement } from "../src/corporation/hll.js";
 import type { HllDecision } from "../src/corporation/domain.js";
 import {
@@ -155,15 +155,6 @@ describe("VERA authority boundary", () => {
       canonicalRecordHash: "r".repeat(64),
       authority
     });
-    const approval = createApprovalReceipt({
-      authority: { authorityId: "owner", epoch: "1" },
-      action: "owner.external-send",
-      subjectId: "CONTACT-1",
-      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
-      scope: { channel: "email" },
-      validUntil: new Date(Date.now() + 60_000).toISOString()
-    });
-
     const effect: VeraPrepareEffectInput = {
       intent: {
         intent_ref: { id: "intent-1" },
@@ -180,6 +171,21 @@ describe("VERA authority boundary", () => {
       verifiedEffectReceiptIds: ["check-1"],
       requestedTtlMs: 30_000
     };
+    const semanticPayload = { contactId: "CONTACT-1", messageHash: "msg-1" };
+    const semanticScope = { channel: "email" };
+    const approval = createApprovalReceipt({
+      authority: { authorityId: "owner", epoch: "1" },
+      action: "owner.external-send",
+      subjectId: "CONTACT-1",
+      payload: veraEffectBinding({
+        subjectId: "CONTACT-1",
+        semanticPayload,
+        semanticScope,
+        effect
+      }),
+      scope: semanticScope,
+      validUntil: new Date(Date.now() + 60_000).toISOString()
+    });
 
     let calls = 0;
     const vera: VeraEffectAuthorityPort = {
@@ -196,8 +202,8 @@ describe("VERA authority boundary", () => {
       hllRecordReceipt,
       brainAction: "EXTERNAL_SEND",
       subjectId: "CONTACT-1",
-      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
-      scope: { channel: "email" },
+      payload: semanticPayload,
+      scope: semanticScope,
       requiredAuthorisations: ["owner.external-send"],
       approvals: [approval],
       authorities: {
@@ -219,8 +225,8 @@ describe("VERA authority boundary", () => {
       hllRecordReceipt: tamperedRecord,
       brainAction: "EXTERNAL_SEND",
       subjectId: "CONTACT-1",
-      payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
-      scope: { channel: "email" },
+      payload: semanticPayload,
+      scope: semanticScope,
       requiredAuthorisations: ["owner.external-send"],
       approvals: [approval],
       authorities: {
