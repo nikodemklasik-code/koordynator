@@ -10,7 +10,7 @@ import type { HllDecision, HllStatement } from "../src/corporation/domain.js";
 
 const HLL_AUTHORITY = { authorityId: "hll-test", epoch: "1" };
 
-function assessment(subject: HllStatement["subject"], action: string, payload: Record<string, unknown>) {
+function assessment(subject: HllStatement["subject"], action: "RECORD" | "UPDATE_RECORD", payload: Record<string, unknown>) {
   const statement = makeHllStatement({
     subject,
     proposition: "Innovation evidence may enter canonical corporate knowledge.",
@@ -26,12 +26,14 @@ function assessment(subject: HllStatement["subject"], action: string, payload: R
   const decision: HllDecision = {
     decisionId: `DEC-${statement.statementId}`,
     statementId: statement.statementId,
-    truthState: "RATIFIED",
-    verdict: "ALLOW",
-    reasons: [],
-    allowedBrainActions: [action],
-    requiredAuthorisations: [],
-    decidedAt: new Date().toISOString()
+    subjectId: `SUBJECT-${statement.statementId}`,
+    truthState: "CONFIRMED",
+    eligibleForFact: true,
+    blockers: [],
+    allowedBrainActions: [{ action, scope: "INTERNAL" }],
+    provenanceIds: [`PROV-${statement.statementId}`],
+    hllVersion: "HLL/1.0",
+    canonicalRecordHash: `REC-${statement.statementId}`
   };
   return {
     statement,
@@ -123,7 +125,7 @@ describe("scientific innovation and novelty absorption", () => {
 
     radar.verifySignal(signal.signalId, assessment(
       "INNOVATION_SIGNAL",
-      "corporation.verify-innovation-signal",
+      "RECORD",
       { signalId: signal.signalId }
     ));
 
@@ -164,7 +166,7 @@ describe("scientific innovation and novelty absorption", () => {
       opportunity.opportunityId,
       assessment(
         "INNOVATION_OPPORTUNITY",
-        "corporation.absorb-innovation",
+        "UPDATE_RECORD",
         { opportunityId: opportunity.opportunityId }
       )
     ).status).toBe("ABSORBED");
