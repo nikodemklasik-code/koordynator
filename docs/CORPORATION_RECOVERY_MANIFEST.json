@@ -12,7 +12,10 @@
     "HLL": "internal Corporation language for truth, provenance, ratification, conflict and allowed Brain actions",
     "Koordynator": "executive Brain",
     "Corporation": "organizational and execution system",
-    "Harmonia_Legal_Platform": "Corporation product"
+    "Harmonia_Legal_Platform": "Corporation product",
+    "Quality_Control": "independent cross-corporate quality gate below Harmonia Constitution",
+    "Provider_Fabric": "replaceable capability/provider composition layer with combos, skills and non-paid/sovereign fallback policy",
+    "Corporate_Communication": "declared typed dependency graph with HLL-gated material handoffs and cross-cutting observers"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -38,7 +41,14 @@
     "tests/corporation-kernel-v2.test.ts",
     "docs/CORPORATION_KERNEL_V2.md",
     "docs/CORPORATION_LIVING_SPEC.md",
-    "docs/CORPORATION_RECOVERY_MANIFEST.json"
+    "docs/CORPORATION_RECOVERY_MANIFEST.json",
+    "src/corporation/organization.ts",
+    "src/corporation/knowledge.ts",
+    "src/corporation/quality-control.ts",
+    "src/corporation/provider-fabric.ts",
+    "src/corporation/communication.ts",
+    "tests/corporation-organization-qc-provider.test.ts",
+    "tests/corporation-communication.test.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -58,14 +68,22 @@
     "candidate_generator": "pending",
     "corporation_api": "pending",
     "corporation_ui": "pending",
-    "legacy_retirement": "pending"
+    "legacy_retirement": "pending",
+    "organization_model": "implemented",
+    "department_hierarchy": "implemented",
+    "stage_knowledge_ledger": "implemented",
+    "quality_control_sovereignty": "implemented",
+    "provider_fabric": "implemented",
+    "communication_dependency_graph": "implemented",
+    "department_screens": "pending",
+    "communication_runtime_integration": "pending"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
     "Read docs/CORPORATION_KERNEL_V2.md",
     "Read this manifest",
-    "Inspect src/corporation/*",
-    "Run tests/corporation-kernel-v2.test.ts",
+    "Inspect src/corporation/* including organization.ts, knowledge.ts, quality-control.ts, provider-fabric.ts and communication.ts",
+    "Run Corporation v2 tests",
     "Check PR #73 and CI",
     "Continue from the first pending migration item"
   ],
