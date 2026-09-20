@@ -1,0 +1,208 @@
+import { randomUUID } from "node:crypto";
+import { canonicalDigest } from "../crypto/canonical-digest.js";
+import type { HllDecision, HllStatement, SolutionMetrics } from "./domain.js";
+
+export type AuthorityEpoch = {
+  authorityId: string;
+  epoch: string;
+};
+
+export type DecisionReceipt = {
+  receiptId: string;
+  statementId: string;
+  statementFingerprint: string;
+  decisionId: string;
+  decisionFingerprint: string;
+  authorityId: string;
+  authorityEpoch: string;
+  verdict: HllDecision["verdict"];
+  truthState: HllDecision["truthState"];
+  allowedBrainActions: string[];
+  requiredAuthorisations: string[];
+  issuedAt: string;
+  validUntil?: string;
+  receiptFingerprint: string;
+};
+
+export type ApprovalReceipt = {
+  receiptId: string;
+  authorityId: string;
+  authorityEpoch: string;
+  action: string;
+  subjectId: string;
+  payloadFingerprint: string;
+  scopeFingerprint: string;
+  issuedAt: string;
+  validUntil: string;
+  receiptFingerprint: string;
+};
+
+export type VerificationFailureClass =
+  | "CORRECTNESS"
+  | "SECURITY"
+  | "INTEGRITY"
+  | "PRIVACY"
+  | "COMPLIANCE"
+  | "PERFORMANCE"
+  | "RELIABILITY"
+  | "OTHER";
+
+export type VerificationSeverity = "INFO" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+
+export type VerificationReceipt = {
+  receiptId: string;
+  artifactFingerprint: string;
+  verifierId: string;
+  trustRootId: string;
+  independentGroupId: string;
+  providerLineageId: string;
+  result: "PASS" | "FAIL" | "INCONCLUSIVE";
+  failureClass?: VerificationFailureClass;
+  severity?: VerificationSeverity;
+  metrics: SolutionMetrics;
+  metricsFingerprint: string;
+  evidenceRefs: string[];
+  issuedAt: string;
+  receiptFingerprint: string;
+};
+
+function decisionDigest(decision: HllDecision): string {
+  return canonicalDigest({
+    decisionId: decision.decisionId,
+    statementId: decision.statementId,
+    truthState: decision.truthState,
+    verdict: decision.verdict,
+    reasons: [...decision.reasons],
+    allowedBrainActions: [...decision.allowedBrainActions].sort(),
+    requiredAuthorisations: [...decision.requiredAuthorisations].sort(),
+    decidedAt: decision.decidedAt,
+    canonicalRecord: decision.canonicalRecord ?? null,
+    canonicalFingerprint: decision.canonicalFingerprint ?? null
+  });
+}
+
+export function createDecisionReceipt(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  authority: AuthorityEpoch;
+  validUntil?: string;
+}): DecisionReceipt {
+  if (input.decision.statementId !== input.statement.statementId) {
+    throw new Error("HLL_DECISION_STATEMENT_ID_MISMATCH");
+  }
+  const decisionFingerprint = decisionDigest(input.decision);
+  const base = {
+    receiptId: `DREC-${randomUUID().slice(0, 10).toUpperCase()}`,
+    statementId: input.statement.statementId,
+    statementFingerprint: input.statement.fingerprint,
+    decisionId: input.decision.decisionId,
+    decisionFingerprint,
+    authorityId: input.authority.authorityId,
+    authorityEpoch: input.authority.epoch,
+    verdict: input.decision.verdict,
+    truthState: input.decision.truthState,
+    allowedBrainActions: [...input.decision.allowedBrainActions].sort(),
+    requiredAuthorisations: [...input.decision.requiredAuthorisations].sort(),
+    issuedAt: input.decision.decidedAt,
+    ...(input.validUntil === undefined ? {} : { validUntil: input.validUntil })
+  };
+  return {
+    ...base,
+    receiptFingerprint: canonicalDigest(base)
+  };
+}
+
+export function verifyDecisionReceipt(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  receipt: DecisionReceipt;
+  action: string;
+  expectedAuthority?: AuthorityEpoch;
+  now?: Date;
+}): void {
+  const { statement, decision, receipt } = input;
+  if (decision.statementId !== statement.statementId) throw new Error("HLL_DECISION_STATEMENT_ID_MISMATCH");
+  if (receipt.statementId !== statement.statementId) throw new Error("HLL_RECEIPT_STATEMENT_ID_MISMATCH");
+  if (receipt.statementFingerprint !== statement.fingerprint) throw new Error("HLL_RECEIPT_STATEMENT_FINGERPRINT_MISMATCH");
+  if (receipt.decisionId !== decision.decisionId) throw new Error("HLL_RECEIPT_DECISION_ID_MISMATCH");
+  if (receipt.decisionFingerprint !== decisionDigest(decision)) throw new Error("HLL_RECEIPT_DECISION_FINGERPRINT_MISMATCH");
+  if (receipt.verdict !== decision.verdict || receipt.truthState !== decision.truthState) {
+    throw new Error("HLL_RECEIPT_DECISION_CONTENT_MISMATCH");
+  }
+  if (receipt.verdict !== "ALLOW") throw new Error("HLL_ACTION_BLOCKED");
+  if (receipt.truthState !== "RATIFIED") throw new Error("HLL_TRUTH_NOT_RATIFIED");
+  if (!receipt.allowedBrainActions.includes(input.action)) throw new Error("HLL_BRAIN_ACTION_NOT_ALLOWED");
+  if (!decision.allowedBrainActions.includes(input.action)) throw new Error("HLL_BRAIN_ACTION_NOT_ALLOWED");
+
+  if (input.expectedAuthority) {
+    if (receipt.authorityId !== input.expectedAuthority.authorityId) throw new Error("HLL_AUTHORITY_ID_MISMATCH");
+    if (receipt.authorityEpoch !== input.expectedAuthority.epoch) throw new Error("HLL_AUTHORITY_EPOCH_MISMATCH");
+  }
+  const now = input.now ?? new Date();
+  if (receipt.validUntil && Date.parse(receipt.validUntil) <= now.getTime()) {
+    throw new Error("HLL_DECISION_RECEIPT_EXPIRED");
+  }
+
+  const { receiptFingerprint, ...base } = receipt;
+  if (receiptFingerprint !== canonicalDigest(base)) throw new Error("HLL_DECISION_RECEIPT_TAMPERED");
+}
+
+export function createApprovalReceipt(input: {
+  authority: AuthorityEpoch;
+  action: string;
+  subjectId: string;
+  payload: unknown;
+  scope: unknown;
+  validUntil: string;
+}): ApprovalReceipt {
+  const base = {
+    receiptId: `AREC-${randomUUID().slice(0, 10).toUpperCase()}`,
+    authorityId: input.authority.authorityId,
+    authorityEpoch: input.authority.epoch,
+    action: input.action,
+    subjectId: input.subjectId,
+    payloadFingerprint: canonicalDigest(input.payload),
+    scopeFingerprint: canonicalDigest(input.scope),
+    issuedAt: new Date().toISOString(),
+    validUntil: input.validUntil
+  };
+  return { ...base, receiptFingerprint: canonicalDigest(base) };
+}
+
+export function verifyApprovalReceipt(input: {
+  receipt: ApprovalReceipt;
+  authority: AuthorityEpoch;
+  action: string;
+  subjectId: string;
+  payload: unknown;
+  scope: unknown;
+  now?: Date;
+}): void {
+  const r = input.receipt;
+  if (r.authorityId !== input.authority.authorityId) throw new Error("APPROVAL_AUTHORITY_ID_MISMATCH");
+  if (r.authorityEpoch !== input.authority.epoch) throw new Error("APPROVAL_AUTHORITY_EPOCH_MISMATCH");
+  if (r.action !== input.action) throw new Error("APPROVAL_ACTION_MISMATCH");
+  if (r.subjectId !== input.subjectId) throw new Error("APPROVAL_SUBJECT_MISMATCH");
+  if (r.payloadFingerprint !== canonicalDigest(input.payload)) throw new Error("APPROVAL_PAYLOAD_MISMATCH");
+  if (r.scopeFingerprint !== canonicalDigest(input.scope)) throw new Error("APPROVAL_SCOPE_MISMATCH");
+  if (Date.parse(r.validUntil) <= (input.now ?? new Date()).getTime()) throw new Error("APPROVAL_EXPIRED");
+  const { receiptFingerprint, ...base } = r;
+  if (receiptFingerprint !== canonicalDigest(base)) throw new Error("APPROVAL_RECEIPT_TAMPERED");
+}
+
+export function createVerificationReceipt(input: Omit<VerificationReceipt, "receiptId" | "metricsFingerprint" | "issuedAt" | "receiptFingerprint">): VerificationReceipt {
+  const base = {
+    ...input,
+    receiptId: `VREC-${randomUUID().slice(0, 10).toUpperCase()}`,
+    metricsFingerprint: canonicalDigest(input.metrics),
+    evidenceRefs: [...new Set(input.evidenceRefs)],
+    issuedAt: new Date().toISOString()
+  };
+  return { ...base, receiptFingerprint: canonicalDigest(base) };
+}
+
+export function verifyVerificationReceipt(receipt: VerificationReceipt): void {
+  if (receipt.metricsFingerprint !== canonicalDigest(receipt.metrics)) throw new Error("VERIFICATION_METRICS_TAMPERED");
+  const { receiptFingerprint, ...base } = receipt;
+  if (receiptFingerprint !== canonicalDigest(base)) throw new Error("VERIFICATION_RECEIPT_TAMPERED");
+}
