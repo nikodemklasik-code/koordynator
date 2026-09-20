@@ -68,6 +68,9 @@ export type HllProvenance = {
   sourceId: string;
   evidenceRefs: string[];
   observedAt: string;
+  sourceLocator?: string;
+  contentHash?: string;
+  verified?: boolean;
 };
 
 export type HllStatement = {
