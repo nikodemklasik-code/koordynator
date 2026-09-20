@@ -214,7 +214,7 @@ export function defaultCommunicationGraph(): CorporateCommunicationGraph {
     {
       ruleId: "RULE-FINANCE-EXTERNAL-SPEND",
       observerDepartmentId: "DEPT-FINANCE",
-      kinds: ["FINANCE_REVIEW", "VENDOR_REVIEW", "APPROVAL_REQUEST"],
+      kinds: ["FINANCE_REVIEW", "VENDOR_REVIEW", "APPROVAL_REQUEST", "DECISION"],
       when: "EXTERNAL_EFFECT",
       purpose: "Finance observes spend and vendor commitments."
     },
