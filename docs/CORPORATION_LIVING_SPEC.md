@@ -1228,3 +1228,43 @@ The production runtime must continuously detect:
 - runtime state versus canonical journal divergence.
 
 Any unresolved material drift produces BLOCKED/INCONCLUSIVE rather than PASS.
+
+
+## 33. Blind stages and local HLL synthesis
+
+Material execution stages do not receive the full corporate HLL graph.
+
+Each stage receives only:
+
+- direct input;
+- deterministic micro-operations required by its contract;
+- the current stage capability lease;
+- stage-scoped knowledge necessary to act.
+
+The expected HLL fragment is committed before execution and kept authority-side.
+
+After execution, HLL is synthesised from the trusted execution trace and produced
+artifacts. The resulting local fragment is compared with the hidden committed
+fragment. PASS alone may unlock the next capability lease.
+
+```
+hidden expected HLL_K
+        |
+BlindStage_K
+  -> trusted Trace_K
+  -> HLL_computed_K
+  -> semantic equality / validation
+        |
+        +-- PASS -> ratify local fragment -> next lease
+        +-- FAIL -> halt / diagnostics / repair
+```
+
+The worker never earns authority by declaring success. Authority follows from the
+validation receipt.
+
+Exact fragment matching applies only to genuinely deterministic micro-stages.
+Generative/creative work remains candidate generation and must be independently
+verified rather than pretending to be deterministic.
+
+The protocol reference implementation is
+`src/corporation/hll-stage-protocol.ts`.
