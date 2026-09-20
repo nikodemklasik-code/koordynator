@@ -1,11 +1,30 @@
 export type CorporateRisk = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export type CorporatePlane =
-  | "INTERNAL_DEVELOPMENT"
+  | "EXECUTIVE"
+  | "STRATEGY"
   | "PRODUCT"
+  | "MARKETING"
+  | "SALES"
+  | "LEGAL"
+  | "HR"
+  | "FINANCE"
+  | "PRODUCTION"
+  | "TESTING"
+  | "QUALITY_CONTROL"
   | "SECURITY"
   | "OPERATIONS"
-  | "HR"
+  | "INTERNAL_DEVELOPMENT"
+  | "RESEARCH"
+  | "DATA"
+  | "CUSTOMER_SUCCESS"
+  | "PROCUREMENT"
+  | "COMPLIANCE_RISK"
+  | "SCIENTIFIC_RESEARCH"
+  | "INNOVATION"
+  | "VENTURE_STUDIO"
+  | "GROWTH"
+  | "CORPORATE_INTELLIGENCE"
   | "LEGAL_PRODUCT";
 
 export type CorporateTruthState =
@@ -38,7 +57,18 @@ export type HllStatement = {
     | "SELF_IMPROVEMENT"
     | "PRODUCT_DECISION"
     | "COMMUNICATION"
-    | "QUALITY_GATE";
+    | "QUALITY_GATE"
+    | "PROJECT"
+    | "PROGRAM"
+    | "PRODUCT"
+    | "PORTFOLIO_DECISION"
+    | "HYPOTHESIS"
+    | "FALSIFICATION"
+    | "INNOVATION_SIGNAL"
+    | "INNOVATION_OPPORTUNITY"
+    | "MARKETING_POLICY"
+    | "CHANNEL_OPPORTUNITY"
+    | "OUTREACH";
   proposition: string;
   payload: Record<string, unknown>;
   provenance: HllProvenance;
