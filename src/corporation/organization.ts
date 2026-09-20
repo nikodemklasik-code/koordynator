@@ -26,6 +26,7 @@ export type CorporateFunction =
   | "VENTURE_STUDIO"
   | "GROWTH"
   | "CORPORATE_INTELLIGENCE"
+  | "LEGAL_PRODUCT"
   | "CUSTOM";
 
 export type CorporateRank =
@@ -284,6 +285,14 @@ export function defaultDepartmentCharters(): DepartmentCharter[] {
       "CORPORATE_INTELLIGENCE",
       "Maintain external situational awareness across markets, competitors, regulation, technology and strategic signals.",
       ["market intelligence", "competitor monitoring", "regulatory watch", "technology watch", "strategic signals"],
+      "HIGH"
+    ),
+    seed(
+      "DEPT-HARMONIA-LEGAL",
+      "Harmonia Legal Platform",
+      "LEGAL_PRODUCT",
+      "Build and operate the Harmonia Legal Platform as a Corporation product.",
+      ["legal workflows", "law-firm product needs", "legal UX", "legal product delivery", "legal product operations"],
       "HIGH"
     )
   ];
