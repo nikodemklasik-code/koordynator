@@ -24,17 +24,19 @@ function communicationHll() {
       evidenceRefs: ["knowledge:handoff"],
       observedAt: new Date().toISOString()
     },
-    requestedBrainActions: ["corporation.communicate"]
+    requestedBrainActions: ["RECORD"]
   });
   const decision: HllDecision = {
     decisionId: `DEC-${statement.statementId}`,
     statementId: statement.statementId,
-    truthState: "RATIFIED",
-    verdict: "ALLOW",
-    reasons: [],
-    allowedBrainActions: ["corporation.communicate"],
-    requiredAuthorisations: [],
-    decidedAt: new Date().toISOString()
+    subjectId: `SUBJECT-${statement.statementId}`,
+    truthState: "CONFIRMED",
+    eligibleForFact: true,
+    blockers: [],
+    allowedBrainActions: [{ action: "RECORD", scope: "INTERNAL" }],
+    provenanceIds: [`PROV-${statement.statementId}`],
+    hllVersion: "HLL/1.0",
+    canonicalRecordHash: `REC-${statement.statementId}`
   };
   return {
     statement,
