@@ -96,7 +96,8 @@
     "src/corporation/runtime-authorities.ts",
     "tests/corporation-hll-authority-adapter.test.ts",
     "tests/corporation-vera-authority.test.ts",
-    "docs/HLL_CORPORATION_SEMANTIC_MAP.md"
+    "docs/HLL_CORPORATION_SEMANTIC_MAP.md",
+    "src/corporation/runtime.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -108,7 +109,7 @@
     "role_contract_activation": "implemented",
     "baseline_planner": "implemented",
     "comparator": "implemented",
-    "production_hll_adapter": "stateful_authority_protocol_and_semantic_mapping_v1_implemented_pending_application_bootstrap_wiring",
+    "production_hll_adapter": "stateful_authority_protocol_semantic_mapping_and_kernel_bootstrap_implemented_pending_application_api_wiring",
     "ephemeral_worktree_executor": "pending",
     "executor_adapters": "pending",
     "independent_verifier": "pending",
@@ -175,7 +176,8 @@
     "vera_t0_projection": "implemented_from_platform_develop_bridge_contract",
     "vera_stateful_transport": "implemented",
     "hll_stable_corporate_identity": "implemented",
-    "hll_typed_corporation_relations_v1": "implemented_on_authority_branch"
+    "hll_typed_corporation_relations_v1": "implemented_on_authority_branch",
+    "corporation_authority_runtime_factory": "implemented"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
