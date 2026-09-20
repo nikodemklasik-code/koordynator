@@ -149,6 +149,58 @@ describe("interdepartmental communication graph", () => {
     ]));
   });
 
+
+
+  it("prevents an undelegated Agent from owning a material cross-department handoff but keeps P0 escalation open", () => {
+    const organization = defaultOrganizationModel();
+    const graph = defaultCommunicationGraph();
+    const productAgent = organization.positions.find((item) =>
+      item.departmentId === "DEPT-PRODUCT" && item.rank === "AGENT"
+    )!;
+
+    expect(() => routeCorporateMessage({
+      graph,
+      organization,
+      fromDepartmentId: "DEPT-PRODUCT",
+      toDepartmentId: "DEPT-PRODUCTION",
+      fromPositionId: productAgent.positionId,
+      kind: "HANDOFF",
+      priority: "P1",
+      subject: "Material product handoff",
+      material: true,
+      knowledgePackageId: "KPACK-AGENT",
+      hllDecision: ratified()
+    })).toThrow("COMM_AGENT_MATERIAL_CROSS_DEPARTMENT_REQUIRES_DELEGATION");
+
+    graph.dependencies.push({
+      dependencyId: "DEP-DEPT-PRODUCT-DEPT-CEO-ESCALATION",
+      fromDepartmentId: "DEPT-PRODUCT",
+      toDepartmentId: "DEPT-CEO",
+      kind: "INFORMATION",
+      messageKinds: ["ESCALATION"],
+      purpose: "Emergency escalation path.",
+      blocking: false,
+      knowledgePackageRequired: false,
+      hllRequired: false,
+      qcVisible: true
+    });
+
+    const escalation = routeCorporateMessage({
+      graph,
+      organization,
+      fromDepartmentId: "DEPT-PRODUCT",
+      toDepartmentId: "DEPT-CEO",
+      fromPositionId: productAgent.positionId,
+      kind: "ESCALATION",
+      priority: "P0",
+      subject: "Critical risk escalation",
+      highRisk: true
+    });
+
+    expect(escalation.message.priority).toBe("P0");
+    expect(escalation.message.fromPositionId).toBe(productAgent.positionId);
+  });
+
   it("rejects undeclared department-to-department communication paths", () => {
     expect(() => routeCorporateMessage({
       graph: defaultCommunicationGraph(),
