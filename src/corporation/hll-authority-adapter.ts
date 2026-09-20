@@ -4,8 +4,12 @@ import type {
   HllStatement,
   HllTruthState
 } from "./domain.js";
-import type { HllAssessment, HllPort } from "./ports.js";
-import { createDecisionReceipt, type AuthorityEpoch } from "./receipts.js";
+import type { HllAssessment, HllCommitment, HllPort } from "./ports.js";
+import {
+  createDecisionReceipt,
+  createHllRecordReceipt,
+  type AuthorityEpoch
+} from "./receipts.js";
 
 export const REQUIRED_HLL_CONFORMANCE = [
   "HLL/1.0",
@@ -31,8 +35,34 @@ export type HllAuthorityResponse = {
   provenanceIds: string[];
   hllVersion: string;
   decisionHash: string;
-  canonicalRecordHash?: string;
   semanticHash?: string;
+  authority: {
+    authorityId: string;
+    epoch: string;
+    conformance: string[];
+  };
+};
+
+export type HllAuthorityCommitRequest = {
+  schema: "corporation-hll-authority-commit-request/1";
+  statement: HllStatement;
+  decisionHash: string;
+  action: import("./domain.js").HllBrainAction;
+  rationale: string;
+  targetLedger?: string;
+  orderingKey?: string;
+  externalAuthorisationId?: string;
+};
+
+export type HllAuthorityCommitResponse = {
+  schema: "corporation-hll-authority-commit-response/1";
+  statementId: string;
+  statementFingerprint: string;
+  decisionHash: string;
+  brainDecisionHash: string;
+  canonicalRecordHash: string;
+  truthState: HllTruthState;
+  hllVersion: string;
   authority: {
     authorityId: string;
     epoch: string;
@@ -42,6 +72,7 @@ export type HllAuthorityResponse = {
 
 export interface HllAuthorityTransport {
   assess(request: HllAuthorityRequest): Promise<HllAuthorityResponse>;
+  commit(request: HllAuthorityCommitRequest): Promise<HllAuthorityCommitResponse>;
 }
 
 function uniqueSorted(values: string[]): string[] {
@@ -80,9 +111,6 @@ function validateResponse(statement: HllStatement, response: HllAuthorityRespons
   if (response.truthState === "CONFIRMED" && !response.eligibleForFact) {
     throw new Error("HLL_AUTHORITY_CONFIRMED_WITHOUT_ELIGIBILITY");
   }
-  if (response.truthState === "CONFIRMED" && !response.canonicalRecordHash) {
-    throw new Error("HLL_AUTHORITY_CONFIRMED_WITHOUT_CANONICAL_RECORD");
-  }
 }
 
 export class AuthoritativeHllPort implements HllPort {
@@ -107,9 +135,6 @@ export class AuthoritativeHllPort implements HllPort {
         .sort((a, b) => a.scope.localeCompare(b.scope) || a.action.localeCompare(b.action)),
       provenanceIds: uniqueSorted(response.provenanceIds),
       hllVersion: response.hllVersion,
-      ...(response.canonicalRecordHash === undefined
-        ? {}
-        : { canonicalRecordHash: response.canonicalRecordHash }),
       ...(response.semanticHash === undefined
         ? {}
         : { semanticHash: response.semanticHash })
@@ -125,6 +150,75 @@ export class AuthoritativeHllPort implements HllPort {
       receipt: createDecisionReceipt({
         statement,
         decision,
+        authority
+      })
+    };
+  }
+
+  async commit(input: {
+    statement: HllStatement;
+    assessment: HllAssessment;
+    action: import("./domain.js").HllBrainAction;
+    rationale: string;
+    targetLedger?: string;
+    orderingKey?: string;
+    externalAuthorisationId?: string;
+  }): Promise<HllCommitment> {
+    const response = await this.transport.commit({
+      schema: "corporation-hll-authority-commit-request/1",
+      statement: structuredClone(input.statement),
+      decisionHash: input.assessment.decision.decisionId,
+      action: input.action,
+      rationale: input.rationale,
+      ...(input.targetLedger === undefined ? {} : { targetLedger: input.targetLedger }),
+      ...(input.orderingKey === undefined ? {} : { orderingKey: input.orderingKey }),
+      ...(input.externalAuthorisationId === undefined
+        ? {}
+        : { externalAuthorisationId: input.externalAuthorisationId })
+    });
+
+    if (response.schema !== "corporation-hll-authority-commit-response/1") {
+      throw new Error("HLL_AUTHORITY_COMMIT_SCHEMA_UNSUPPORTED");
+    }
+    if (response.statementId !== input.statement.statementId) {
+      throw new Error("HLL_AUTHORITY_COMMIT_STATEMENT_ID_MISMATCH");
+    }
+    if (response.statementFingerprint !== input.statement.fingerprint) {
+      throw new Error("HLL_AUTHORITY_COMMIT_STATEMENT_FINGERPRINT_MISMATCH");
+    }
+    if (response.decisionHash !== input.assessment.decision.decisionId) {
+      throw new Error("HLL_AUTHORITY_COMMIT_DECISION_MISMATCH");
+    }
+    if (response.truthState !== input.assessment.decision.truthState) {
+      throw new Error("HLL_AUTHORITY_COMMIT_TRUTH_STATE_MISMATCH");
+    }
+    if (response.hllVersion !== input.assessment.decision.hllVersion) {
+      throw new Error("HLL_AUTHORITY_COMMIT_VERSION_MISMATCH");
+    }
+    if (!response.brainDecisionHash.trim() || !response.canonicalRecordHash.trim()) {
+      throw new Error("HLL_AUTHORITY_COMMIT_BINDING_MISSING");
+    }
+
+    const conformance = new Set(response.authority.conformance);
+    for (const requirement of REQUIRED_HLL_CONFORMANCE) {
+      if (!conformance.has(requirement)) {
+        throw new Error(`HLL_AUTHORITY_CONFORMANCE_MISSING:${requirement}`);
+      }
+    }
+
+    const authority: AuthorityEpoch = {
+      authorityId: response.authority.authorityId,
+      epoch: response.authority.epoch
+    };
+
+    return {
+      brainDecisionHash: response.brainDecisionHash,
+      canonicalRecordHash: response.canonicalRecordHash,
+      receipt: createHllRecordReceipt({
+        statement: input.statement,
+        decision: input.assessment.decision,
+        brainDecisionHash: response.brainDecisionHash,
+        canonicalRecordHash: response.canonicalRecordHash,
         authority
       })
     };
