@@ -15,10 +15,15 @@ export type DecisionReceipt = {
   decisionFingerprint: string;
   authorityId: string;
   authorityEpoch: string;
-  verdict: HllDecision["verdict"];
+  subjectId: string;
   truthState: HllDecision["truthState"];
-  allowedBrainActions: string[];
-  requiredAuthorisations: string[];
+  eligibleForFact: boolean;
+  blockers: string[];
+  allowedBrainActions: HllDecision["allowedBrainActions"];
+  provenanceIds: string[];
+  hllVersion: string;
+  canonicalRecordHash?: string;
+  semanticHash?: string;
   issuedAt: string;
   validUntil?: string;
   receiptFingerprint: string;
@@ -105,14 +110,17 @@ function decisionDigest(decision: HllDecision): string {
   return canonicalDigest({
     decisionId: decision.decisionId,
     statementId: decision.statementId,
+    subjectId: decision.subjectId,
     truthState: decision.truthState,
-    verdict: decision.verdict,
-    reasons: [...decision.reasons],
-    allowedBrainActions: [...decision.allowedBrainActions].sort(),
-    requiredAuthorisations: [...decision.requiredAuthorisations].sort(),
-    decidedAt: decision.decidedAt,
-    canonicalRecord: decision.canonicalRecord ?? null,
-    canonicalFingerprint: decision.canonicalFingerprint ?? null
+    eligibleForFact: decision.eligibleForFact,
+    blockers: [...decision.blockers].sort(),
+    allowedBrainActions: [...decision.allowedBrainActions]
+      .map((item) => ({ action: item.action, scope: item.scope }))
+      .sort((a, b) => a.scope.localeCompare(b.scope) || a.action.localeCompare(b.action)),
+    provenanceIds: [...decision.provenanceIds].sort(),
+    hllVersion: decision.hllVersion,
+    canonicalRecordHash: decision.canonicalRecordHash ?? null,
+    semanticHash: decision.semanticHash ?? null
   });
 }
 
@@ -134,11 +142,22 @@ export function createDecisionReceipt(input: {
     decisionFingerprint,
     authorityId: input.authority.authorityId,
     authorityEpoch: input.authority.epoch,
-    verdict: input.decision.verdict,
+    subjectId: input.decision.subjectId,
     truthState: input.decision.truthState,
-    allowedBrainActions: [...input.decision.allowedBrainActions].sort(),
-    requiredAuthorisations: [...input.decision.requiredAuthorisations].sort(),
-    issuedAt: input.decision.decidedAt,
+    eligibleForFact: input.decision.eligibleForFact,
+    blockers: [...input.decision.blockers].sort(),
+    allowedBrainActions: [...input.decision.allowedBrainActions]
+      .map((item) => ({ action: item.action, scope: item.scope }))
+      .sort((a, b) => a.scope.localeCompare(b.scope) || a.action.localeCompare(b.action)),
+    provenanceIds: [...input.decision.provenanceIds].sort(),
+    hllVersion: input.decision.hllVersion,
+    ...(input.decision.canonicalRecordHash === undefined
+      ? {}
+      : { canonicalRecordHash: input.decision.canonicalRecordHash }),
+    ...(input.decision.semanticHash === undefined
+      ? {}
+      : { semanticHash: input.decision.semanticHash }),
+    issuedAt: new Date().toISOString(),
     ...(input.validUntil === undefined ? {} : { validUntil: input.validUntil })
   };
   return {
@@ -151,7 +170,6 @@ export function verifyDecisionReceipt(input: {
   statement: HllStatement;
   decision: HllDecision;
   receipt: DecisionReceipt;
-  action: string;
   expectedAuthority?: AuthorityEpoch;
   now?: Date;
 }): void {
@@ -161,13 +179,24 @@ export function verifyDecisionReceipt(input: {
   if (receipt.statementFingerprint !== statement.fingerprint) throw new Error("HLL_RECEIPT_STATEMENT_FINGERPRINT_MISMATCH");
   if (receipt.decisionId !== decision.decisionId) throw new Error("HLL_RECEIPT_DECISION_ID_MISMATCH");
   if (receipt.decisionFingerprint !== decisionDigest(decision)) throw new Error("HLL_RECEIPT_DECISION_FINGERPRINT_MISMATCH");
-  if (receipt.verdict !== decision.verdict || receipt.truthState !== decision.truthState) {
+  if (receipt.subjectId !== decision.subjectId) throw new Error("HLL_RECEIPT_SUBJECT_MISMATCH");
+  if (receipt.truthState !== decision.truthState || receipt.eligibleForFact !== decision.eligibleForFact) {
     throw new Error("HLL_RECEIPT_DECISION_CONTENT_MISMATCH");
   }
-  if (receipt.verdict !== "ALLOW") throw new Error("HLL_ACTION_BLOCKED");
-  if (receipt.truthState !== "RATIFIED") throw new Error("HLL_TRUTH_NOT_RATIFIED");
-  if (!receipt.allowedBrainActions.includes(input.action)) throw new Error("HLL_BRAIN_ACTION_NOT_ALLOWED");
-  if (!decision.allowedBrainActions.includes(input.action)) throw new Error("HLL_BRAIN_ACTION_NOT_ALLOWED");
+  if (receipt.hllVersion !== decision.hllVersion) throw new Error("HLL_RECEIPT_VERSION_MISMATCH");
+  if (canonicalDigest(receipt.blockers) !== canonicalDigest([...decision.blockers].sort())) {
+    throw new Error("HLL_RECEIPT_BLOCKERS_MISMATCH");
+  }
+  if (canonicalDigest(receipt.allowedBrainActions) !== canonicalDigest(
+    [...decision.allowedBrainActions]
+      .map((item) => ({ action: item.action, scope: item.scope }))
+      .sort((a, b) => a.scope.localeCompare(b.scope) || a.action.localeCompare(b.action))
+  )) {
+    throw new Error("HLL_RECEIPT_ACTIONS_MISMATCH");
+  }
+  if (canonicalDigest(receipt.provenanceIds) !== canonicalDigest([...decision.provenanceIds].sort())) {
+    throw new Error("HLL_RECEIPT_PROVENANCE_MISMATCH");
+  }
 
   if (input.expectedAuthority) {
     if (receipt.authorityId !== input.expectedAuthority.authorityId) throw new Error("HLL_AUTHORITY_ID_MISMATCH");
