@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "project": "Corporation Kernel v2",
+  "canonical_repository": "nikodemklasik-code/koordynator",
+  "branch": "feature/corporation-kernel-v2",
+  "pull_request": 73,
+  "base_branch": "main",
+  "base_sha": "4227158293bc68e430f8568335751777a1661e98",
+  "head_sha": "4ca2a30f19b1a02f2ba1f0e588ebbb9ad87593fa",
+  "architectural_terms": {
+    "Harmonia": "constitutional order",
+    "HLL": "internal Corporation language for truth, provenance, ratification, conflict and allowed Brain actions",
+    "Koordynator": "executive Brain",
+    "Corporation": "organizational and execution system",
+    "Harmonia_Legal_Platform": "Corporation product"
+  },
+  "invariants": [
+    "Unratified propositions are not executable corporate truth",
+    "Koordynator executes only HLL-allowed Brain actions",
+    "External/privileged effects require explicit authorisation",
+    "Missing capability creates Recruitment",
+    "Role activation requires a healthy executor within capability/effect/tool ceiling",
+    "Dynamic organizational roles do not depend on the legacy TaskRole enum",
+    "Autonomous code repair must use isolated ephemeral worktrees",
+    "Repair success requires independent verification",
+    "Solution selection means best verified available candidate",
+    "No automatic secret scraping, paid fallback activation, OAuth consent, billing change, destructive action, production deployment or protected merge"
+  ],
+  "current_files": [
+    "src/corporation/domain.ts",
+    "src/corporation/ports.ts",
+    "src/corporation/hll.ts",
+    "src/corporation/file-store.ts",
+    "src/corporation/capability-registry.ts",
+    "src/corporation/planner.ts",
+    "src/corporation/comparator.ts",
+    "src/corporation/kernel.ts",
+    "tests/corporation-kernel-v2.test.ts",
+    "docs/CORPORATION_KERNEL_V2.md",
+    "docs/CORPORATION_LIVING_SPEC.md",
+    "docs/CORPORATION_RECOVERY_MANIFEST.json"
+  ],
+  "implementation_status": {
+    "pure_kernel": "implemented",
+    "hll_port": "implemented",
+    "durable_state": "implemented",
+    "durable_events": "implemented",
+    "capability_registry": "implemented",
+    "recruitment": "implemented",
+    "role_contract_activation": "implemented",
+    "baseline_planner": "implemented",
+    "comparator": "implemented",
+    "production_hll_adapter": "pending",
+    "ephemeral_worktree_executor": "pending",
+    "executor_adapters": "pending",
+    "independent_verifier": "pending",
+    "self_improvement_ingestion": "pending",
+    "candidate_generator": "pending",
+    "corporation_api": "pending",
+    "corporation_ui": "pending",
+    "legacy_retirement": "pending"
+  },
+  "recovery_sequence": [
+    "Read docs/CORPORATION_LIVING_SPEC.md",
+    "Read docs/CORPORATION_KERNEL_V2.md",
+    "Read this manifest",
+    "Inspect src/corporation/*",
+    "Run tests/corporation-kernel-v2.test.ts",
+    "Check PR #73 and CI",
+    "Continue from the first pending migration item"
+  ],
+  "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Connect Corporation v2 to the authoritative HLL already present in Harmonia Legal."
+}
