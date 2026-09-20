@@ -262,6 +262,7 @@ export type CorporateEvent = {
 
 export type CorporationSnapshot = {
   schemaVersion: 1;
+  revision: number;
   language: "HLL";
   departments: Department[];
   roles: RoleContract[];
