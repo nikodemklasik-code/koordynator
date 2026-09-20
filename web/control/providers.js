@@ -374,8 +374,15 @@ function selfImprovementIncidentRow(incident) {
 }
 
 function selfImprovementOpportunityRow(item) {
+  const onboarding = item.onboarding || {};
+  const mode = onboarding.mode || "MANUAL";
+  const nextAction = onboarding.nextAction || item.action || "CHECK";
   return `<article class="self-improvement-opportunity">
-    <div><strong>${escapeHtml(item.label || item.family)}</strong><small>${escapeHtml(item.detail || "")}</small></div>
+    <div>
+      <strong>${escapeHtml(item.label || item.family)}</strong>
+      <small>${escapeHtml(item.detail || "")}</small>
+      <small>Onboarding: ${escapeHtml(mode)} · ${escapeHtml(nextAction)}</small>
+    </div>
     <code>${escapeHtml(item.model || "-")}</code>
     <span class="github-state ${item.requiresApproval ? "auth_required" : "connected"}">${item.requiresApproval ? "APPROVAL" : "SAFE"}</span>
     <strong>${escapeHtml(item.action || "CHECK")}</strong>
