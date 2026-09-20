@@ -350,11 +350,168 @@ $("hermesGrantRefreshButton")?.addEventListener("click", () => loadHermesGrant()
 $("hermesGrantButton")?.addEventListener("click", () => { if (!hermesGrant?.terminal) $("hermesGrantDialog").showModal(); });
 $("hermesGrantApprove")?.addEventListener("click", () => void grantHermesTerminal());
 
+let selfImprovement = null;
+let selfImprovementBusy = false;
+
+function selfImprovementStateClass(snapshot) {
+  if (!snapshot) return "checking";
+  if (snapshot.paused) return "auth_required";
+  const active = (snapshot.incidents || []).filter((item) => ["OPEN", "REPAIRING", "ESCALATED"].includes(item.status));
+  return active.some((item) => item.risk === "HIGH") ? "unavailable" : active.length ? "degraded" : "connected";
+}
+
+function selfImprovementIncidentRow(incident) {
+  const canRepair = incident.repairAction && incident.repairAction !== "NONE" && incident.status !== "RESOLVED";
+  const action = canRepair
+    ? `<button type="button" data-self-repair="${escapeHtml(incident.incidentId)}" data-self-approval="${incident.approvalRequired ? "1" : "0"}">${incident.approvalRequired ? "Repair · approval" : "Repair"}</button>`
+    : "";
+  return `<article class="self-improvement-row">
+    <div><strong>${escapeHtml(incident.kind)}</strong><small>${escapeHtml(incident.summary)}</small></div>
+    <span class="health-badge ${incident.status === "VERIFIED" || incident.status === "RESOLVED" ? "healthy" : incident.risk === "HIGH" ? "unavailable" : "degraded"}">● ${escapeHtml(incident.status)}</span>
+    <code>${escapeHtml(incident.risk)}</code>
+    <div class="self-improvement-row-actions">${action}</div>
+  </article>`;
+}
+
+function selfImprovementOpportunityRow(item) {
+  const onboarding = item.onboarding || {};
+  const mode = onboarding.mode || "MANUAL";
+  const nextAction = onboarding.nextAction || item.action || "CHECK";
+  return `<article class="self-improvement-opportunity">
+    <div>
+      <strong>${escapeHtml(item.label || item.family)}</strong>
+      <small>${escapeHtml(item.detail || "")}</small>
+      <small>Onboarding: ${escapeHtml(mode)} · ${escapeHtml(nextAction)}</small>
+    </div>
+    <code>${escapeHtml(item.model || "-")}</code>
+    <span class="github-state ${item.requiresApproval ? "auth_required" : "connected"}">${item.requiresApproval ? "APPROVAL" : "SAFE"}</span>
+    <strong>${escapeHtml(item.action || "CHECK")}</strong>
+  </article>`;
+}
+
+function renderSelfImprovement(snapshot) {
+  selfImprovement = snapshot;
+  const badge = $("selfImprovementBadge");
+  if (!badge) return;
+
+  const active = (snapshot.incidents || []).filter((item) => ["OPEN", "REPAIRING", "ESCALATED"].includes(item.status));
+  const verified = (snapshot.receipts || []).filter((item) => item.status === "PASS");
+  const opportunities = snapshot.opportunities || [];
+  const stateClass = selfImprovementStateClass(snapshot);
+
+  badge.className = `github-state ${stateClass}`;
+  badge.textContent = snapshot.paused ? "PAUSED" : active.length ? `ACTIVE · ${active.length}` : "HEALTHY";
+  $("selfImprovementDetail").textContent = snapshot.paused
+    ? "Autonomous scans are paused. Explicit Diagnose now still performs a forced evidence scan."
+    : `Background sweep every ${Math.max(1, Math.round(Number(snapshot.scanIntervalMs || 0) / 60000))} min · low-risk self-heal ${snapshot.autoRepairLowRisk ? "enabled" : "disabled"}.`;
+
+  $("selfImprovementIncidents").textContent = String(active.length);
+  $("selfImprovementRepairs").textContent = String(verified.length);
+  $("selfImprovementOpportunities").textContent = String(opportunities.length);
+  $("selfImprovementLastScan").textContent = snapshot.lastScanAt ? new Date(snapshot.lastScanAt).toLocaleTimeString() : "NOT YET";
+
+  $("selfImprovementIncidentRows").innerHTML = (snapshot.incidents || []).length
+    ? snapshot.incidents.slice(0, 12).map(selfImprovementIncidentRow).join("")
+    : '<div class="empty-receipts">No incidents recorded.</div>';
+
+  $("selfImprovementOpportunityRows").innerHTML = opportunities.length
+    ? opportunities.slice(0, 12).map(selfImprovementOpportunityRow).join("")
+    : '<div class="empty-receipts">No unconfigured free-tier opportunities in the current verified route set.</div>';
+
+  const toggle = $("selfImprovementToggleButton");
+  toggle.textContent = snapshot.paused ? "Resume autonomy" : "Pause autonomy";
+  toggle.disabled = selfImprovementBusy;
+  $("selfImprovementScanButton").disabled = selfImprovementBusy;
+}
+
+async function loadSelfImprovement() {
+  const response = await fetch("/api/self-improvement", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`SELF_IMPROVEMENT_HTTP_${response.status}`);
+  const snapshot = await response.json();
+  renderSelfImprovement(snapshot);
+  return snapshot;
+}
+
+async function scanSelfImprovement() {
+  if (selfImprovementBusy) return;
+  selfImprovementBusy = true;
+  renderSelfImprovement(selfImprovement || { incidents: [], opportunities: [], receipts: [], paused: false });
+  try {
+    const response = await fetch("/api/self-improvement/scan", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ force: true })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `SELF_IMPROVEMENT_SCAN_HTTP_${response.status}`);
+    renderSelfImprovement(payload);
+  } finally {
+    selfImprovementBusy = false;
+    if (selfImprovement) renderSelfImprovement(selfImprovement);
+  }
+}
+
+async function toggleSelfImprovement() {
+  if (selfImprovementBusy || !selfImprovement) return;
+  selfImprovementBusy = true;
+  renderSelfImprovement(selfImprovement);
+  try {
+    const path = selfImprovement.paused ? "/api/self-improvement/resume" : "/api/self-improvement/pause";
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `SELF_IMPROVEMENT_TOGGLE_HTTP_${response.status}`);
+    renderSelfImprovement(payload);
+  } finally {
+    selfImprovementBusy = false;
+    if (selfImprovement) renderSelfImprovement(selfImprovement);
+  }
+}
+
+async function repairSelfImprovementIncident(incidentId, approved) {
+  if (selfImprovementBusy) return;
+  if (approved && !window.confirm("This repair requires explicit approval. Continue with the recorded repair action?")) return;
+  selfImprovementBusy = true;
+  renderSelfImprovement(selfImprovement);
+  try {
+    const response = await fetch(`/api/self-improvement/incidents/${encodeURIComponent(incidentId)}/repair`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ approved: Boolean(approved) })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `SELF_IMPROVEMENT_REPAIR_HTTP_${response.status}`);
+    await loadSelfImprovement();
+  } finally {
+    selfImprovementBusy = false;
+    if (selfImprovement) renderSelfImprovement(selfImprovement);
+  }
+}
+
+$("selfImprovementScanButton")?.addEventListener("click", () => {
+  void scanSelfImprovement().catch((error) => openCommand("Self improvement scan failed", error.message, "GET /api/self-improvement"));
+});
+
+$("selfImprovementToggleButton")?.addEventListener("click", () => {
+  void toggleSelfImprovement().catch((error) => openCommand("Self improvement control failed", error.message, "POST /api/self-improvement/pause|resume"));
+});
+
+$("selfImprovementIncidentRows")?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-self-repair]");
+  if (!button) return;
+  void repairSelfImprovementIncident(button.dataset.selfRepair, button.dataset.selfApproval === "1")
+    .catch((error) => openCommand("Self improvement repair failed", error.message, "Check repair receipt and incident evidence"));
+});
+
 Promise.all([
   fetch("/api/health", { headers: { accept: "application/json" } }).then((response) => response.ok ? response.json() : Promise.reject(new Error(`HEALTH_HTTP_${response.status}`))),
   loadProviders(),
   loadGitHubConnection(),
-  loadHermesGrant().catch(() => undefined)
+  loadHermesGrant().catch(() => undefined),
+  loadSelfImprovement().catch(() => undefined)
 ]).then(([health]) => {
   $("versionLabel").textContent = `v${health.version}`;
 }).catch((error) => {

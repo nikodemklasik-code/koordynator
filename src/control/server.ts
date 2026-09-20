@@ -29,6 +29,7 @@ import { asStageZeroHttpError, StageZeroService } from "./stage-zero-service.js"
 import { HermesPtyError, HermesPtySession, type HermesLaunchSpec, type HermesPtyHooks } from "./hermes-pty.js";
 import { prepareHermes } from "../runtime/hermes-launch.js";
 import { omniRouteSettings } from "../runtime/local-config.js";
+import { SelfImprovementError, SelfImprovementSupervisor } from "./self-improvement-supervisor.js";
 import { VERSION } from "../version.js";
 
 export type ControlServerOptions = {
@@ -70,6 +71,9 @@ export type ControlServerOptions = {
   taskRunnerPathPrefix?: string;
   /** Test hook: replace the independent verifier (production runs vitest). */
   taskRunnerVerifier?: TaskRunnerVerifier;
+  selfImprovement?: SelfImprovementSupervisor;
+  selfImprovementEnabled?: boolean;
+  selfImprovementIntervalMs?: number;
 };
 
 export class ControlAuthError extends Error {
@@ -123,6 +127,10 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/integrations/github/connect" ||
     pathname === "/api/integrations/hermes-grants" ||
     pathname === "/api/providers/connect-existing" ||
+    pathname === "/api/self-improvement/scan" ||
+    pathname === "/api/self-improvement/pause" ||
+    pathname === "/api/self-improvement/resume" ||
+    /^\/api\/self-improvement\/incidents\/[A-Z0-9-]+\/repair$/.test(pathname) ||
     pathname === "/api/tasks/project-pack" ||
     pathname === "/api/repositories" ||
     pathname === "/api/repositories/remove" ||
@@ -287,6 +295,18 @@ export function createControlServer(options: ControlServerOptions): Server {
       return { command: launch.command, args: launch.args, cwd: launch.cwd, env: launch.env, close: launch.close };
     })
   });
+
+  const selfImprovement = options.selfImprovement ?? new SelfImprovementSupervisor({
+    stateDir,
+    enabled: options.selfImprovementEnabled === true,
+    ...(options.selfImprovementIntervalMs === undefined ? {} : { scanIntervalMs: options.selfImprovementIntervalMs }),
+    githubStatus: () => github.status(true),
+    hermesStatus: () => hermesPty.status(),
+    hermesGrant: () => hermesGrants.status(),
+    omniRoutes: (force = false) => omniLive.list(force),
+    startHermes: () => hermesPty.start({ cols: 120, rows: 40 })
+  });
+  selfImprovement.start();
 
   const server = createServer(async (request, response) => {
     try {
@@ -510,6 +530,36 @@ export function createControlServer(options: ControlServerOptions): Server {
           assertExactKeys(payload, []);
           return sendJson(response, 200, hermesPty.stop(sessionId));
         }
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/self-improvement") {
+        return sendJson(response, 200, await selfImprovement.snapshot());
+      }
+
+      if (method === "POST" && url.pathname === "/api/self-improvement/scan") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["force"]);
+        const force = payload.force === true;
+        return sendJson(response, 200, await selfImprovement.scan(force));
+      }
+
+      if (method === "POST" && url.pathname === "/api/self-improvement/pause") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, []);
+        return sendJson(response, 200, await selfImprovement.setPaused(true));
+      }
+
+      if (method === "POST" && url.pathname === "/api/self-improvement/resume") {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, []);
+        return sendJson(response, 200, await selfImprovement.setPaused(false));
+      }
+
+      const selfRepairMatch = /^\/api\/self-improvement\/incidents\/([A-Z0-9-]+)\/repair$/.exec(url.pathname);
+      if (method === "POST" && selfRepairMatch?.[1]) {
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, ["approved"]);
+        return sendJson(response, 200, await selfImprovement.repair(selfRepairMatch[1], payload.approved === true));
       }
 
       if (url.pathname === "/api/health") {
@@ -775,7 +825,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       const stageZeroHttp = asStageZeroHttpError(error);
       if (stageZeroHttp) return sendJson(response, stageZeroHttp.status, { error: stageZeroHttp.code });
-      if (error instanceof ProviderAutoconnectError || error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError) {
+      if (error instanceof ProviderAutoconnectError || error instanceof ChatServiceError || error instanceof GitHubConnectionError || error instanceof ChatModelCatalogError || error instanceof GitHubRepositoryContextError || error instanceof HermesGrantError || error instanceof RepositoryRegistryError || error instanceof MaterialisationError || error instanceof HarmoniaError || error instanceof BrainError || error instanceof HermesPtyError || error instanceof SelfImprovementError) {
         return sendJson(response, error.status, { error: error.code });
       }
       return sendJson(response, 500, { error: "CONTROL_SERVER_ERROR" });
@@ -785,6 +835,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   server.on("close", () => {
     chat.close();
     hermesPty.stop();
+    selfImprovement.close();
   });
   return server;
 }
