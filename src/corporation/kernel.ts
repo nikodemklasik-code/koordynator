@@ -17,6 +17,7 @@ import {
   assertHllAllows,
   hllDecisionBlocksProgress,
   hllDecisionMayBeRecorded,
+  hllDecisionSupportsExecution,
   makeHllStatement
 } from "./hll.js";
 import { buildBaselinePlan } from "./planner.js";
@@ -322,6 +323,15 @@ export class CorporationKernel {
       const hllAssessment = await this.ports.hll.assess(statement);
       const hllDecision = hllAssessment.decision;
       const hllReceipt = hllAssessment.receipt;
+      const hllCommitment = hllDecisionMayBeRecorded(hllDecision)
+        ? await this.ports.hll.commit({
+            statement,
+            assessment: hllAssessment,
+            action: "RECORD",
+            rationale: "Record the owner/system task proposition before executive planning.",
+            targetLedger: "CORPORATION_TASKS"
+          })
+        : undefined;
       const at = iso();
       const task: CorporateTask = {
         ...normalized,
@@ -329,7 +339,7 @@ export class CorporationKernel {
         departmentId,
         status: hllDecisionBlocksProgress(hllDecision)
           ? "BLOCKED"
-          : hllDecisionMayBeRecorded(hllDecision)
+          : hllDecisionSupportsExecution(hllDecision) && hllCommitment
             ? "PROPOSED"
             : "NEEDS_REVISION",
         assignedRoleIds: [],
@@ -337,6 +347,7 @@ export class CorporationKernel {
         hllDecision,
         hllStatement: statement,
         hllReceipt,
+        ...(hllCommitment === undefined ? {} : { hllRecordReceipt: hllCommitment.receipt }),
         createdAt: at,
         updatedAt: at
       };
@@ -454,13 +465,24 @@ export class CorporationKernel {
       });
       const assessment = await this.ports.hll.assess(statement);
       const decision = assessment.decision;
+      if (!hllDecisionSupportsExecution(decision)) {
+        throw new CorporationKernelError("HLL_ROLE_CONTRACT_NOT_CONFIRMED", 409);
+      }
       this.requireAllowed(statement, decision, assessment.receipt, "RECORD");
+      const commitment = await this.ports.hll.commit({
+        statement,
+        assessment,
+        action: "RECORD",
+        rationale: "Activate only a confirmed role contract after HR and executor-ceiling checks.",
+        targetLedger: "CORPORATION_ROLE_CONTRACTS"
+      });
 
       const role: RoleContract = {
         ...candidate,
         hllDecision: decision,
         hllStatement: statement,
-        hllReceipt: assessment.receipt
+        hllReceipt: assessment.receipt,
+        hllRecordReceipt: commitment.receipt
       };
       state.roles.push(role);
       request.status = "HIRED";
@@ -505,7 +527,11 @@ export class CorporationKernel {
   private async planUnlocked(state: CorporationSnapshot, taskId: string): Promise<CorporateTask> {
     const task = state.tasks.find((item) => item.taskId === taskId);
     if (!task) throw new CorporationKernelError("TASK_NOT_FOUND", 404);
-    if (hllDecisionBlocksProgress(task.hllDecision) || !hllDecisionMayBeRecorded(task.hllDecision)) {
+    if (
+      hllDecisionBlocksProgress(task.hllDecision)
+      || !hllDecisionSupportsExecution(task.hllDecision)
+      || !task.hllRecordReceipt
+    ) {
       throw new CorporationKernelError("HLL_TASK_NOT_SEMANTICALLY_USABLE", 409);
     }
 
@@ -579,14 +605,24 @@ export class CorporationKernel {
         });
         const assessment = await this.ports.hll.assess(statement);
         const decision = assessment.decision;
+        const commitment = hllDecisionMayBeRecorded(decision)
+          ? await this.ports.hll.commit({
+              statement,
+              assessment,
+              action: "RECORD",
+              rationale: "Record the capability-gap recruitment proposition before HR action.",
+              targetLedger: "CORPORATION_RECRUITMENT"
+            })
+          : undefined;
         request = {
           ...candidate,
           hllDecision: decision,
           hllStatement: statement,
           hllReceipt: assessment.receipt,
+          ...(commitment === undefined ? {} : { hllRecordReceipt: commitment.receipt }),
           status: hllDecisionBlocksProgress(decision)
             ? "BLOCKED"
-            : hllDecisionMayBeRecorded(decision)
+            : hllDecisionSupportsExecution(decision) && commitment
               ? "OPEN"
               : "NEEDS_REVISION"
         };
@@ -637,16 +673,26 @@ export class CorporationKernel {
     });
     const assessment = await this.ports.hll.assess(statement);
     const decision = assessment.decision;
+    const commitment = hllDecisionMayBeRecorded(decision)
+      ? await this.ports.hll.commit({
+          statement,
+          assessment,
+          action: "RECORD",
+          rationale: "Record the confirmed delegation proposition before any execution lease exists.",
+          targetLedger: "CORPORATION_DELEGATIONS"
+        })
+      : undefined;
     const finalPlan: ExecutionPlan = {
       ...plan,
       hllDecision: decision,
       hllStatement: statement,
-      hllReceipt: assessment.receipt
+      hllReceipt: assessment.receipt,
+      ...(commitment === undefined ? {} : { hllRecordReceipt: commitment.receipt })
     };
     task.plan = finalPlan;
     task.status = hllDecisionBlocksProgress(decision)
       ? "BLOCKED"
-      : hllDecisionMayBeRecorded(decision)
+      : hllDecisionSupportsExecution(decision) && commitment
         ? "READY"
         : "NEEDS_REVISION";
     task.updatedAt = iso();
