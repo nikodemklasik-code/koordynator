@@ -87,7 +87,16 @@
     "tests/corporation-safety-invariants.test.ts",
     "docs/HLL_CORPORATION_ADOPTION_BASELINE.md",
     "src/corporation/blind-stage-execution.ts",
-    "tests/corporation-blind-stage-execution.test.ts"
+    "tests/corporation-blind-stage-execution.test.ts",
+    "src/corporation/hll-authority-adapter.ts",
+    "src/corporation/hll-subprocess-transport.ts",
+    "src/corporation/hll-truth-boundary.ts",
+    "src/corporation/vera-authority.ts",
+    "src/corporation/vera-subprocess-transport.ts",
+    "src/corporation/runtime-authorities.ts",
+    "tests/corporation-hll-authority-adapter.test.ts",
+    "tests/corporation-vera-authority.test.ts",
+    "docs/HLL_CORPORATION_SEMANTIC_MAP.md"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -99,7 +108,7 @@
     "role_contract_activation": "implemented",
     "baseline_planner": "implemented",
     "comparator": "implemented",
-    "production_hll_adapter": "pending_semantic_mapping_and_conformance",
+    "production_hll_adapter": "stateful_authority_protocol_and_semantic_mapping_v1_implemented_pending_application_bootstrap_wiring",
     "ephemeral_worktree_executor": "pending",
     "executor_adapters": "pending",
     "independent_verifier": "pending",
@@ -133,7 +142,7 @@
     "venture_studio_structure": "implemented",
     "growth_operations_domain": "implemented",
     "marketing_policy_domain": "implemented",
-    "outreach_external_execution": "pending",
+    "outreach_external_execution": "authority_boundary_implemented_real_external_adapter_execution_still_blocked",
     "hll_decision_receipt_binding": "implemented",
     "required_authorisation_action_gate": "implemented",
     "recruitment_capability_ceiling": "implemented",
@@ -161,18 +170,24 @@
     "trusted_trace_runtime": "pending",
     "hardware_or_os_attestation": "pending_high_risk_only",
     "blind_stage_execution_transport": "implemented_reference",
-    "execution_evidence_bundle": "implemented_reference"
+    "execution_evidence_bundle": "implemented_reference",
+    "shared_hll_truth_boundary": "implemented_from_platform_develop_pattern",
+    "vera_t0_projection": "implemented_from_platform_develop_bridge_contract",
+    "vera_stateful_transport": "implemented",
+    "hll_stable_corporate_identity": "implemented",
+    "hll_typed_corporation_relations_v1": "implemented_on_authority_branch"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
-    "Read docs/CORPORATION_KERNEL_V2.md",
+    "Read docs/HLL_CORPORATION_SEMANTIC_MAP.md",
+    "Read docs/HLL_CORPORATION_ADOPTION_BASELINE.md",
     "Read this manifest",
-    "Inspect src/corporation/* including organization.ts, knowledge.ts, quality-control.ts, provider-fabric.ts and communication.ts",
+    "Inspect src/corporation/runtime-authorities.ts and the HLL/VERA authority transports",
     "Run Corporation v2 tests",
     "Check PR #73 and CI",
-    "Continue from the first pending migration item"
+    "Continue from the first pending runtime/executor item without recreating HLL or VERA locally"
   ],
-  "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Connect Corporation v2 to the authoritative HLL already present in Harmonia Legal.",
+  "authoritative_hll_note": "Do not reconstruct HLL inside Koordynator. Corporation uses the stateful CorporationHllAuthority extension built on Harmonia-Legal-Platform develop, while downstream canonical use revalidates decision and record receipts.",
   "head_resolution": "Resolve current branch HEAD from Git/CI at runtime; do not persist a manual current HEAD inside this manifest.",
-  "hll_adapter_blocker": "Authoritative HLL sources are now inspectable. Remaining work is semantic mapping and conformance: Corporation objects/relations must map onto the existing HLL ontology/grounding/write-barrier model plus K1/K2 and VERA invariants. Do not invent local substitute semantics."
+  "hll_adapter_blocker": "Semantic authority protocol, stable Corporation identity mapping, typed relation mapping v1, stateful transport and shared downstream truth boundary are implemented. Remaining blocker is application/runtime bootstrap wiring plus the deliberately blocked executor/sandbox/verifier layers."
 }
