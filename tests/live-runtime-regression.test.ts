@@ -63,7 +63,7 @@ describe("live runtime regressions", () => {
     expect(main).toContain("KOORDYNATOR_CHAT_WORKING_SET");
     expect(chatModels).toContain('"✓ LIVE"');
     expect(chatModels).toContain("dataset.workingSet");
-    expect(chatUsage).toContain("FREE USED 24H");
+    expect(chatUsage).toContain("FREE TOKENS USED 24H");
     expect(chatUsage).toContain("Remaining FREE token quota is not fabricated");
     expect(packageJson).toContain("hermes-managed.mjs");
   });
