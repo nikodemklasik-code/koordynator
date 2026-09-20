@@ -9,8 +9,10 @@ import { CorporateLearningMemory } from "../src/corporation/learning-memory.js";
 import { selectModel, type ModelProfile } from "../src/corporation/model-selection.js";
 import { defaultOrganizationModel } from "../src/corporation/organization.js";
 import { PluginRegistry } from "../src/corporation/plugins.js";
+import { createVerificationReceipt } from "../src/corporation/receipts.js";
 import { bindSkillsToTask, type SkillManifest } from "../src/corporation/skills.js";
-import type { RoleContract } from "../src/corporation/domain.js";
+import { VerifierTrustRegistry } from "../src/corporation/verification-trust.js";
+import type { RoleContract, SolutionMetrics } from "../src/corporation/domain.js";
 
 const roots: string[] = [];
 
@@ -38,6 +40,82 @@ function role(): RoleContract {
     createdAt: now,
     updatedAt: now
   };
+}
+
+const model: ModelProfile = {
+  profileId: "PROFILE-1",
+  providerId: "provider-a",
+  modelId: "model-code",
+  family: "family-a",
+  declaredStrengths: ["code", "reasoning"],
+  supportedCapabilities: ["code", "typescript", "review"],
+  supportedToolsets: ["fs.read", "fs.write"],
+  constraints: [],
+  contextClass: "LONG",
+  structuredOutput: true,
+  toolCalling: true,
+  vision: false,
+  backgroundWork: true,
+  risk: "LOW",
+  evidence: [{
+    sourceId: "OFFICIAL-1",
+    kind: "OFFICIAL_MODEL_CARD",
+    reference: "provider/model-card",
+    providerId: "provider-a",
+    modelId: "model-code",
+    modelVersion: "2026-09",
+    documentDigest: "sha256:model-card-1",
+    observedAt: new Date().toISOString(),
+    claims: [
+      "capability:code",
+      "capability:typescript",
+      "capability:review",
+      "tool:fs.read",
+      "tool:fs.write",
+      "feature:structured-output",
+      "feature:tool-calling",
+      "context:long",
+      "strength:code",
+      "strength:reasoning"
+    ]
+  }]
+};
+
+const metrics: SolutionMetrics = {
+  correctness: 0.95,
+  security: 0.95,
+  maintainability: 0.9,
+  reversibility: 0.9,
+  architectureFit: 0.9,
+  productValue: 0.8,
+  regressionRisk: 0.1,
+  complexity: 0.2,
+  moneyCost: 0,
+  tokenCost: 0,
+  latency: 0.1
+};
+
+function learningTrust(): VerifierTrustRegistry {
+  return new VerifierTrustRegistry([
+    {
+      trustRootId: "trust-local",
+      verifierId: "local-test",
+      independentGroupId: "group-local",
+      providerLineageId: "lineage-local",
+      authority: "CORE",
+      revoked: false,
+      validFrom: new Date(Date.now() - 1000).toISOString()
+    },
+    {
+      trustRootId: "trust-qc",
+      verifierId: "qc-review",
+      independentGroupId: "group-qc",
+      providerLineageId: "lineage-qc",
+      authority: "QC",
+      revoked: false,
+      validFrom: new Date(Date.now() - 1000).toISOString()
+    }
+  ]);
 }
 
 describe("role accountability and separation of duties", () => {
@@ -102,31 +180,7 @@ describe("corporate delegation", () => {
 });
 
 describe("official model selection and task skill adaptation", () => {
-  const model: ModelProfile = {
-    profileId: "PROFILE-1",
-    providerId: "provider-a",
-    modelId: "model-code",
-    family: "family-a",
-    declaredStrengths: ["code", "reasoning"],
-    supportedCapabilities: ["code", "typescript", "review"],
-    supportedToolsets: ["fs.read", "fs.write"],
-    constraints: [],
-    contextClass: "LONG",
-    structuredOutput: true,
-    toolCalling: true,
-    vision: false,
-    backgroundWork: true,
-    risk: "LOW",
-    evidence: [{
-      sourceId: "OFFICIAL-1",
-      kind: "OFFICIAL_MODEL_CARD",
-      reference: "provider/model-card",
-      observedAt: new Date().toISOString(),
-      claims: ["code", "typescript", "tool calling"]
-    }]
-  };
-
-  it("requires official capability evidence before a model is eligible", () => {
+  it("requires exact provider/model official claims before a model is eligible", () => {
     const selected = selectModel([model], {
       taskId: "CORP-2",
       requiredCapabilities: ["code", "typescript"],
@@ -140,7 +194,11 @@ describe("official model selection and task skill adaptation", () => {
     expect(selected.profile.modelId).toBe("model-code");
     expect(selected.officialEligibilityEvidence).toEqual(["OFFICIAL-1"]);
 
-    expect(() => selectModel([{ ...model, evidence: [] }], {
+    const wrongModelEvidence: ModelProfile = {
+      ...model,
+      evidence: [{ ...model.evidence[0]!, modelId: "different-model" }]
+    };
+    expect(() => selectModel([wrongModelEvidence], {
       taskId: "CORP-2",
       requiredCapabilities: ["code"],
       preferredStrengths: [],
@@ -152,7 +210,7 @@ describe("official model selection and task skill adaptation", () => {
     })).toThrow("MODEL_SELECTION_NO_OFFICIALLY_ELIGIBLE_MODEL");
   });
 
-  it("adapts model skills to the task without expanding the official capability ceiling", () => {
+  it("binds only trusted non-revoked skills within the official model ceiling", () => {
     const skills: SkillManifest[] = [
       {
         skillId: "skill-ts-implementation",
@@ -165,6 +223,11 @@ describe("official model selection and task skill adaptation", () => {
         incompatibleModelIds: [],
         riskClass: "LOW",
         source: "CORE",
+        contentDigest: "sha256:skill-ts",
+        publisherId: "core",
+        trustRootId: "core-skills",
+        permissions: ["fs.read", "fs.write"],
+        reviewReceiptRefs: [],
         evidenceRefs: ["skill:test"]
       },
       {
@@ -177,7 +240,12 @@ describe("official model selection and task skill adaptation", () => {
         compatibleModelFamilies: ["family-a"],
         incompatibleModelIds: [],
         riskClass: "HIGH",
-        source: "CORE",
+        source: "LEARNED",
+        contentDigest: "sha256:skill-deploy",
+        publisherId: "learning",
+        trustRootId: "learned-skills",
+        permissions: ["release"],
+        reviewReceiptRefs: [],
         evidenceRefs: []
       }
     ];
@@ -201,10 +269,11 @@ describe("official model selection and task skill adaptation", () => {
 });
 
 describe("durable failure and solution memory", () => {
-  it("remembers recurring failures, failed attempts, do-not-repeat rules and ranked verified solutions", async () => {
+  it("learns solutions only from independent trusted verification receipts", async () => {
     const root = await mkdtemp(join(tmpdir(), "corp-memory-"));
     roots.push(root);
-    const memory = new CorporateLearningMemory(root);
+    const trust = learningTrust();
+    const memory = new CorporateLearningMemory(root, trust);
 
     await memory.rememberFailure({
       fingerprint: "typescript:exact-optional",
@@ -235,13 +304,36 @@ describe("durable failure and solution memory", () => {
     expect(second.recurrenceCount).toBe(2);
     expect(second.status).toBe("RECURRENT");
 
+    const artifactFingerprint = "artifact:conditional-spread";
+    const receipts = [
+      createVerificationReceipt({
+        artifactFingerprint,
+        verifierId: "local-test",
+        trustRootId: "trust-local",
+        independentGroupId: "group-local",
+        providerLineageId: "lineage-local",
+        result: "PASS",
+        metrics,
+        evidenceRefs: ["ci:393"]
+      }),
+      createVerificationReceipt({
+        artifactFingerprint,
+        verifierId: "qc-review",
+        trustRootId: "trust-qc",
+        independentGroupId: "group-qc",
+        providerLineageId: "lineage-qc",
+        result: "PASS",
+        metrics,
+        evidenceRefs: ["qc:393"]
+      })
+    ];
+
     await memory.rememberSolution({
       problemFingerprint: "typescript:exact-optional",
       solutionFingerprint: "conditional-spread",
       title: "Conditional property spread",
       applicableContexts: ["TypeScript exactOptionalPropertyTypes"],
-      verificationRefs: ["ci:393"],
-      passed: true,
+      verificationReceipts: receipts,
       regression: false,
       moneyCost: 0,
       tokenCost: 0,
@@ -255,6 +347,7 @@ describe("durable failure and solution memory", () => {
 
     expect(found.matchingFailures[0]?.fingerprint).toBe("typescript:exact-optional");
     expect(found.candidateSolutions[0]?.solutionFingerprint).toBe("conditional-spread");
+    expect(found.candidateSolutions[0]?.verificationReceiptIds).toHaveLength(2);
     expect(found.doNotRepeat).toContain("do not assign undefined to exact optional property");
   });
 });
