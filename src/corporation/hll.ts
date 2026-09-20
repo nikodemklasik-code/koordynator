@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
 import type { HllDecision, HllProvenance, HllStatement } from "./domain.js";
+import type { AuthorityEpoch, DecisionReceipt } from "./receipts.js";
+import { verifyDecisionReceipt } from "./receipts.js";
 
 export function makeHllStatement(input: {
   subject: HllStatement["subject"];
@@ -33,14 +35,27 @@ export function makeHllStatement(input: {
   };
 }
 
-export function hllAllows(decision: HllDecision, action: string): boolean {
-  return decision.verdict === "ALLOW"
-    && decision.truthState === "RATIFIED"
-    && decision.allowedBrainActions.includes(action);
+export function hllAllows(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  receipt: DecisionReceipt;
+  action: string;
+  expectedAuthority?: AuthorityEpoch;
+}): boolean {
+  try {
+    verifyDecisionReceipt(input);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-export function assertHllAllows(decision: HllDecision, action: string): void {
-  if (decision.verdict === "BLOCK") throw new Error("HLL_ACTION_BLOCKED");
-  if (decision.truthState !== "RATIFIED") throw new Error("HLL_TRUTH_NOT_RATIFIED");
-  if (!decision.allowedBrainActions.includes(action)) throw new Error("HLL_BRAIN_ACTION_NOT_ALLOWED");
+export function assertHllAllows(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  receipt: DecisionReceipt;
+  action: string;
+  expectedAuthority?: AuthorityEpoch;
+}): void {
+  verifyDecisionReceipt(input);
 }
