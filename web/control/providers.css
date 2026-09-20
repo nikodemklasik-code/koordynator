@@ -89,3 +89,126 @@ body { margin:0; overflow:hidden; background:#090d10; }
 @container (max-width:560px) { .provider-row,.receipt-row { grid-template-columns:1fr; } .provider-actions { grid-template-columns:1fr 1fr; } }
 @media (max-width:900px) { .provider-shell { grid-template-columns:1fr; } .provider-sidebar { display:none; } .provider-main { height:100vh; min-height:0; grid-template-rows:70px minmax(0,1fr) 58px; } .provider-topbar { min-height:70px; } .provider-content { padding:12px; } .github-connection-card { align-items:flex-start; flex-direction:column; } }
 @media (max-width:640px) { .card-head { align-items:flex-start; flex-direction:column; } .github-connection-actions { width:100%; } .github-connection-actions #githubConnectButton { flex:1; } }
+
+
+/* SELF_IMPROVEMENT_SUPERVISOR */
+.self-improvement-card {
+  grid-column:1/-1;
+  min-width:0;
+  border:1px solid #334654;
+  border-radius:8px;
+  background:linear-gradient(180deg,#111a21,#0f161b);
+  overflow:hidden;
+}
+.self-improvement-head {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:15px 16px;
+  border-bottom:1px solid #29343d;
+}
+.self-improvement-head h1 { margin:0; font-size:13px; letter-spacing:.07em; }
+.self-improvement-head p { margin:7px 0 0; color:var(--p-muted); font-size:11px; line-height:1.5; max-width:900px; }
+.self-improvement-actions { display:flex; gap:8px; flex:0 0 auto; }
+.self-improvement-actions button,
+.self-improvement-row-actions button {
+  min-height:36px;
+  padding:0 12px;
+  border:1px solid #3a4650;
+  border-radius:6px;
+  background:#172027;
+  color:white;
+  cursor:pointer;
+}
+.self-improvement-actions button:disabled,
+.self-improvement-row-actions button:disabled { opacity:.48; cursor:not-allowed; }
+.self-improvement-metrics {
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:1px;
+  background:#29343d;
+  border-bottom:1px solid #29343d;
+}
+.self-improvement-metrics>div {
+  min-width:0;
+  padding:13px 16px;
+  background:#0f161b;
+}
+.self-improvement-metrics span {
+  display:block;
+  color:#7f8b94;
+  font-size:9px;
+  letter-spacing:.08em;
+}
+.self-improvement-metrics strong {
+  display:block;
+  margin-top:6px;
+  color:#edf1f3;
+  font-size:16px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.self-improvement-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:0;
+}
+.self-improvement-grid>section { min-width:0; padding:14px 16px 16px; }
+.self-improvement-grid>section+section { border-left:1px solid #29343d; }
+.self-improvement-grid h2 { margin:0 0 10px; font-size:10px; letter-spacing:.08em; color:#8e979f; }
+.self-improvement-rows {
+  display:grid;
+  gap:7px;
+  max-height:360px;
+  overflow:auto;
+}
+.self-improvement-row,
+.self-improvement-opportunity {
+  min-width:0;
+  display:grid;
+  align-items:center;
+  gap:10px;
+  padding:10px;
+  border:1px solid #29343d;
+  border-radius:7px;
+  background:#0c1217;
+}
+.self-improvement-row { grid-template-columns:minmax(0,1fr) auto auto auto; }
+.self-improvement-opportunity { grid-template-columns:minmax(0,1fr) minmax(100px,.5fr) auto auto; }
+.self-improvement-row strong,
+.self-improvement-opportunity strong { font-size:11px; }
+.self-improvement-row small,
+.self-improvement-opportunity small {
+  display:block;
+  margin-top:4px;
+  color:#89959e;
+  font-size:10px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+.self-improvement-row code,
+.self-improvement-opportunity code {
+  min-width:0;
+  color:#aeb9c1;
+  font-size:10px;
+  overflow-wrap:anywhere;
+}
+.self-improvement-policy {
+  padding:11px 16px;
+  border-top:1px solid #29343d;
+  color:#80909b;
+  font-size:10px;
+  line-height:1.5;
+}
+@media (max-width:900px) {
+  .self-improvement-head { flex-direction:column; }
+  .self-improvement-actions { width:100%; }
+  .self-improvement-actions button { flex:1; }
+  .self-improvement-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .self-improvement-grid { grid-template-columns:1fr; }
+  .self-improvement-grid>section+section { border-left:0; border-top:1px solid #29343d; }
+  .self-improvement-row,
+  .self-improvement-opportunity { grid-template-columns:1fr; }
+}
