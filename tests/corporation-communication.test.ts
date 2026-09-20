@@ -5,19 +5,45 @@ import {
   routeCorporateMessage,
   validateCommunicationGraph
 } from "../src/corporation/communication.js";
+import { makeHllStatement } from "../src/corporation/hll.js";
 import { defaultOrganizationModel } from "../src/corporation/organization.js";
 import type { HllDecision } from "../src/corporation/domain.js";
+import { createApprovalReceipt, createDecisionReceipt } from "../src/corporation/receipts.js";
 
-function ratified(): HllDecision {
-  return {
-    decisionId: "DEC-COMM-1",
-    statementId: "HLL-COMM-1",
+const HLL_AUTHORITY = { authorityId: "hll-test", epoch: "1" };
+const EMERGENCY_AUTHORITY = { authorityId: "incident-command", epoch: "1" };
+
+function communicationHll() {
+  const statement = makeHllStatement({
+    subject: "COMMUNICATION",
+    proposition: "This material corporate communication may be routed.",
+    payload: { route: "DEPT-PRODUCT->DEPT-PRODUCTION" },
+    provenance: {
+      sourceType: "SYSTEM",
+      sourceId: "communication-router",
+      evidenceRefs: ["knowledge:handoff"],
+      observedAt: new Date().toISOString()
+    },
+    requestedBrainActions: ["corporation.communicate"]
+  });
+  const decision: HllDecision = {
+    decisionId: `DEC-${statement.statementId}`,
+    statementId: statement.statementId,
     truthState: "RATIFIED",
     verdict: "ALLOW",
     reasons: [],
-    allowedBrainActions: ["corporation.communicate", "corporation.handoff"],
+    allowedBrainActions: ["corporation.communicate"],
     requiredAuthorisations: [],
     decidedAt: new Date().toISOString()
+  };
+  return {
+    statement,
+    decision,
+    receipt: createDecisionReceipt({
+      statement,
+      decision,
+      authority: HLL_AUTHORITY
+    })
   };
 }
 
@@ -49,7 +75,7 @@ describe("interdepartmental communication graph", () => {
     ]));
   });
 
-  it("requires a knowledge package and ratified HLL decision for material Product -> Production handoff", () => {
+  it("requires a knowledge package and statement-bound HLL receipt for Product -> Production handoff", () => {
     const organization = defaultOrganizationModel();
     const graph = defaultCommunicationGraph();
 
@@ -60,8 +86,7 @@ describe("interdepartmental communication graph", () => {
       toDepartmentId: "DEPT-PRODUCTION",
       kind: "HANDOFF",
       priority: "P1",
-      subject: "Build approved feature",
-      material: true
+      subject: "Build approved feature"
     })).toThrow("COMM_KNOWLEDGE_PACKAGE_REQUIRED");
 
     expect(() => routeCorporateMessage({
@@ -72,10 +97,10 @@ describe("interdepartmental communication graph", () => {
       kind: "HANDOFF",
       priority: "P1",
       subject: "Build approved feature",
-      material: true,
       knowledgePackageId: "KPACK-1"
-    })).toThrow("COMM_HLL_RATIFICATION_REQUIRED");
+    })).toThrow("COMM_HLL_DECISION_RECEIPT_REQUIRED");
 
+    const hll = communicationHll();
     const routed = routeCorporateMessage({
       graph,
       organization,
@@ -86,18 +111,20 @@ describe("interdepartmental communication graph", () => {
       subject: "Build approved feature",
       taskId: "CORP-1",
       stageId: "STAGE-PRODUCT",
-      material: true,
       knowledgePackageId: "KPACK-1",
       evidenceRefs: ["product-spec:1", "research:2"],
-      hllDecision: ratified()
+      hllStatement: hll.statement,
+      hllDecision: hll.decision,
+      hllReceipt: hll.receipt
     });
 
     expect(routed.message.blocking).toBe(true);
     expect(routed.message.requiresAcknowledgement).toBe(true);
+    expect(routed.message.policyClassification.material).toBe(true);
     expect(routed.observerDepartmentIds).toContain("DEPT-QC");
   });
 
-  it("keeps Testing -> Production feedback non-blocking so verification can report failures without creating a circular gate", () => {
+  it("keeps Testing -> Production feedback non-blocking", () => {
     const routed = routeCorporateMessage({
       graph: defaultCommunicationGraph(),
       organization: defaultOrganizationModel(),
@@ -114,7 +141,7 @@ describe("interdepartmental communication graph", () => {
     expect(routed.message.requiresAcknowledgement).toBe(true);
   });
 
-  it("adds cross-cutting Legal, Finance and QC observers for material external commitments", () => {
+  it("derives external/material classification instead of trusting caller booleans", () => {
     const graph = defaultCommunicationGraph();
     graph.dependencies.push({
       dependencyId: "DEP-DEPT-PRODUCT-DEPT-CEO-INFORMATION",
@@ -137,10 +164,12 @@ describe("interdepartmental communication graph", () => {
       kind: "DECISION",
       priority: "P1",
       subject: "External commercial launch commitment",
-      material: true,
-      externalEffect: true
+      effects: ["publish"],
+      destinationClass: "EXTERNAL_PUBLIC"
     });
 
+    expect(routed.message.policyClassification.externalEffect).toBe(true);
+    expect(routed.message.policyClassification.material).toBe(true);
     expect(routed.observerDepartmentIds).toEqual(expect.arrayContaining([
       "DEPT-QC",
       "DEPT-LEGAL",
@@ -149,9 +178,7 @@ describe("interdepartmental communication graph", () => {
     ]));
   });
 
-
-
-  it("prevents an undelegated Agent from owning a material cross-department handoff but keeps P0 escalation open", () => {
+  it("prevents an undelegated Agent from a material handoff and requires a bound receipt for P0 bypass", () => {
     const organization = defaultOrganizationModel();
     const graph = defaultCommunicationGraph();
     const productAgent = organization.positions.find((item) =>
@@ -167,9 +194,7 @@ describe("interdepartmental communication graph", () => {
       kind: "HANDOFF",
       priority: "P1",
       subject: "Material product handoff",
-      material: true,
-      knowledgePackageId: "KPACK-AGENT",
-      hllDecision: ratified()
+      knowledgePackageId: "KPACK-AGENT"
     })).toThrow("COMM_AGENT_MATERIAL_CROSS_DEPARTMENT_REQUIRES_DELEGATION");
 
     graph.dependencies.push({
@@ -185,6 +210,23 @@ describe("interdepartmental communication graph", () => {
       qcVisible: true
     });
 
+    const policyPayload = {
+      kind: "ESCALATION" as const,
+      priority: "P0" as const,
+      dependencyKind: "INFORMATION" as const,
+      effects: [],
+      dataClasses: [],
+      destinationClass: "INTERNAL" as const
+    };
+    const approval = createApprovalReceipt({
+      authority: EMERGENCY_AUTHORITY,
+      action: "corporation.declare-p0",
+      subjectId: "DEPT-PRODUCT->DEPT-CEO:ESCALATION",
+      payload: policyPayload,
+      scope: { priority: "P0", kind: "ESCALATION" },
+      validUntil: new Date(Date.now() + 60_000).toISOString()
+    });
+
     const escalation = routeCorporateMessage({
       graph,
       organization,
@@ -194,11 +236,13 @@ describe("interdepartmental communication graph", () => {
       kind: "ESCALATION",
       priority: "P0",
       subject: "Critical risk escalation",
-      highRisk: true
+      emergencyApproval: approval,
+      emergencyAuthority: EMERGENCY_AUTHORITY
     });
 
     expect(escalation.message.priority).toBe("P0");
     expect(escalation.message.fromPositionId).toBe(productAgent.positionId);
+    expect(escalation.message.policyClassification.highRisk).toBe(true);
   });
 
   it("rejects undeclared department-to-department communication paths", () => {
