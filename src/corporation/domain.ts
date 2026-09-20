@@ -1,4 +1,4 @@
-import type { DecisionReceipt } from "./receipts.js";
+import type { DecisionReceipt, HllRecordReceipt } from "./receipts.js";
 
 export type CorporateRisk = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
@@ -138,6 +138,7 @@ export type Department = {
   hllDecision?: HllDecision;
   hllStatement?: HllStatement;
   hllReceipt?: DecisionReceipt;
+  hllRecordReceipt?: HllRecordReceipt;
 };
 
 export type RoleContract = {
@@ -161,6 +162,7 @@ export type RoleContract = {
   hllDecision?: HllDecision;
   hllStatement?: HllStatement;
   hllReceipt?: DecisionReceipt;
+  hllRecordReceipt?: HllRecordReceipt;
 };
 
 export type RecruitmentCapabilityCeiling = {
@@ -189,6 +191,7 @@ export type RecruitmentRequest = {
   hllDecision?: HllDecision;
   hllStatement?: HllStatement;
   hllReceipt?: DecisionReceipt;
+  hllRecordReceipt?: HllRecordReceipt;
   resultingRoleId?: string;
 };
 
@@ -238,6 +241,7 @@ export type ExecutionPlan = {
   hllDecision?: HllDecision;
   hllStatement?: HllStatement;
   hllReceipt?: DecisionReceipt;
+  hllRecordReceipt?: HllRecordReceipt;
 };
 
 export type CorporateTask = CorporateTaskInput & {
@@ -248,6 +252,7 @@ export type CorporateTask = CorporateTaskInput & {
   hllDecision: HllDecision;
   hllStatement: HllStatement;
   hllReceipt: DecisionReceipt;
+  hllRecordReceipt: HllRecordReceipt;
   plan?: ExecutionPlan;
   createdAt: string;
   updatedAt: string;
