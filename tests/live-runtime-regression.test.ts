@@ -50,15 +50,21 @@ describe("live runtime regressions", () => {
   });
 
   it("keeps ordinary chat direct and wires OmniRoute recovery into Control and Hermes CLI", async () => {
-    const [main, packageJson] = await Promise.all([
+    const [main, packageJson, chatModels, chatUsage] = await Promise.all([
       readFile("src/control/main.ts", "utf8"),
-      readFile("package.json", "utf8")
+      readFile("package.json", "utf8"),
+      readFile("web/control/chat-models.js", "utf8"),
+      readFile("web/control/chat-usage.js", "utf8")
     ]);
 
     expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1"');
     expect(main).toContain("omniroute-keeper.mjs");
     expect(main).toContain("WorkingChatModelCatalogService");
     expect(main).toContain("KOORDYNATOR_CHAT_WORKING_SET");
+    expect(chatModels).toContain('"✓ LIVE"');
+    expect(chatModels).toContain("dataset.workingSet");
+    expect(chatUsage).toContain("FREE USED 24H");
+    expect(chatUsage).toContain("Remaining FREE token quota is not fabricated");
     expect(packageJson).toContain("hermes-managed.mjs");
   });
 });
