@@ -34,7 +34,6 @@ describe("receipt binding invariants", () => {
       })),
       provenanceIds: [`PROV-${statement.statementId}`],
       hllVersion: "HLL/1.0",
-      canonicalRecordHash: `REC-${statement.statementId}`
     };
   }
 
