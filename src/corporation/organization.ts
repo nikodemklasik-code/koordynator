@@ -21,6 +21,11 @@ export type CorporateFunction =
   | "CUSTOMER_SUCCESS"
   | "PROCUREMENT"
   | "COMPLIANCE_RISK"
+  | "SCIENTIFIC_RESEARCH"
+  | "INNOVATION"
+  | "VENTURE_STUDIO"
+  | "GROWTH"
+  | "CORPORATE_INTELLIGENCE"
   | "CUSTOM";
 
 export type CorporateRank =
@@ -239,6 +244,47 @@ export function defaultDepartmentCharters(): DepartmentCharter[] {
       ["risk register", "controls", "compliance evidence", "control testing"],
       "CRITICAL",
       true
+    ),
+    seed(
+      "DEPT-SCIENCE-INNOVATION",
+      "Scientific Research & Innovation",
+      "SCIENTIFIC_RESEARCH",
+      "Run scientific inquiry, falsification, experiments and evidence-backed innovation programs.",
+      ["scientific research", "hypothesis design", "falsification", "experiments", "literature review", "innovation evidence"],
+      "HIGH",
+      true
+    ),
+    seed(
+      "DEPT-INNOVATION",
+      "Innovation & Technology Radar",
+      "INNOVATION",
+      "Continuously absorb relevant novelty from science, technology, providers, standards and markets.",
+      ["novelty intake", "technology radar", "trend detection", "provider change tracking", "innovation triage", "opportunity discovery"],
+      "MEDIUM"
+    ),
+    seed(
+      "DEPT-VENTURE-STUDIO",
+      "Venture Studio & Product Incubation",
+      "VENTURE_STUDIO",
+      "Turn verified opportunities into experiments, prototypes, product candidates and independent products.",
+      ["idea incubation", "product experiments", "prototype portfolio", "business model tests", "product spin-up"],
+      "HIGH"
+    ),
+    seed(
+      "DEPT-GROWTH",
+      "Growth & Channel Development",
+      "GROWTH",
+      "Discover, test and scale acquisition, outreach, partnership and distribution channels.",
+      ["channel discovery", "growth experiments", "outreach planning", "campaign operations", "partnership sourcing", "funnel optimisation"],
+      "HIGH"
+    ),
+    seed(
+      "DEPT-CORPORATE-INTELLIGENCE",
+      "Corporate Intelligence",
+      "CORPORATE_INTELLIGENCE",
+      "Maintain external situational awareness across markets, competitors, regulation, technology and strategic signals.",
+      ["market intelligence", "competitor monitoring", "regulatory watch", "technology watch", "strategic signals"],
+      "HIGH"
     )
   ];
 }
