@@ -88,3 +88,13 @@ export function hllDecisionMayBeRecorded(decision: HllDecision): boolean {
     && ["RECORD", "REGISTER_UNRESOLVED", "UPDATE_RECORD"].includes(permission.action)
   );
 }
+
+export function hllDecisionSupportsExecution(decision: HllDecision): boolean {
+  return decision.truthState === "CONFIRMED"
+    && decision.eligibleForFact
+    && decision.blockers.length === 0
+    && decision.allowedBrainActions.some((permission) =>
+      permission.scope === "INTERNAL"
+      && ["RECORD", "UPDATE_RECORD"].includes(permission.action)
+    );
+}
