@@ -120,7 +120,7 @@ export class InnovationRadar {
     const signal = this.requireSignal(signalId);
     if (decision) signal.hllDecision = decision;
 
-    signal.status = decision?.truthState === "REJECTED" || decision?.verdict === "BLOCK"
+    signal.status = decision && ["FALSE", "CONTRADICTED", "ERROR", "EXPIRED"].includes(decision.truthState)
       ? "REJECTED"
       : "TRIAGED";
 
@@ -138,11 +138,13 @@ export class InnovationRadar {
         statement: assessment.statement,
         decision: assessment.decision,
         receipt: assessment.receipt,
-        action: "corporation.verify-innovation-signal"
+        action: "RECORD"
       });
-      signal.status = "VERIFIED";
+      signal.status = assessment.decision.truthState === "CONFIRMED"
+        ? "VERIFIED"
+        : "TRIAGED";
     } catch {
-      signal.status = assessment.decision.truthState === "REJECTED" || assessment.decision.verdict === "BLOCK"
+      signal.status = ["FALSE", "CONTRADICTED", "ERROR", "EXPIRED"].includes(assessment.decision.truthState)
         ? "REJECTED"
         : "TRIAGED";
     }
@@ -259,8 +261,12 @@ export class InnovationRadar {
       statement: assessment.statement,
       decision: assessment.decision,
       receipt: assessment.receipt,
-      action: "corporation.absorb-innovation"
+      action: "UPDATE_RECORD"
     });
+
+    if (assessment.decision.truthState !== "CONFIRMED") {
+      throw new Error("INNOVATION_HLL_NOT_CONFIRMED");
+    }
 
     opportunity.status = "ABSORBED";
     opportunity.hllDecision = assessment.decision;
