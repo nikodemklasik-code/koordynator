@@ -232,7 +232,11 @@ export class VerificationActivationService {
     const result = await this.executor.open(activation.url);
     if (result.ok) {
       await this.inbox.markProcessed(message.messageId);
-      return { status: "PASS", activation, detail: result.detail };
+      return {
+        status: "PASS",
+        activation,
+        ...(result.detail === undefined ? {} : { detail: result.detail })
+      };
     }
 
     return {
