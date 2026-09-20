@@ -22,10 +22,24 @@ export type DecisionReceipt = {
   allowedBrainActions: HllDecision["allowedBrainActions"];
   provenanceIds: string[];
   hllVersion: string;
-  canonicalRecordHash?: string;
   semanticHash?: string;
   issuedAt: string;
   validUntil?: string;
+  receiptFingerprint: string;
+};
+
+export type HllRecordReceipt = {
+  receiptId: string;
+  statementId: string;
+  statementFingerprint: string;
+  decisionId: string;
+  brainDecisionHash: string;
+  canonicalRecordHash: string;
+  truthState: HllDecision["truthState"];
+  hllVersion: string;
+  authorityId: string;
+  authorityEpoch: string;
+  issuedAt: string;
   receiptFingerprint: string;
 };
 
@@ -119,7 +133,6 @@ function decisionDigest(decision: HllDecision): string {
       .sort((a, b) => a.scope.localeCompare(b.scope) || a.action.localeCompare(b.action)),
     provenanceIds: [...decision.provenanceIds].sort(),
     hllVersion: decision.hllVersion,
-    canonicalRecordHash: decision.canonicalRecordHash ?? null,
     semanticHash: decision.semanticHash ?? null
   });
 }
@@ -151,9 +164,6 @@ export function createDecisionReceipt(input: {
       .sort((a, b) => a.scope.localeCompare(b.scope) || a.action.localeCompare(b.action)),
     provenanceIds: [...input.decision.provenanceIds].sort(),
     hllVersion: input.decision.hllVersion,
-    ...(input.decision.canonicalRecordHash === undefined
-      ? {}
-      : { canonicalRecordHash: input.decision.canonicalRecordHash }),
     ...(input.decision.semanticHash === undefined
       ? {}
       : { semanticHash: input.decision.semanticHash }),
@@ -209,6 +219,51 @@ export function verifyDecisionReceipt(input: {
 
   const { receiptFingerprint, ...base } = receipt;
   if (receiptFingerprint !== canonicalDigest(base)) throw new Error("HLL_DECISION_RECEIPT_TAMPERED");
+}
+
+export function createHllRecordReceipt(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  brainDecisionHash: string;
+  canonicalRecordHash: string;
+  authority: AuthorityEpoch;
+}): HllRecordReceipt {
+  if (!input.brainDecisionHash.trim()) throw new Error("HLL_BRAIN_DECISION_HASH_MISSING");
+  if (!input.canonicalRecordHash.trim()) throw new Error("HLL_CANONICAL_RECORD_HASH_MISSING");
+  const base = {
+    receiptId: `HLLREC-${randomUUID().slice(0, 10).toUpperCase()}`,
+    statementId: input.statement.statementId,
+    statementFingerprint: input.statement.fingerprint,
+    decisionId: input.decision.decisionId,
+    brainDecisionHash: input.brainDecisionHash,
+    canonicalRecordHash: input.canonicalRecordHash,
+    truthState: input.decision.truthState,
+    hllVersion: input.decision.hllVersion,
+    authorityId: input.authority.authorityId,
+    authorityEpoch: input.authority.epoch,
+    issuedAt: new Date().toISOString()
+  };
+  return { ...base, receiptFingerprint: canonicalDigest(base) };
+}
+
+export function verifyHllRecordReceipt(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  receipt: HllRecordReceipt;
+  expectedAuthority?: AuthorityEpoch;
+}): void {
+  const r = input.receipt;
+  if (r.statementId !== input.statement.statementId) throw new Error("HLL_RECORD_STATEMENT_ID_MISMATCH");
+  if (r.statementFingerprint !== input.statement.fingerprint) throw new Error("HLL_RECORD_STATEMENT_FINGERPRINT_MISMATCH");
+  if (r.decisionId !== input.decision.decisionId) throw new Error("HLL_RECORD_DECISION_ID_MISMATCH");
+  if (r.truthState !== input.decision.truthState) throw new Error("HLL_RECORD_TRUTH_STATE_MISMATCH");
+  if (r.hllVersion !== input.decision.hllVersion) throw new Error("HLL_RECORD_VERSION_MISMATCH");
+  if (input.expectedAuthority) {
+    if (r.authorityId !== input.expectedAuthority.authorityId) throw new Error("HLL_RECORD_AUTHORITY_ID_MISMATCH");
+    if (r.authorityEpoch !== input.expectedAuthority.epoch) throw new Error("HLL_RECORD_AUTHORITY_EPOCH_MISMATCH");
+  }
+  const { receiptFingerprint, ...base } = r;
+  if (receiptFingerprint !== canonicalDigest(base)) throw new Error("HLL_RECORD_RECEIPT_TAMPERED");
 }
 
 export function createApprovalReceipt(input: {
