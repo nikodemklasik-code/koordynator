@@ -17,6 +17,8 @@ import { assertHllAllows, makeHllStatement } from "./hll.js";
 import { buildBaselinePlan } from "./planner.js";
 import { defaultDepartmentCharters, type CorporateFunction } from "./organization.js";
 import { VerifierTrustRegistry } from "./verification-trust.js";
+import type { ApprovalReceipt, AuthorityEpoch, DecisionReceipt } from "./receipts.js";
+import { verifyApprovalReceipt } from "./receipts.js";
 import type {
   CorporateEventStore,
   CorporationStateStore,
@@ -100,6 +102,25 @@ function riskForEffects(effects: string[]): CorporateRisk {
   if (/deploy|release|git\.merge|vault\.read|account\.create|oauth/.test(joined)) return "HIGH";
   if (/fs\.write|browser/.test(joined)) return "MEDIUM";
   return "LOW";
+}
+
+const riskRank: Record<CorporateRisk, number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 };
+
+function maxRisk(...risks: CorporateRisk[]): CorporateRisk {
+  return [...risks].sort((a, b) => riskRank[b] - riskRank[a])[0] ?? "LOW";
+}
+
+function roleRisk(input: { effects: string[]; tools: string[]; rights: string[] }): CorporateRisk {
+  return maxRisk(
+    riskForEffects(input.effects),
+    riskForEffects(input.tools),
+    riskForEffects(input.rights)
+  );
+}
+
+function subsetOf(candidate: string[], ceiling: string[]): boolean {
+  const allowed = new Set(ceiling.map((item) => item.toLowerCase()));
+  return candidate.every((item) => allowed.has(item.toLowerCase()));
 }
 
 function initialDepartments(at: string): Department[] {
@@ -203,6 +224,7 @@ export class CorporationKernel {
     events: CorporateEventStore;
     executors: ExecutorRegistryPort;
     verifierTrust?: VerifierTrustRegistry;
+    approvalAuthority?: AuthorityEpoch;
   }) {
     this.capabilities = new CapabilityRegistry(ports.executors);
   }
@@ -284,7 +306,9 @@ export class CorporationKernel {
           "corporation.delegate-task"
         ]
       });
-      const hllDecision = await this.ports.hll.assess(statement);
+      const hllAssessment = await this.ports.hll.assess(statement);
+      const hllDecision = hllAssessment.decision;
+      const hllReceipt = hllAssessment.receipt;
       const at = iso();
       const task: CorporateTask = {
         ...normalized,
@@ -292,12 +316,14 @@ export class CorporationKernel {
         departmentId,
         status: hllDecision.verdict === "BLOCK" || hllDecision.truthState === "REJECTED"
           ? "BLOCKED"
-          : hllDecision.verdict === "ALLOW" && hllDecision.truthState === "RATIFIED"
+          : this.isAllowed(statement, hllDecision, hllReceipt, "corporation.plan-task")
             ? "PROPOSED"
             : "NEEDS_REVISION",
         assignedRoleIds: [],
         recruitmentIds: [],
         hllDecision,
+        hllStatement: statement,
+        hllReceipt,
         createdAt: at,
         updatedAt: at
       };
@@ -325,23 +351,19 @@ export class CorporationKernel {
   async fulfillRecruitment(
     recruitmentId: string,
     draft: RoleContractDraft,
-    approved = false
+    approvalReceipt?: ApprovalReceipt
   ): Promise<RoleContract> {
     return this.mutate(async () => {
       const state = await this.snapshot();
       const request = state.recruitments.find((item) => item.recruitmentId === recruitmentId);
       if (!request) throw new CorporationKernelError("RECRUITMENT_NOT_FOUND", 404);
       if (request.status !== "OPEN") throw new CorporationKernelError("RECRUITMENT_NOT_OPEN", 409);
-      if (request.approvalRequired && !approved) {
-        throw new CorporationKernelError("RECRUITMENT_APPROVAL_REQUIRED", 400);
-      }
 
       const department = state.departments.find((item) => item.departmentId === draft.departmentId && item.status === "ACTIVE");
       if (!department) throw new CorporationKernelError("DEPARTMENT_NOT_FOUND", 404);
 
       const at = iso();
-      const candidate: RoleContract = {
-        roleId: `ROLE-${randomUUID().slice(0, 8).toUpperCase()}`,
+      const normalizedScope = {
         name: cleanText(draft.name, "ROLE_NAME_INVALID", 160),
         departmentId: draft.departmentId,
         mission: cleanText(draft.mission, "ROLE_MISSION_INVALID"),
@@ -349,8 +371,49 @@ export class CorporationKernel {
         allowedEffects: [...new Set(draft.allowedEffects.map((item) => item.trim()).filter(Boolean))],
         allowedTools: [...new Set(draft.allowedTools.map((item) => item.trim()).filter(Boolean))],
         decisionRights: cleanList(draft.decisionRights, "ROLE_DECISION_RIGHTS_INVALID"),
-        successMeasures: cleanList(draft.successMeasures, "ROLE_SUCCESS_MEASURES_INVALID"),
-        risk: draft.risk,
+        successMeasures: cleanList(draft.successMeasures, "ROLE_SUCCESS_MEASURES_INVALID")
+      };
+
+      if (!subsetOf(normalizedScope.capabilities, request.capabilityCeiling.capabilities)) {
+        throw new CorporationKernelError("ROLE_CAPABILITY_CEILING_EXCEEDED", 409);
+      }
+      if (!subsetOf(normalizedScope.allowedEffects, request.capabilityCeiling.effects)) {
+        throw new CorporationKernelError("ROLE_EFFECT_CEILING_EXCEEDED", 409);
+      }
+      if (!subsetOf(normalizedScope.allowedTools, request.capabilityCeiling.tools)) {
+        throw new CorporationKernelError("ROLE_TOOL_CEILING_EXCEEDED", 409);
+      }
+      if (!subsetOf(normalizedScope.decisionRights, request.capabilityCeiling.decisionRights)) {
+        throw new CorporationKernelError("ROLE_DECISION_RIGHT_CEILING_EXCEEDED", 409);
+      }
+
+      if (request.approvalRequired) {
+        if (!approvalReceipt || !this.ports.approvalAuthority) {
+          throw new CorporationKernelError("RECRUITMENT_APPROVAL_RECEIPT_REQUIRED", 400);
+        }
+        try {
+          verifyApprovalReceipt({
+            receipt: approvalReceipt,
+            authority: this.ports.approvalAuthority,
+            action: "corporation.activate-role",
+            subjectId: request.recruitmentId,
+            payload: normalizedScope,
+            scope: request.capabilityCeiling
+          });
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "RECRUITMENT_APPROVAL_INVALID";
+          throw new CorporationKernelError(code, 403);
+        }
+      }
+
+      const candidate: RoleContract = {
+        roleId: `ROLE-${randomUUID().slice(0, 8).toUpperCase()}`,
+        ...normalizedScope,
+        risk: maxRisk(request.risk, roleRisk({
+          effects: normalizedScope.allowedEffects,
+          tools: normalizedScope.allowedTools,
+          rights: normalizedScope.decisionRights
+        })),
         status: "ACTIVE",
         version: 1,
         constitutionalSeed: false,
@@ -376,10 +439,16 @@ export class CorporationKernel {
         },
         requestedBrainActions: ["corporation.activate-role"]
       });
-      const decision = await this.ports.hll.assess(statement);
-      this.requireAllowed(decision, "corporation.activate-role");
+      const assessment = await this.ports.hll.assess(statement);
+      const decision = assessment.decision;
+      this.requireAllowed(statement, decision, assessment.receipt, "corporation.activate-role");
 
-      const role: RoleContract = { ...candidate, hllDecision: decision };
+      const role: RoleContract = {
+        ...candidate,
+        hllDecision: decision,
+        hllStatement: statement,
+        hllReceipt: assessment.receipt
+      };
       state.roles.push(role);
       request.status = "HIRED";
       request.resultingRoleId = role.roleId;
@@ -423,7 +492,7 @@ export class CorporationKernel {
   private async planUnlocked(state: CorporationSnapshot, taskId: string): Promise<CorporateTask> {
     const task = state.tasks.find((item) => item.taskId === taskId);
     if (!task) throw new CorporationKernelError("TASK_NOT_FOUND", 404);
-    this.requireAllowed(task.hllDecision, "corporation.plan-task");
+    this.requireAllowed(task.hllStatement, task.hllDecision, task.hllReceipt, "corporation.plan-task");
 
     const assigned = new Set<string>();
     const missing: string[] = [];
@@ -437,7 +506,7 @@ export class CorporationKernel {
 
     const recruitmentIds = new Set(task.recruitmentIds);
     for (const capability of missing) {
-      this.requireAllowed(task.hllDecision, "corporation.recruit");
+      this.requireAllowed(task.hllStatement, task.hllDecision, task.hllReceipt, "corporation.recruit");
 
       let request = state.recruitments.find((item) =>
         item.taskId === task.taskId
@@ -448,7 +517,17 @@ export class CorporationKernel {
 
       if (!request) {
         const at = iso();
-        const requestedEffects = [...task.requestedEffects];
+        const executorCeiling = await this.capabilities.ceilingForCapabilities([capability]);
+        const requestedEffects = task.requestedEffects.filter((effect) =>
+          executorCeiling.effects.map((item) => item.toLowerCase()).includes(effect.toLowerCase())
+        );
+        const safeDecisionRights = [
+          "execute-within-role-contract",
+          "report-evidence",
+          "escalate",
+          "investigate-within-scope",
+          "implement-within-scope"
+        ];
         const risk = riskForEffects(requestedEffects);
         const candidate: RecruitmentRequest = {
           recruitmentId: `RECRUIT-${randomUUID().slice(0, 8).toUpperCase()}`,
@@ -458,7 +537,14 @@ export class CorporationKernel {
           reason: `Capability gap for ${task.taskId}: ${capability}`,
           missingCapabilities: [capability],
           requestedEffects,
-          requestedTools: [],
+          requestedTools: [...executorCeiling.tools],
+          requestedDecisionRights: safeDecisionRights,
+          capabilityCeiling: {
+            capabilities: [capability],
+            effects: requestedEffects,
+            tools: [...executorCeiling.tools],
+            decisionRights: safeDecisionRights
+          },
           risk,
           status: "PROPOSED",
           approvalRequired: risk === "HIGH" || risk === "CRITICAL",
@@ -478,15 +564,16 @@ export class CorporationKernel {
           },
           requestedBrainActions: ["corporation.open-recruitment"]
         });
-        const decision = await this.ports.hll.assess(statement);
+        const assessment = await this.ports.hll.assess(statement);
+        const decision = assessment.decision;
         request = {
           ...candidate,
           hllDecision: decision,
+          hllStatement: statement,
+          hllReceipt: assessment.receipt,
           status: decision.verdict === "BLOCK"
             ? "BLOCKED"
-            : decision.truthState === "RATIFIED"
-              && decision.verdict === "ALLOW"
-              && decision.allowedBrainActions.includes("corporation.open-recruitment")
+            : this.isAllowed(statement, decision, assessment.receipt, "corporation.open-recruitment")
               ? "OPEN"
               : "NEEDS_REVISION"
         };
@@ -535,14 +622,18 @@ export class CorporationKernel {
       },
       requestedBrainActions: ["corporation.delegate-task"]
     });
-    const decision = await this.ports.hll.assess(statement);
-    const finalPlan: ExecutionPlan = { ...plan, hllDecision: decision };
+    const assessment = await this.ports.hll.assess(statement);
+    const decision = assessment.decision;
+    const finalPlan: ExecutionPlan = {
+      ...plan,
+      hllDecision: decision,
+      hllStatement: statement,
+      hllReceipt: assessment.receipt
+    };
     task.plan = finalPlan;
     task.status = decision.verdict === "BLOCK"
       ? "BLOCKED"
-      : decision.truthState === "RATIFIED"
-        && decision.verdict === "ALLOW"
-        && decision.allowedBrainActions.includes("corporation.delegate-task")
+      : this.isAllowed(statement, decision, assessment.receipt, "corporation.delegate-task")
         ? "READY"
         : "NEEDS_REVISION";
     task.updatedAt = iso();
@@ -556,9 +647,28 @@ export class CorporationKernel {
     return task;
   }
 
-  private requireAllowed(decision: HllDecision, action: string): void {
+  private isAllowed(
+    statement: import("./domain.js").HllStatement,
+    decision: HllDecision,
+    receipt: DecisionReceipt,
+    action: string
+  ): boolean {
     try {
-      assertHllAllows(decision, action);
+      assertHllAllows({ statement, decision, receipt, action });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private requireAllowed(
+    statement: import("./domain.js").HllStatement,
+    decision: HllDecision,
+    receipt: DecisionReceipt,
+    action: string
+  ): void {
+    try {
+      assertHllAllows({ statement, decision, receipt, action });
     } catch (error) {
       const code = error instanceof Error ? error.message : "HLL_ACTION_BLOCKED";
       throw new CorporationKernelError(code, code === "HLL_BRAIN_ACTION_NOT_ALLOWED" ? 403 : 409);
