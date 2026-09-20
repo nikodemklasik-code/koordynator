@@ -1,3 +1,5 @@
+import type { DecisionReceipt } from "./receipts.js";
+
 export type CorporateRisk = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 
 export type CorporatePlane =
@@ -100,6 +102,8 @@ export type Department = {
   constitutionalSeed: boolean;
   createdAt: string;
   hllDecision?: HllDecision;
+  hllStatement?: HllStatement;
+  hllReceipt?: DecisionReceipt;
 };
 
 export type RoleContract = {
@@ -121,6 +125,8 @@ export type RoleContract = {
   updatedAt: string;
   recruitmentId?: string;
   hllDecision?: HllDecision;
+  hllStatement?: HllStatement;
+  hllReceipt?: DecisionReceipt;
 };
 
 export type RecruitmentRequest = {
@@ -138,6 +144,8 @@ export type RecruitmentRequest = {
   createdAt: string;
   updatedAt: string;
   hllDecision?: HllDecision;
+  hllStatement?: HllStatement;
+  hllReceipt?: DecisionReceipt;
   resultingRoleId?: string;
 };
 
@@ -185,6 +193,8 @@ export type ExecutionPlan = {
   stages: ExecutionStage[];
   generatedAt: string;
   hllDecision?: HllDecision;
+  hllStatement?: HllStatement;
+  hllReceipt?: DecisionReceipt;
 };
 
 export type CorporateTask = CorporateTaskInput & {
@@ -193,6 +203,8 @@ export type CorporateTask = CorporateTaskInput & {
   assignedRoleIds: string[];
   recruitmentIds: string[];
   hllDecision: HllDecision;
+  hllStatement: HllStatement;
+  hllReceipt: DecisionReceipt;
   plan?: ExecutionPlan;
   createdAt: string;
   updatedAt: string;
