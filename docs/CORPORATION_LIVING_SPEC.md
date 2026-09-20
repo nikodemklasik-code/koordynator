@@ -143,6 +143,7 @@ tests/corporation-kernel-v2.test.ts
 tests/corporation-organization-qc-provider.test.ts
 tests/corporation-communication.test.ts
 tests/corporation-contract-model-skill-memory.test.ts
+tests/corporation-portfolio-innovation-growth.test.ts
 docs/CORPORATION_KERNEL_V2.md
 docs/CORPORATION_LIVING_SPEC.md
 docs/CORPORATION_COMMUNICATION_MAP.md
@@ -179,7 +180,13 @@ Implemented:
 - task-specific skill binding within official model capability ceilings;
 - stable plugin registry for replaceable providers/executors/verifiers/memory;
 - strict separation of build/diagnostics/repair/verification/QC duties;
-- durable Failure Memory and Solution Memory with recurrence and do-not-repeat knowledge.
+- durable Failure Memory and Solution Memory with recurrence and do-not-repeat knowledge;
+- multi-product/program/project portfolio with constrained capacity allocation;
+- Scientific Research & Innovation pipeline with explicit falsification criteria;
+- Innovation Radar and pluggable novelty-source intake;
+- Venture Studio/Product Incubation organizational layer;
+- Growth & Channel Development with marketing policy, contacts, campaigns and gated outreach;
+- Corporate Intelligence as an external-signal function.
 
 ## 6. Self-improvement target architecture
 
@@ -912,3 +919,213 @@ VERIFICATION/QC failure
 
 This is the basis for learning, recurrence detection and reliable autonomous error
 management.
+
+
+## 24. HLL as prevention, diagnosis, verification and falsification
+
+HLL is not only the language in which the Corporation records final truth. It is the
+epistemic control layer used before, during and after material work.
+
+Its corporate use covers four distinct functions:
+
+1. **Prevention** - detect unsupported assumptions, provenance gaps, contradictions,
+   mandate violations and invalid transitions before they enter canonical state.
+2. **Diagnosis** - represent what failed, what is known, what is uncertain and which
+   hypotheses could explain the failure.
+3. **Verification** - determine whether evidence is sufficient to support a claim,
+   handoff, execution result or quality conclusion.
+4. **Falsification** - record evidence against a hypothesis and reject propositions
+   that do not survive their stated falsification criteria.
+
+This means HLL surrounds execution rather than merely signing the end result:
+
+```
+proposition
+  -> HLL prevention
+  -> execution / experiment
+  -> HLL diagnosis when needed
+  -> verification / falsification evidence
+  -> HLL ratification or rejection
+```
+
+Koordynator manages work; HLL protects the epistemic quality of what Koordynator is
+allowed to treat as true.
+
+## 25. Multi-project Corporation and product formation
+
+Corporation v2 is designed to operate multiple products, programs and projects at
+the same time.
+
+The portfolio model separates:
+
+- **Product** - durable value proposition/customer problem;
+- **Program** - coordinated strategic body of work;
+- **Project** - bounded objective with departments, milestones, risk, capacity and
+  success definition.
+
+The portfolio scheduler must reason across the entire Corporation rather than one
+task at a time:
+
+```
+many products
+  -> many programs
+  -> many projects
+  -> dependencies
+  -> shared department capacity
+  -> portfolio priority
+  -> allocation / deferral
+```
+
+New products may emerge while existing products continue operating. Product
+formation is therefore a continuous corporate capability, not a one-time setup
+activity.
+
+The initial implementation is in `src/corporation/portfolio.ts`.
+
+## 26. Scientific Research, Innovation and novelty absorption
+
+The Corporation includes dedicated functions for:
+
+- Scientific Research & Innovation;
+- Innovation & Technology Radar;
+- Venture Studio & Product Incubation;
+- Corporate Intelligence.
+
+The scientific path is explicitly falsifiable:
+
+```
+signal
+  -> hypothesis
+  -> falsification criteria
+  -> experiment
+  -> evidence for / against
+  -> supported / falsified / inconclusive
+  -> HLL
+```
+
+Innovation is not accepted because it is new or fashionable. It is absorbed only
+after evidence and experiment establish that it is relevant enough to become
+corporate knowledge, a process improvement, a skill, a project or a product
+candidate.
+
+The Innovation Radar accepts novelty signals from science, patents, standards,
+regulation, provider documentation, model/software releases, repositories,
+conferences, markets, competitors, communities, customers and internal experiments.
+
+The pluggable novelty source layer is
+`src/corporation/novelty-sources.ts`.
+
+A source connector is replaceable. The Corporation tracks coverage, cost class,
+external dependence and trust class. The novelty pipeline must not depend on one
+commercial feed.
+
+## 27. Venture Studio and product incubation
+
+Verified opportunities may be transferred into Venture Studio.
+
+Venture Studio is responsible for:
+
+- idea portfolios;
+- product hypotheses;
+- prototypes;
+- business-model experiments;
+- evidence gathering;
+- product candidate formation;
+- handoff into Product when validation is sufficient.
+
+A new product therefore follows a traceable path rather than appearing as an
+unstructured side project:
+
+```
+novelty / customer problem / research result
+  -> opportunity
+  -> experiment
+  -> Venture Studio
+  -> QC / Legal / Finance as required
+  -> Product candidate
+  -> Product ownership
+  -> Production / Growth
+```
+
+## 28. Real marketing and growth operations
+
+Marketing and Growth are operating functions, not presentation-only dashboards.
+
+The target system supports:
+
+- durable marketing policy;
+- market/channel research;
+- contact discovery and evidence;
+- channel opportunities;
+- outreach campaigns;
+- message artifacts;
+- partnership sourcing;
+- sales-channel experiments;
+- funnel measurement;
+- learning from campaign results.
+
+External actions remain constitutionally separate from planning.
+
+For example:
+
+```
+research contact
+  -> verify relevance / legal basis
+  -> campaign draft
+  -> Legal review when required
+  -> QC review
+  -> Finance review when required
+  -> external authorisation
+  -> SEND_EMAIL / SEND_MESSAGE / follow-up
+  -> receipt
+  -> channel metrics
+  -> Growth / Sales / Product learning
+```
+
+The first domain implementation is
+`src/corporation/growth-operations.ts`.
+
+The module deliberately blocks externally effective outreach when the required
+authorisation is absent. Later email/contact connectors remain plugins rather than
+core dependencies.
+
+## 29. Source of novelty
+
+The Corporation has a standing **Novelty Intake** function rather than relying on a
+human remembering to check what changed.
+
+Novelty sources may include:
+
+- scientific publications;
+- patents;
+- standards;
+- regulation;
+- official provider/model documentation;
+- software/model releases;
+- repositories;
+- conferences;
+- market/competitor signals;
+- communities;
+- customer evidence;
+- internal experiments.
+
+Connectors ingest and deduplicate signals. Innovation Radar performs relevance and
+novelty triage. Scientific Research performs testing/falsification where needed.
+HLL determines what may become corporate truth.
+
+This is the external absorption loop:
+
+```
+world
+  -> source connectors
+  -> novelty intake
+  -> Corporate Intelligence / Innovation Radar
+  -> Scientific Research if needed
+  -> HLL
+  -> Strategy / Venture Studio / Product / Internal Development
+  -> execution
+  -> measured outcome
+  -> corporate learning memory
+```
+
+No single external source is trusted as the truth layer.
