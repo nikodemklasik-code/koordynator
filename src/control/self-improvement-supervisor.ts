@@ -428,7 +428,7 @@ export class SelfImprovementSupervisor {
   ): SelfImprovementIncident[] {
     const oldByKey = new Map(previous.map((item) => [item.key, item]));
     const activeKeys = new Set(findings.map((item) => item.key));
-    const merged = findings.map((finding) => {
+    const merged: SelfImprovementIncident[] = findings.map((finding): SelfImprovementIncident => {
       const old = oldByKey.get(finding.key);
       if (!old) return finding;
       return {
