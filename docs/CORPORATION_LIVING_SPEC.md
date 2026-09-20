@@ -1129,3 +1129,102 @@ world
 ```
 
 No single external source is trusted as the truth layer.
+
+
+## 30. Hardening freeze: evidence beats flags
+
+Corporation v2 is under a **hardening freeze** before real autonomous executors are
+connected.
+
+The governing safety rule is:
+
+```
+string / boolean / enum != proof
+```
+
+The following are not sufficient on their own:
+
+```
+approved = true
+verified = true
+truthState = RATIFIED
+externalAuthorisationRef = "..."
+independentGroup = "..."
+material = false
+priority = P0
+```
+
+Material authority now moves toward an evidence chain:
+
+```
+INPUT
+  -> deterministic policy / HLL statement
+  -> statement-bound DecisionReceipt
+  -> exact-scope Approval / Capability Lease Receipt
+  -> isolated execution
+  -> ExecutionReceipt
+  -> trusted independent VerificationReceipt
+  -> QC Decision
+  -> canonical or external effect
+```
+
+Current implemented hardening includes:
+
+- statement fingerprint + decision fingerprint binding;
+- authority ID/epoch and receipt expiry;
+- exact payload/scope approval receipts;
+- immutable Recruitment capability/effect/tool/decision-right ceiling;
+- risk derived from real effects instead of trusting draft declarations;
+- QC critical correctness/security/integrity/privacy/compliance failure blocking;
+- verifier trust-root, independent-group and provider-lineage validation;
+- candidate comparison from artifact/metrics-bound VerificationReceipts;
+- materiality/high-risk/external-effect classification derived by policy;
+- P0 emergency receipt requirement;
+- exact provider/model claim binding for model selection;
+- skill digest, publisher, trust root, permission, review and revocation checks;
+- Solution Memory learning only from trusted independent VerificationReceipts;
+- recipient-specific outreach approval and privacy/contact gates;
+- append-only hash-chained CAS journal;
+- atomic Corporation state + event commits when transactional store is wired;
+- tamper-evident capability leases;
+- ephemeral git worktree isolation substrate;
+- adversarial safety-invariant tests.
+
+## 31. Autonomous execution remains gated
+
+Green domain tests do not authorise real side effects.
+
+The following remain blocked from full Corporation v2 autonomy until their runtime
+boundaries are complete:
+
+- production HLL adapter;
+- real executor adapters;
+- hard process/network sandbox;
+- no-secret execution environment;
+- independent verifier runtime;
+- rollback/promotion executor;
+- browser send, email send, deploy and protected merge.
+
+The worktree manager provides filesystem/git isolation for candidate branches, but
+it is not by itself a complete process/network sandbox.
+
+This distinction is deliberate: an isolated directory is not magical containment,
+despite the recurring human temptation to rename a folder "sandbox" and consider
+physics defeated.
+
+## 32. Drift controls required before production autonomy
+
+The production runtime must continuously detect:
+
+- HLL/policy authority epoch drift;
+- stale Decision/Approval receipts;
+- provider capability and lineage drift;
+- model evidence drift;
+- Role Contract privilege drift;
+- skill content/version/trust drift and revocation;
+- verifier trust-root drift;
+- learning-memory poisoning/regression;
+- cross-project knowledge leakage;
+- runtime state versus canonical journal divergence.
+
+Any unresolved material drift produces BLOCKED/INCONCLUSIVE rather than PASS.
