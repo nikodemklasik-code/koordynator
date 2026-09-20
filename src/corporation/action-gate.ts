@@ -4,12 +4,18 @@ import type { HllBrainAction, HllDecision, HllStatement } from "./domain.js";
 import type {
   ApprovalReceipt,
   AuthorityEpoch,
-  DecisionReceipt
+  DecisionReceipt,
+  HllRecordReceipt
 } from "./receipts.js";
 import {
   verifyApprovalReceipt,
-  verifyDecisionReceipt
+  verifyDecisionReceipt,
+  verifyHllRecordReceipt
 } from "./receipts.js";
+import type {
+  VeraEffectAuthorityPort,
+  VeraPrepareEffectInput
+} from "./vera-authority.js";
 
 export type ActionDecisionReceipt = {
   actionDecisionId: string;
@@ -87,5 +93,70 @@ export function authoriseAction(input: {
   return {
     ...base,
     receiptFingerprint: canonicalDigest(base)
+  };
+}
+
+
+export type VeraEffectDecision = {
+  actionDecision: ActionDecisionReceipt;
+  permitId: string;
+};
+
+/**
+ * Material/external execution path.
+ *
+ * HLL proves semantic admissibility and the canonical record proves that the
+ * proposition actually crossed the HLL write barrier. Corporation/Brain then
+ * chooses an allowed action. VERA remains the final execution authority and
+ * alone may issue the single-use effect permit.
+ *
+ * No local boolean, ActionDecisionReceipt or HLL CONFIRMED state is an effect
+ * permit.
+ */
+export async function authoriseVeraEffect(input: {
+  statement: HllStatement;
+  decision: HllDecision;
+  decisionReceipt: DecisionReceipt;
+  hllRecordReceipt: HllRecordReceipt;
+  brainAction: HllBrainAction;
+  subjectId: string;
+  payload: unknown;
+  scope: unknown;
+  requiredAuthorisations: string[];
+  approvals: ApprovalReceipt[];
+  authorities: Record<string, AuthorityEpoch>;
+  vera: VeraEffectAuthorityPort;
+  effect: VeraPrepareEffectInput;
+  now?: Date;
+}): Promise<VeraEffectDecision> {
+  verifyHllRecordReceipt({
+    statement: input.statement,
+    decision: input.decision,
+    receipt: input.hllRecordReceipt,
+    expectedAuthority: {
+      authorityId: input.decisionReceipt.authorityId,
+      epoch: input.decisionReceipt.authorityEpoch
+    }
+  });
+
+  const actionDecision = authoriseAction({
+    statement: input.statement,
+    decision: input.decision,
+    decisionReceipt: input.decisionReceipt,
+    brainAction: input.brainAction,
+    subjectId: input.subjectId,
+    payload: input.payload,
+    scope: input.scope,
+    requiredAuthorisations: input.requiredAuthorisations,
+    approvals: input.approvals,
+    authorities: input.authorities,
+    ...(input.now === undefined ? {} : { now: input.now })
+  });
+
+  const permit = await input.vera.prepareEffect(input.effect);
+
+  return {
+    actionDecision,
+    permitId: permit.permitId
   };
 }
