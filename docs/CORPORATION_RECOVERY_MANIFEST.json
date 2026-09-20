@@ -48,7 +48,8 @@
     "src/corporation/provider-fabric.ts",
     "src/corporation/communication.ts",
     "tests/corporation-organization-qc-provider.test.ts",
-    "tests/corporation-communication.test.ts"
+    "tests/corporation-communication.test.ts",
+    "docs/CORPORATION_COMMUNICATION_MAP.md"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
