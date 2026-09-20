@@ -7,6 +7,7 @@ const CHAT_MODEL_SESSION_KEY = "koordynator.liveChat.sessionId";
 const chatNativeFetch = window.fetch.bind(window);
 let catalogBilling = null;
 let catalogEntries = [];
+let catalogWorkingSet = null;
 let billingPolicy = null;
 let resolveChatModelGate;
 let chatModelGateSettled = false;
@@ -223,7 +224,7 @@ function shortName(entry) {
 }
 
 function entryLabel(entry) {
-  const parts = [shortName(entry), sourceLabel(entry.billingSource)];
+  const parts = [shortName(entry), "✓ LIVE", sourceLabel(entry.billingSource)];
   if (entry.supportsVision) parts.push("VISION");
   if (entry.inputTokenLimit) parts.push(`${Math.round(entry.inputTokenLimit / 1000)}K CTX`);
   return parts.join(" · ");
@@ -286,6 +287,7 @@ function rebuildOptions(entries) {
 function showCatalogFailure(message) {
   catalogBilling = null;
   catalogEntries = [];
+  catalogWorkingSet = null;
   chatModelSelect.textContent = "";
   const option = document.createElement("option");
   option.value = "";
@@ -362,6 +364,7 @@ async function loadChatModels() {
     const models = safeCatalogModels(payload.models);
     if (!models.length) throw new Error("OmniRoute returned no chat-capable models");
     catalogBilling = payload.billing && typeof payload.billing === "object" ? payload.billing : null;
+    catalogWorkingSet = payload.workingSet && typeof payload.workingSet === "object" ? payload.workingSet : null;
     catalogEntries = safeCatalogEntries(payload, models);
 
     const usable = catalogEntries.filter((entry) => sourceAllowed(entry.billingSource));
@@ -382,9 +385,14 @@ async function loadChatModels() {
     rebuildOptions(usable);
     chatModelSelect.value = usableIds.includes(desired) ? desired : preferred;
     chatModelSelect.dataset.catalog = "omniroute";
+    chatModelSelect.dataset.workingSet = catalogWorkingSet ? "verified" : "catalog";
     chatModelSelect.disabled = false;
     const hidden = catalogEntries.length - usable.length;
-    chatModelSelect.title = `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
+    const freeCount = Array.isArray(catalogWorkingSet?.freeModels) ? catalogWorkingSet.freeModels.length : 0;
+    const subscriptionCount = Array.isArray(catalogWorkingSet?.subscriptionModels) ? catalogWorkingSet.subscriptionModels.length : 0;
+    chatModelSelect.title = catalogWorkingSet
+      ? `${usable.length} live routes · ${freeCount} free · ${subscriptionCount} subscription${hidden ? ` · ${hidden} blocked` : ""}`
+      : `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
     billingSummary();
     settleChatModelGate(true);
     return true;
