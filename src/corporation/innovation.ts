@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { HllDecision, HllProvenance } from "./domain.js";
+import type { HllDecision, HllProvenance, HllStatement } from "./domain.js";
+import { assertHllAllows } from "./hll.js";
+import type { DecisionReceipt } from "./receipts.js";
 
 export type NoveltySourceKind =
   | "SCIENTIFIC_PAPER"
@@ -31,6 +33,8 @@ export type NoveltySignal = {
   confidenceScore: number;
   status: "CAPTURED" | "TRIAGED" | "VERIFIED" | "ABSORBED" | "REJECTED";
   hllDecision?: HllDecision;
+  hllStatement?: HllStatement;
+  hllReceipt?: DecisionReceipt;
 };
 
 export type ScientificHypothesis = {
@@ -59,6 +63,9 @@ export type InnovationOpportunity = {
   strategicFit: string[];
   riskNotes: string[];
   status: "DISCOVERED" | "RESEARCHING" | "VALIDATED" | "INCUBATING" | "REJECTED" | "ABSORBED";
+  hllDecision?: HllDecision;
+  hllStatement?: HllStatement;
+  hllReceipt?: DecisionReceipt;
   createdAt: string;
   updatedAt: string;
 };
@@ -120,14 +127,28 @@ export class InnovationRadar {
     return structuredClone(signal);
   }
 
-  verifySignal(signalId: string, decision: HllDecision): NoveltySignal {
+  verifySignal(signalId: string, assessment: {
+    statement: HllStatement;
+    decision: HllDecision;
+    receipt: DecisionReceipt;
+  }): NoveltySignal {
     const signal = this.requireSignal(signalId);
-    signal.hllDecision = decision;
-    signal.status = decision.truthState === "RATIFIED" && decision.verdict === "ALLOW"
-      ? "VERIFIED"
-      : decision.truthState === "REJECTED" || decision.verdict === "BLOCK"
+    try {
+      assertHllAllows({
+        statement: assessment.statement,
+        decision: assessment.decision,
+        receipt: assessment.receipt,
+        action: "corporation.verify-innovation-signal"
+      });
+      signal.status = "VERIFIED";
+    } catch {
+      signal.status = assessment.decision.truthState === "REJECTED" || assessment.decision.verdict === "BLOCK"
         ? "REJECTED"
         : "TRIAGED";
+    }
+    signal.hllDecision = assessment.decision;
+    signal.hllStatement = assessment.statement;
+    signal.hllReceipt = assessment.receipt;
     return structuredClone(signal);
   }
 
@@ -221,7 +242,11 @@ export class InnovationRadar {
     return structuredClone(experiment);
   }
 
-  absorbOpportunity(opportunityId: string): InnovationOpportunity {
+  absorbOpportunity(opportunityId: string, assessment: {
+    statement: HllStatement;
+    decision: HllDecision;
+    receipt: DecisionReceipt;
+  }): InnovationOpportunity {
     const opportunity = this.opportunities.get(opportunityId);
     if (!opportunity) throw new Error("INNOVATION_OPPORTUNITY_NOT_FOUND");
 
@@ -230,7 +255,17 @@ export class InnovationRadar {
     if (related.some((item) => !item.result)) throw new Error("INNOVATION_EXPERIMENT_INCOMPLETE");
     if (!related.some((item) => item.result === "SUPPORTED")) throw new Error("INNOVATION_NO_SUPPORTED_EXPERIMENT");
 
+    assertHllAllows({
+      statement: assessment.statement,
+      decision: assessment.decision,
+      receipt: assessment.receipt,
+      action: "corporation.absorb-innovation"
+    });
+
     opportunity.status = "ABSORBED";
+    opportunity.hllDecision = assessment.decision;
+    opportunity.hllStatement = assessment.statement;
+    opportunity.hllReceipt = assessment.receipt;
     opportunity.updatedAt = iso();
     for (const signalId of opportunity.signalIds) {
       const signal = this.signals.get(signalId);
