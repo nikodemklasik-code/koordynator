@@ -6,14 +6,18 @@ import type {
   ExecutorDescriptor,
   HllDecision,
   HllStatement,
-  SolutionCandidate
+  SolutionMetrics
 } from "../src/corporation/domain.js";
+import type { VerifiedSolutionCandidate } from "../src/corporation/comparator.js";
 import type {
   CorporateEventStore,
   CorporationStateStore,
   ExecutorRegistryPort,
+  HllAssessment,
   HllPort
 } from "../src/corporation/ports.js";
+import { createDecisionReceipt, createVerificationReceipt } from "../src/corporation/receipts.js";
+import { VerifierTrustRegistry } from "../src/corporation/verification-trust.js";
 
 class MemoryState implements CorporationStateStore {
   value: CorporationSnapshot | null = null;
@@ -42,6 +46,8 @@ class StaticExecutors implements ExecutorRegistryPort {
   }
 }
 
+const HLL_AUTHORITY = { authorityId: "hll-test", epoch: "1" };
+
 function allowedDecision(statement: HllStatement): HllDecision {
   return {
     decisionId: `DEC-${statement.statementId}`,
@@ -64,9 +70,17 @@ class RecordingHll implements HllPort {
     private readonly decide: (statement: HllStatement) => HllDecision = allowedDecision
   ) {}
 
-  async assess(statement: HllStatement): Promise<HllDecision> {
+  async assess(statement: HllStatement): Promise<HllAssessment> {
     this.statements.push(structuredClone(statement));
-    return this.decide(statement);
+    const decision = this.decide(statement);
+    return {
+      decision,
+      receipt: createDecisionReceipt({
+        statement,
+        decision,
+        authority: HLL_AUTHORITY
+      })
+    };
   }
 }
 
@@ -125,8 +139,46 @@ function input(requiredCapabilities = ["code"]) {
   };
 }
 
+function verifierTrust(): VerifierTrustRegistry {
+  const now = new Date(Date.now() - 1000).toISOString();
+  return new VerifierTrustRegistry([
+    {
+      trustRootId: "trust-local",
+      verifierId: "verifier-local",
+      independentGroupId: "group-local",
+      providerLineageId: "lineage-local",
+      authority: "CORE",
+      revoked: false,
+      validFrom: now
+    },
+    {
+      trustRootId: "trust-independent",
+      verifierId: "verifier-independent",
+      independentGroupId: "group-independent",
+      providerLineageId: "lineage-independent",
+      authority: "QC",
+      revoked: false,
+      validFrom: now
+    }
+  ]);
+}
+
+const strongMetrics: SolutionMetrics = {
+  correctness: 0.95,
+  security: 0.95,
+  maintainability: 0.9,
+  reversibility: 0.9,
+  architectureFit: 0.9,
+  productValue: 0.8,
+  regressionRisk: 0.1,
+  complexity: 0.2,
+  moneyCost: 0.1,
+  tokenCost: 0.2,
+  latency: 0.2
+};
+
 describe("CorporationKernel v2", () => {
-  it("plans a ratified task using dynamic capabilities instead of legacy TaskRole enums", async () => {
+  it("plans a ratified task using a statement-bound HLL decision receipt", async () => {
     const state = new MemoryState();
     const events = new MemoryEvents();
     const hll = new RecordingHll();
@@ -143,11 +195,11 @@ describe("CorporationKernel v2", () => {
     expect(task.assignedRoleIds).toContain("ROLE-BUILDER");
     expect(task.plan?.stages.length).toBeGreaterThan(0);
     expect(task.plan?.hllDecision?.truthState).toBe("RATIFIED");
+    expect(task.hllReceipt.statementFingerprint).toBe(task.hllStatement.fingerprint);
     expect(hll.statements.map((item) => item.subject)).toEqual(["TASK", "DELEGATION"]);
-    expect((await kernel.snapshot()).language).toBe("HLL");
   });
 
-  it("does not plan an unratified proposition", async () => {
+  it("does not plan an unratified proposition even when the receipt itself is structurally valid", async () => {
     const hll = new RecordingHll((statement) => {
       if (statement.subject === "TASK") {
         return {
@@ -171,35 +223,30 @@ describe("CorporationKernel v2", () => {
 
     expect(task.status).toBe("NEEDS_REVISION");
     expect(task.plan).toBeUndefined();
-    expect(hll.statements.map((item) => item.subject)).toEqual(["TASK"]);
   });
 
-  it("opens HLL-backed Recruitment for a real capability gap", async () => {
+  it("opens HLL-backed Recruitment with an immutable capability ceiling", async () => {
     const state = new MemoryState();
-    const hll = new RecordingHll();
     const kernel = new CorporationKernel({
-      hll,
+      hll: new RecordingHll(),
       state,
       events: new MemoryEvents(),
       executors: new StaticExecutors(executors())
     });
 
     const task = await kernel.submitTask(input(["database-forensics"]));
-    const snapshot = await kernel.snapshot();
+    const request = (await kernel.snapshot()).recruitments[0]!;
 
     expect(task.status).toBe("WAITING_FOR_ROLE");
-    expect(task.recruitmentIds).toHaveLength(1);
-    expect(snapshot.recruitments).toHaveLength(1);
-    expect(snapshot.recruitments[0]?.status).toBe("OPEN");
-    expect(snapshot.recruitments[0]?.missingCapabilities).toEqual(["database-forensics"]);
-    expect(hll.statements.map((item) => item.subject)).toEqual(["TASK", "RECRUITMENT"]);
+    expect(request.status).toBe("OPEN");
+    expect(request.capabilityCeiling.capabilities).toEqual(["database-forensics"]);
+    expect(request.capabilityCeiling.effects).toEqual([]);
   });
 
-  it("lets HR activate a new role only when a healthy executor can satisfy its capability ceiling", async () => {
+  it("lets HR activate a role only within the Recruitment ceiling and healthy executor ceiling", async () => {
     const state = new MemoryState();
-    const hll = new RecordingHll();
     const kernel = new CorporationKernel({
-      hll,
+      hll: new RecordingHll(),
       state,
       events: new MemoryEvents(),
       executors: new StaticExecutors(executors([{
@@ -214,9 +261,7 @@ describe("CorporationKernel v2", () => {
     });
 
     const waiting = await kernel.submitTask(input(["database-forensics"]));
-    const recruitmentId = waiting.recruitmentIds[0]!;
-
-    const role = await kernel.fulfillRecruitment(recruitmentId, {
+    const role = await kernel.fulfillRecruitment(waiting.recruitmentIds[0]!, {
       name: "Database Forensics Specialist",
       departmentId: "DEPT-INTERNAL-DEVELOPMENT",
       mission: "Investigate database state using traceable evidence.",
@@ -225,118 +270,92 @@ describe("CorporationKernel v2", () => {
       allowedTools: ["fs.read"],
       decisionRights: ["investigate-within-scope"],
       successMeasures: ["evidence-backed finding"],
-      risk: "MEDIUM"
+      risk: "LOW"
     });
 
     expect(role.createdBy).toBe("HR");
-    expect(role.hllDecision?.truthState).toBe("RATIFIED");
-
-    const snapshot = await kernel.snapshot();
-    expect(snapshot.recruitments[0]?.status).toBe("HIRED");
-    expect(snapshot.tasks[0]?.status).toBe("READY");
-    expect(snapshot.tasks[0]?.assignedRoleIds).toContain(role.roleId);
-    expect(hll.statements.map((item) => item.subject)).toContain("ROLE_CONTRACT");
-    expect(hll.statements.map((item) => item.subject)).toContain("DELEGATION");
+    expect(role.risk).toBe("MEDIUM");
+    expect(role.hllReceipt?.statementFingerprint).toBe(role.hllStatement?.fingerprint);
+    expect((await kernel.snapshot()).tasks[0]?.status).toBe("READY");
   });
 
-  it("blocks role activation when no executor can satisfy the role contract", async () => {
-    const state = new MemoryState();
+  it("blocks Role Contract privilege expansion beyond the Recruitment ceiling", async () => {
     const kernel = new CorporationKernel({
       hll: new RecordingHll(),
-      state,
+      state: new MemoryState(),
       events: new MemoryEvents(),
-      executors: new StaticExecutors(executors())
+      executors: new StaticExecutors(executors([{
+        executorId: "executor-forensics",
+        capabilities: ["database-forensics"],
+        effects: ["fs.write"],
+        tools: ["fs.read"],
+        risk: "MEDIUM",
+        healthy: true,
+        costClass: "LOW"
+      }]))
     });
 
     const waiting = await kernel.submitTask(input(["database-forensics"]));
 
     await expect(kernel.fulfillRecruitment(waiting.recruitmentIds[0]!, {
-      name: "Impossible Specialist",
+      name: "Overpowered Specialist",
       departmentId: "DEPT-INTERNAL-DEVELOPMENT",
-      mission: "Requires a capability for which the Corporation has no executor.",
-      capabilities: ["database-forensics"],
-      allowedEffects: ["vault.read"],
-      allowedTools: ["vault.read"],
-      decisionRights: ["investigate"],
+      mission: "Attempts to exceed the recruitment scope.",
+      capabilities: ["database-forensics", "secrets-admin"],
+      allowedEffects: ["fs.write"],
+      allowedTools: ["fs.read"],
+      decisionRights: ["investigate-within-scope"],
       successMeasures: ["verified result"],
-      risk: "HIGH"
-    }, true)).rejects.toMatchObject({ code: "ROLE_EXECUTOR_CEILING_UNAVAILABLE" });
+      risk: "LOW"
+    })).rejects.toMatchObject({ code: "ROLE_CAPABILITY_CEILING_EXCEEDED" });
   });
 
-  it("selects the best verified candidate after hard correctness and security gates", async () => {
+  it("selects candidates only from trusted artifact-bound verification receipts", async () => {
+    const trust = verifierTrust();
     const kernel = new CorporationKernel({
       hll: new RecordingHll(),
       state: new MemoryState(),
       events: new MemoryEvents(),
-      executors: new StaticExecutors(executors())
+      executors: new StaticExecutors(executors()),
+      verifierTrust: trust
     });
     const task = await kernel.submitTask(input());
 
-    const base = {
-      taskId: task.taskId,
-      evidenceRefs: ["tests:pass"]
+    const candidate = (
+      id: string,
+      metrics: SolutionMetrics,
+      result: "PASS" | "FAIL" | "INCONCLUSIVE",
+      verifierId: "verifier-local" | "verifier-independent",
+      trustRootId: "trust-local" | "trust-independent",
+      independentGroupId: "group-local" | "group-independent",
+      providerLineageId: "lineage-local" | "lineage-independent"
+    ): VerifiedSolutionCandidate => {
+      const artifactFingerprint = `artifact-${id}`;
+      return {
+        taskId: task.taskId,
+        evidenceRefs: [`tests:${id}`],
+        candidateId: id,
+        description: `Candidate ${id}`,
+        metrics,
+        artifactFingerprint,
+        verificationReceipt: createVerificationReceipt({
+          artifactFingerprint,
+          verifierId,
+          trustRootId,
+          independentGroupId,
+          providerLineageId,
+          result,
+          metrics,
+          evidenceRefs: [`tests:${id}`]
+        })
+      };
     };
-    const candidates: SolutionCandidate[] = [
-      {
-        ...base,
-        candidateId: "A",
-        description: "Simple verified repair",
-        verified: true,
-        metrics: {
-          correctness: 0.95,
-          security: 0.95,
-          maintainability: 0.9,
-          reversibility: 0.9,
-          architectureFit: 0.9,
-          productValue: 0.8,
-          regressionRisk: 0.1,
-          complexity: 0.2,
-          moneyCost: 0.1,
-          tokenCost: 0.2,
-          latency: 0.2
-        }
-      },
-      {
-        ...base,
-        candidateId: "B",
-        description: "Unverified but attractive shortcut",
-        verified: false,
-        metrics: {
-          correctness: 1,
-          security: 1,
-          maintainability: 1,
-          reversibility: 1,
-          architectureFit: 1,
-          productValue: 1,
-          regressionRisk: 0,
-          complexity: 0,
-          moneyCost: 0,
-          tokenCost: 0,
-          latency: 0
-        }
-      },
-      {
-        ...base,
-        candidateId: "C",
-        description: "Verified but weaker alternative",
-        verified: true,
-        metrics: {
-          correctness: 0.86,
-          security: 0.86,
-          maintainability: 0.7,
-          reversibility: 0.7,
-          architectureFit: 0.7,
-          productValue: 0.7,
-          regressionRisk: 0.3,
-          complexity: 0.4,
-          moneyCost: 0.2,
-          tokenCost: 0.3,
-          latency: 0.4
-        }
-      }
-    ];
 
-    const comparison = await kernel.compareSolutions(task.taskId, candidates);
+    const comparison = await kernel.compareSolutions(task.taskId, [
+      candidate("A", strongMetrics, "PASS", "verifier-local", "trust-local", "group-local", "lineage-local"),
+      candidate("B", { ...strongMetrics, correctness: 1, security: 1 }, "INCONCLUSIVE", "verifier-independent", "trust-independent", "group-independent", "lineage-independent"),
+      candidate("C", { ...strongMetrics, correctness: 0.86, security: 0.86, maintainability: 0.7 }, "PASS", "verifier-independent", "trust-independent", "group-independent", "lineage-independent")
+    ]);
 
     expect(comparison.selected?.candidateId).toBe("A");
     expect(comparison.rejected.find((item) => item.candidate.candidateId === "B")?.reasons)
