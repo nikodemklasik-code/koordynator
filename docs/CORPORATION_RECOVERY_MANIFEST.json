@@ -26,7 +26,9 @@
     "Growth_Operations": "channel discovery, contacts, campaigns and gated external outreach with legal/QC/finance/authorisation controls",
     "Receipt_Binding": "string/boolean/enum is not proof; material decisions bind exact statement, payload, scope, authority epoch and artifact via tamper-evident receipts",
     "Transactional_Audit": "Corporation mutations use revisioned atomic state+event commits when the journal store is wired",
-    "Execution_Isolation": "candidate code work is prepared in leased ephemeral git worktrees; real executor wiring remains blocked until sandbox boundaries are complete"
+    "Execution_Isolation": "candidate code work is prepared in leased ephemeral git worktrees; real executor wiring remains blocked until sandbox boundaries are complete",
+    "Blind_Execution": "executor receives only stage-scoped inputs, deterministic micro-operations and a lease; expected local HLL and global HLL remain authority-side",
+    "Dynamic_HLL_Synthesis": "HLL fragment is reconstructed after execution from trace and artifacts, then matched against the precommitted hidden semantic fragment"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -80,7 +82,10 @@
     "src/corporation/action-gate.ts",
     "src/corporation/journal-store.ts",
     "src/corporation/ephemeral-worktree.ts",
-    "tests/corporation-safety-invariants.test.ts"
+    "tests/corporation-safety-invariants.test.ts",
+    "src/corporation/hll-stage-protocol.ts",
+    "tests/corporation-hll-blind-stage.test.ts",
+    "docs/HLL_CORPORATION_ADOPTION_BASELINE.md"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -145,7 +150,14 @@
     "capability_lease_receipts": "implemented",
     "execution_receipt_schema": "implemented",
     "hard_network_sandbox": "pending",
-    "transactional_runtime_wiring": "pending"
+    "transactional_runtime_wiring": "pending",
+    "blind_stage_protocol": "implemented_reference",
+    "local_hll_synthesis": "implemented_reference",
+    "hidden_stage_commitment": "implemented_reference",
+    "stage_validation_receipt": "implemented_reference",
+    "next_stage_lease_from_pass": "implemented_reference",
+    "trusted_trace_runtime": "pending",
+    "hardware_or_os_attestation": "pending_high_risk_only"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
