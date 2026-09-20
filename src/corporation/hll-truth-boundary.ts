@@ -23,7 +23,7 @@ export type CanonicalHllBinding = {
   truthState: "CONFIRMED";
   decisionHash: string;
   recordHash: string;
-  semanticHash: string;
+  semanticHash?: string;
   hllVersion: string;
   authorityId: string;
   authorityEpoch: string;
@@ -64,9 +64,6 @@ export function assertCanonicalHllFact(input: {
   if (input.decision.blockers.length) {
     throw new Error("HLL_CANONICAL_FACT_HAS_BLOCKERS");
   }
-  if (!input.decisionReceipt.semanticHash?.trim()) {
-    throw new Error("HLL_CANONICAL_FACT_SEMANTIC_HASH_MISSING");
-  }
   if (!input.recordReceipt.canonicalRecordHash.trim()) {
     throw new Error("HLL_CANONICAL_FACT_RECORD_HASH_MISSING");
   }
@@ -76,7 +73,7 @@ export function assertCanonicalHllFact(input: {
     truthState: "CONFIRMED",
     decisionHash: input.decision.decisionId,
     recordHash: input.recordReceipt.canonicalRecordHash,
-    semanticHash: input.decisionReceipt.semanticHash,
+    ...(input.decisionReceipt.semanticHash?.trim() ? { semanticHash: input.decisionReceipt.semanticHash } : {}),
     hllVersion: input.decision.hllVersion,
     authorityId: input.decisionReceipt.authorityId,
     authorityEpoch: input.decisionReceipt.authorityEpoch
@@ -117,7 +114,7 @@ export function semanticProvenanceFromBindings(
     hllVersion: versions[0]!,
     harmoniaDecisionHashes: [...new Set(bindings.map((binding) => binding.decisionHash))].sort(),
     canonicalRecordHashes: [...new Set(bindings.map((binding) => binding.recordHash))].sort(),
-    factSemanticHashes: [...new Set(bindings.map((binding) => binding.semanticHash))].sort(),
+    factSemanticHashes: [...new Set(bindings.map((binding) => binding.semanticHash).filter((value): value is string => Boolean(value)))].sort(),
     authorityEpochs: [...new Set(bindings.map((binding) =>
       `${binding.authorityId}@${binding.authorityEpoch}`
     ))].sort()
