@@ -363,3 +363,272 @@ goal / incident / opportunity
 ```
 
 That, not the existence of individual classes or UI panels, is the target.
+
+
+## 11. Full corporate operating model
+
+Corporation v2 is not limited to engineering. The target organizational model is a
+full corporate ecosystem with dedicated department screens and a durable hierarchy.
+
+Initial constitutional department catalogue:
+
+- CEO Office;
+- Strategy & Portfolio;
+- Product;
+- Marketing;
+- Sales & Business Development;
+- Legal;
+- HR & Recruitment;
+- Finance;
+- Production & Engineering;
+- Testing & Verification;
+- Quality Control;
+- Security;
+- Operations & Reliability;
+- Internal Development;
+- Research & Intelligence;
+- Data & Analytics;
+- Customer Success & Support;
+- Procurement & Vendor Management;
+- Compliance & Risk.
+
+The catalogue is extensible. A new department is created only for a durable
+responsibility boundary and remains subject to HLL/constitutional ratification.
+
+Each department has its own screen and organizational tree:
+
+```
+CEO / Department Head
+        |
+        v
+Director(s)
+        |
+        v
+Manager(s)
+        |
+        v
+Team Lead(s)
+        |
+        v
+Agent(s)
+```
+
+Organizational rank is separate from execution provider. A Director, Manager, Lead
+or Agent is a corporate position backed by a Role Contract; the actual executor can
+be Hermes, OpenCode, another model/provider, a deterministic tool, a human or a
+future local worker.
+
+## 12. Quality Control as a cross-corporate control function
+
+Quality Control is a dedicated independent department and a cross-cutting gate.
+
+QC is not above Harmonia Constitution, but operational departments cannot override
+a failed mandatory QC gate.
+
+For material work, QC evaluates stage evidence and closure using multiple
+independent verification paths.
+
+A mandatory gate must not depend only on one paid or external verification source.
+
+The default sovereignty rule is:
+
+```
+PASS requires:
+- enough passing paths;
+- enough independent verification groups;
+- at least one non-metered passing path;
+- at least one non-external/sovereign passing path.
+```
+
+Depending on risk, deterministic tests/static analysis/rule engines may also be
+mandatory.
+
+A paid provider may improve confidence, but if the only successful verification
+requires a paid external provider, the result is INCONCLUSIVE rather than PASS.
+
+## 13. Stage-scoped knowledge
+
+Every material execution stage owns a knowledge package containing:
+
+- inputs;
+- assumptions;
+- evidence;
+- HLL decisions;
+- risks;
+- unresolved questions;
+- outputs;
+- acceptance criteria;
+- handoff notes;
+- provenance/evidence references.
+
+The next stage receives a structured handoff rather than relying on prompt memory.
+Material evidence, decisions and outputs should be ratified before a strict handoff.
+Unresolved questions, missing evidence or unratified material knowledge can block
+the handoff.
+
+## 14. Provider Fabric: models, combos, tools and skills
+
+Providers are replaceable capability suppliers, not architectural dependencies.
+
+The Provider Fabric inventories capabilities, toolsets, skills, tool-calling,
+structured output, vision, context, background execution, cost, health, rate limits,
+external dependency and risk.
+
+It may create SINGLE, FALLBACK_CHAIN, ENSEMBLE, ROLE_SPLIT and CROSS_CHECK
+strategies. Cross-checking counts as independent only when provider-family diversity
+is real.
+
+Cost classes:
+
+```
+LOCAL
+FREE
+INCLUDED_CREDITS
+SUBSCRIPTION
+PAID_API
+```
+
+Paid providers can improve quality or capability, but a mandatory corporate closure
+must have a non-paid or sovereign closure path.
+
+## 15. Corporate sovereignty / external dependency policy
+
+The Corporation must degrade gracefully when external services disappear.
+
+Core functions remaining under corporate control include canonical state, HLL-facing
+corporate records, portfolio, organization, Recruitment, Role Contracts, QC records,
+stage knowledge, local/deterministic verification baseline, event history and
+rollback metadata.
+
+For every externally dependent critical process, architecture must define at least
+one local deterministic substitute, local model/tool substitute, free independent
+provider substitute, replay/static/rule substitute, explicit human/manual closure
+path, or a safe BLOCKED state.
+
+External unavailability never becomes fabricated PASS.
+
+## 16. Interdepartmental communication and dependency graph
+
+Departments do not communicate through unconstrained free-form chat. Material
+communication travels through declared dependency edges.
+
+Every dependency defines:
+
+- sender department;
+- receiver department;
+- dependency kind;
+- allowed message kinds;
+- whether it blocks downstream execution;
+- whether a Stage Knowledge Package is mandatory;
+- whether HLL ratification is mandatory;
+- whether QC has visibility;
+- escalation department where applicable.
+
+Dependency kinds:
+
+```
+BLOCKING     next stage cannot proceed without closure
+CONTROL      mandatory review/control relationship
+SERVICE      one department supplies capability/evidence to another
+ADVISORY     informs a decision without blocking it
+FEEDBACK     returns evidence/results without creating a circular blocking gate
+INFORMATION  traceable non-blocking flow
+```
+
+Primary operating chains include:
+
+```
+CEO
+  -> Strategy
+  -> Product
+  -> Production
+  -> Testing
+  -> QC
+  -> Operations
+```
+
+Supporting evidence loops:
+
+```
+Product <-> Research
+Product <-> Data
+Sales -> Product
+Customer Success -> Product
+Operations -> Data -> Strategy
+```
+
+Commercial chain:
+
+```
+Product -> Marketing -> Sales
+                         |
+                         +-> Legal
+                         +-> Finance
+```
+
+Vendor chain:
+
+```
+Procurement
+   +-> Legal
+   +-> Security
+   +-> Finance
+```
+
+Engineering/control chain:
+
+```
+Product -> Production -> Testing -> QC
+              |             |
+              +-> Security  +-> evidence back to Production
+              |
+              +-> Operations after verified handoff
+```
+
+Self-development chain:
+
+```
+Internal Development
+   +-> Testing
+   +-> Security
+   +-> QC
+```
+
+Critical escalation:
+
+```
+QC --------------------+
+Security --------------+--> CEO Office
+Finance ---------------+
+Compliance & Risk -----+
+```
+
+Testing feedback to Production is deliberately FEEDBACK rather than a reverse
+BLOCKING edge. This prevents deadlocked circular gates while preserving mandatory
+evidence.
+
+Material HANDOFF messages require a Stage Knowledge Package. CONTROL/BLOCKING
+communication requires HLL-ratified state before routing.
+
+Cross-cutting observers:
+
+- QC observes material handoffs, quality gates, approvals and material decisions;
+- Security observes high-risk and incident communication;
+- Legal observes legally material external effects;
+- Finance observes spend/vendor commitments;
+- Compliance & Risk observes material risk/control decisions.
+
+Each department screen must expose:
+
+- inbound dependencies;
+- outbound dependencies;
+- active blocking messages;
+- pending acknowledgements;
+- cross-cutting observers;
+- escalations;
+- Stage Knowledge Packages received/sent;
+- communication history for the relevant task/stage.
+
+The source model is `src/corporation/communication.ts`. No cross-department material
+flow should be executable unless its dependency is declared or a new dependency has
+been constitutionally introduced.
