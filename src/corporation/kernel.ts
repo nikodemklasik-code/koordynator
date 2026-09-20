@@ -20,6 +20,10 @@ import {
   hllDecisionSupportsExecution,
   makeHllStatement
 } from "./hll.js";
+import {
+  assertCanonicalHllFact,
+  canonicalHllFactUsable
+} from "./hll-truth-boundary.js";
 import { buildBaselinePlan } from "./planner.js";
 import { defaultDepartmentCharters, type CorporateFunction } from "./organization.js";
 import { VerifierTrustRegistry } from "./verification-trust.js";
@@ -362,7 +366,12 @@ export class CorporationKernel {
         departmentId,
         status: hllDecisionBlocksProgress(hllDecision)
           ? "BLOCKED"
-          : hllDecisionSupportsExecution(hllDecision) && hllCommitment
+          : hllCommitment && canonicalHllFactUsable({
+              statement,
+              decision: hllDecision,
+              decisionReceipt: hllReceipt,
+              recordReceipt: hllCommitment.receipt
+            })
             ? "PROPOSED"
             : "NEEDS_REVISION",
         assignedRoleIds: [],
@@ -551,11 +560,17 @@ export class CorporationKernel {
   private async planUnlocked(state: CorporationSnapshot, taskId: string): Promise<CorporateTask> {
     const task = state.tasks.find((item) => item.taskId === taskId);
     if (!task) throw new CorporationKernelError("TASK_NOT_FOUND", 404);
-    if (
-      hllDecisionBlocksProgress(task.hllDecision)
-      || !hllDecisionSupportsExecution(task.hllDecision)
-      || !task.hllRecordReceipt
-    ) {
+    if (hllDecisionBlocksProgress(task.hllDecision) || !task.hllRecordReceipt) {
+      throw new CorporationKernelError("HLL_TASK_NOT_SEMANTICALLY_USABLE", 409);
+    }
+    try {
+      assertCanonicalHllFact({
+        statement: task.hllStatement,
+        decision: task.hllDecision,
+        decisionReceipt: task.hllReceipt,
+        recordReceipt: task.hllRecordReceipt
+      });
+    } catch {
       throw new CorporationKernelError("HLL_TASK_NOT_SEMANTICALLY_USABLE", 409);
     }
 
@@ -646,7 +661,12 @@ export class CorporationKernel {
           ...(commitment === undefined ? {} : { hllRecordReceipt: commitment.receipt }),
           status: hllDecisionBlocksProgress(decision)
             ? "BLOCKED"
-            : hllDecisionSupportsExecution(decision) && commitment
+            : commitment && canonicalHllFactUsable({
+                statement,
+                decision,
+                decisionReceipt: assessment.receipt,
+                recordReceipt: commitment.receipt
+              })
               ? "OPEN"
               : "NEEDS_REVISION"
         };
@@ -716,7 +736,12 @@ export class CorporationKernel {
     task.plan = finalPlan;
     task.status = hllDecisionBlocksProgress(decision)
       ? "BLOCKED"
-      : hllDecisionSupportsExecution(decision) && commitment
+      : commitment && canonicalHllFactUsable({
+          statement,
+          decision,
+          decisionReceipt: assessment.receipt,
+          recordReceipt: commitment.receipt
+        })
         ? "READY"
         : "NEEDS_REVISION";
     task.updatedAt = iso();
