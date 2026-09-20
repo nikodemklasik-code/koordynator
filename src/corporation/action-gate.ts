@@ -102,6 +102,27 @@ export type VeraEffectDecision = {
   permitId: string;
 };
 
+export function veraEffectBinding(input: {
+  subjectId: string;
+  semanticPayload: unknown;
+  semanticScope: unknown;
+  effect: VeraPrepareEffectInput;
+}): Record<string, unknown> {
+  return {
+    subjectId: input.subjectId,
+    semanticPayload: structuredClone(input.semanticPayload),
+    semanticScope: structuredClone(input.semanticScope),
+    vera: {
+      intent: structuredClone(input.effect.intent),
+      actorId: input.effect.actorId,
+      capabilityId: input.effect.capabilityId,
+      policyRef: structuredClone(input.effect.policyRef),
+      verifiedEffectReceiptIds: [...new Set(input.effect.verifiedEffectReceiptIds)].sort(),
+      requestedTtlMs: input.effect.requestedTtlMs
+    }
+  };
+}
+
 /**
  * Material/external execution path.
  *
@@ -139,13 +160,20 @@ export async function authoriseVeraEffect(input: {
     }
   });
 
+  const boundEffect = veraEffectBinding({
+    subjectId: input.subjectId,
+    semanticPayload: input.payload,
+    semanticScope: input.scope,
+    effect: input.effect
+  });
+
   const actionDecision = authoriseAction({
     statement: input.statement,
     decision: input.decision,
     decisionReceipt: input.decisionReceipt,
     brainAction: input.brainAction,
     subjectId: input.subjectId,
-    payload: input.payload,
+    payload: boundEffect,
     scope: input.scope,
     requiredAuthorisations: input.requiredAuthorisations,
     approvals: input.approvals,
