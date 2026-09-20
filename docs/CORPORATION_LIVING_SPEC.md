@@ -126,10 +126,18 @@ src/corporation/capability-registry.ts
 src/corporation/planner.ts
 src/corporation/comparator.ts
 src/corporation/kernel.ts
+src/corporation/organization.ts
+src/corporation/knowledge.ts
+src/corporation/quality-control.ts
+src/corporation/provider-fabric.ts
+src/corporation/communication.ts
 
 tests/corporation-kernel-v2.test.ts
+tests/corporation-organization-qc-provider.test.ts
+tests/corporation-communication.test.ts
 docs/CORPORATION_KERNEL_V2.md
 docs/CORPORATION_LIVING_SPEC.md
+docs/CORPORATION_COMMUNICATION_MAP.md
 docs/CORPORATION_RECOVERY_MANIFEST.json
 ```
 
@@ -150,7 +158,13 @@ Implemented:
 - best-verified candidate comparator;
 - Pareto filtering;
 - hard correctness/security thresholds;
-- tests for ratification, recruitment, executor ceilings and candidate comparison.
+- full corporate department catalogue and management hierarchy;
+- stage-scoped knowledge ledger and handoff packages;
+- sovereign multi-path Quality Control gates;
+- Provider Fabric with single/fallback/ensemble/role-split/cross-check strategies;
+- interdepartmental communication dependency graph;
+- cross-cutting QC/Security/Legal/Finance/Risk observers;
+- tests for ratification, recruitment, executor ceilings, candidate comparison, organization, QC, provider resilience and communication routing.
 
 ## 6. Self-improvement target architecture
 
