@@ -152,31 +152,64 @@ describe("AuthoritativeHllPort", () => {
 
 
 
-  it("can cross the process boundary without shell interpolation", async () => {
+  it("keeps one authority process alive across assess -> commit", async () => {
     const script = [
       "let data='';",
+      "const decisions=new Map();",
       "process.stdin.setEncoding('utf8');",
-      "process.stdin.on('data', c => data += c);",
-      "process.stdin.on('end', () => {",
-      " const req = JSON.parse(data);",
-      " const s = req.statement;",
-      " const out = {",
-      "   schema:'corporation-hll-authority-response/1',",
-      "   statementId:s.statementId,",
-      "   statementFingerprint:s.fingerprint,",
-      "   subjectId:'HLLCORP:'+s.statementId,",
-      "   truthState:'CONFIRMED',",
-      "   eligibleForFact:true,",
-      "   blockers:[],",
-      "   allowedBrainActions:[{action:'RECORD',scope:'INTERNAL'}],",
-      "   provenanceIds:['PROV:'+s.statementId],",
-      "   hllVersion:'HLL/1.0',",
-      "   decisionHash:'d'.repeat(64),",
-      "   canonicalRecordHash:'r'.repeat(64),",
-      "   semanticHash:'s'.repeat(64),",
-      "   authority:{authorityId:'harmonia-hll',epoch:'test',conformance:['HLL/1.0','K1_PUBLIC_RATIFIED_INGRESS_BLOCKED','K2_COMMIT_TIME_REVALIDATION','CORPORATION_EXTENSION_V1']}",
-      " };",
-      " process.stdout.write(JSON.stringify(out));",
+      "const send=(v)=>process.stdout.write(JSON.stringify(v)+'\\n');",
+      "const handle=(line)=>{",
+      " if(!line.trim()) return;",
+      " const req=JSON.parse(line);",
+      " const s=req.statement;",
+      " if(req.schema==='corporation-hll-authority-request/1'){",
+      "   const decision='d'.repeat(64);",
+      "   decisions.set(s.statementId,decision);",
+      "   send({ok:true,response:{",
+      "     schema:'corporation-hll-authority-response/1',",
+      "     statementId:s.statementId,",
+      "     statementFingerprint:s.fingerprint,",
+      "     subjectId:'HLLCORP:'+s.statementId,",
+      "     truthState:'CONFIRMED',",
+      "     eligibleForFact:true,",
+      "     blockers:[],",
+      "     allowedBrainActions:[{action:'RECORD',scope:'INTERNAL'}],",
+      "     provenanceIds:['PROV:'+s.statementId],",
+      "     hllVersion:'HLL/1.0',",
+      "     decisionHash:decision,",
+      "     semanticHash:'s'.repeat(64),",
+      "     authority:{authorityId:'harmonia-hll',epoch:'pid-'+process.pid,conformance:['HLL/1.0','K1_PUBLIC_RATIFIED_INGRESS_BLOCKED','K2_COMMIT_TIME_REVALIDATION','CORPORATION_EXTENSION_V1']}",
+      "   }});",
+      "   return;",
+      " }",
+      " if(req.schema==='corporation-hll-authority-commit-request/1'){",
+      "   if(decisions.get(s.statementId)!==req.decisionHash){",
+      "     send({ok:false,error:{type:'ConstitutionalViolation',message:'missing assessment binding'}});",
+      "     return;",
+      "   }",
+      "   send({ok:true,response:{",
+      "     schema:'corporation-hll-authority-commit-response/1',",
+      "     statementId:s.statementId,",
+      "     statementFingerprint:s.fingerprint,",
+      "     decisionHash:req.decisionHash,",
+      "     brainDecisionHash:'b'.repeat(64),",
+      "     canonicalRecordHash:'r'.repeat(64),",
+      "     truthState:'CONFIRMED',",
+      "     hllVersion:'HLL/1.0',",
+      "     authority:{authorityId:'harmonia-hll',epoch:'pid-'+process.pid,conformance:['HLL/1.0','K1_PUBLIC_RATIFIED_INGRESS_BLOCKED','K2_COMMIT_TIME_REVALIDATION','CORPORATION_EXTENSION_V1']}",
+      "   }});",
+      "   return;",
+      " }",
+      " send({ok:false,error:{type:'ProtocolError',message:'unsupported schema'}});",
+      "};",
+      "process.stdin.on('data', c => {",
+      " data += c;",
+      " let i;",
+      " while((i=data.indexOf('\\n'))>=0){",
+      "   const line=data.slice(0,i);",
+      "   data=data.slice(i+1);",
+      "   handle(line);",
+      " }",
       "});"
     ].join("");
 
@@ -187,9 +220,66 @@ describe("AuthoritativeHllPort", () => {
     });
     const port = new AuthoritativeHllPort(transport);
 
-    const result = await port.assess(statement());
-    expect(result.decision.truthState).toBe("CONFIRMED");
-    expect(result.receipt.authorityEpoch).toBe("test");
+    try {
+      const input = statement();
+      const assessed = await port.assess(input);
+      const committed = await port.commit({
+        statement: input,
+        assessment: assessed,
+        action: "RECORD",
+        rationale: "stateful commit"
+      });
+
+      expect(assessed.decision.truthState).toBe("CONFIRMED");
+      expect(assessed.receipt.authorityEpoch).toMatch(/^pid-/);
+      expect(committed.canonicalRecordHash).toBe("r".repeat(64));
+      expect(committed.receipt.authorityEpoch).toBe(assessed.receipt.authorityEpoch);
+    } finally {
+      transport.close();
+    }
+  });
+
+  it("fails closed when the long-lived authority reports lost assess state", async () => {
+    const script = [
+      "let data='';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', c => {",
+      " data += c;",
+      " let i;",
+      " while((i=data.indexOf('\\n'))>=0){",
+      "   const line=data.slice(0,i);",
+      "   data=data.slice(i+1);",
+      "   if(!line.trim()) continue;",
+      "   const req=JSON.parse(line);",
+      "   if(req.schema==='corporation-hll-authority-request/1'){",
+      "     const s=req.statement;",
+      "     process.stdout.write(JSON.stringify({ok:true,response:{schema:'corporation-hll-authority-response/1',statementId:s.statementId,statementFingerprint:s.fingerprint,subjectId:'HLLCORP:'+s.statementId,truthState:'CONFIRMED',eligibleForFact:true,blockers:[],allowedBrainActions:[{action:'RECORD',scope:'INTERNAL'}],provenanceIds:['P'],hllVersion:'HLL/1.0',decisionHash:'d'.repeat(64),authority:{authorityId:'harmonia-hll',epoch:'test',conformance:['HLL/1.0','K1_PUBLIC_RATIFIED_INGRESS_BLOCKED','K2_COMMIT_TIME_REVALIDATION','CORPORATION_EXTENSION_V1']}}})+'\\n');",
+      "   } else {",
+      "     process.stdout.write(JSON.stringify({ok:false,error:{type:'ConstitutionalViolation',message:'statement has not been assessed by Harmonia'}})+'\\n');",
+      "   }",
+      " }",
+      "});"
+    ].join("");
+
+    const transport = new SubprocessHllAuthorityTransport({
+      executable: process.execPath,
+      args: ["-e", script],
+      timeoutMs: 5_000
+    });
+    const port = new AuthoritativeHllPort(transport);
+
+    try {
+      const input = statement();
+      const assessed = await port.assess(input);
+      await expect(port.commit({
+        statement: input,
+        assessment: assessed,
+        action: "RECORD",
+        rationale: "must fail"
+      })).rejects.toThrow("HLL_AUTHORITY_REMOTE_ERROR:ConstitutionalViolation:statement has not been assessed by Harmonia");
+    } finally {
+      transport.close();
+    }
   });
 
   it("rejects a response bound to another statement fingerprint", async () => {
