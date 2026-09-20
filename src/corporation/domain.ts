@@ -252,7 +252,7 @@ export type CorporateTask = CorporateTaskInput & {
   hllDecision: HllDecision;
   hllStatement: HllStatement;
   hllReceipt: DecisionReceipt;
-  hllRecordReceipt: HllRecordReceipt;
+  hllRecordReceipt?: HllRecordReceipt;
   plan?: ExecutionPlan;
   createdAt: string;
   updatedAt: string;
