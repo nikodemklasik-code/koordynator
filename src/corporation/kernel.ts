@@ -274,7 +274,29 @@ export class CorporationKernel {
       );
       if (!department) throw new CorporationKernelError("DEPARTMENT_NOT_FOUND", 404);
 
+      if (!input.goal.product && !input.goal.project) {
+        throw new CorporationKernelError("TASK_GOAL_PRODUCT_OR_PROJECT_REQUIRED", 400);
+      }
       const normalized: CorporateTaskInput = {
+        goal: {
+          goalId: cleanText(input.goal.goalId, "TASK_GOAL_ID_INVALID", 300),
+          statement: cleanText(input.goal.statement, "TASK_GOAL_STATEMENT_INVALID"),
+          ...(input.goal.product === undefined ? {} : {
+            product: {
+              productId: cleanText(input.goal.product.productId, "TASK_PRODUCT_ID_INVALID", 300),
+              mission: cleanText(input.goal.product.mission, "TASK_PRODUCT_MISSION_INVALID")
+            }
+          }),
+          ...(input.goal.project === undefined ? {} : {
+            project: {
+              projectId: cleanText(input.goal.project.projectId, "TASK_PROJECT_ID_INVALID", 300),
+              objective: cleanText(input.goal.project.objective, "TASK_PROJECT_OBJECTIVE_INVALID"),
+              ...(input.goal.project.productId === undefined ? {} : {
+                productId: cleanText(input.goal.project.productId, "TASK_PROJECT_PRODUCT_ID_INVALID", 300)
+              })
+            }
+          })
+        },
         objective: cleanText(input.objective, "TASK_OBJECTIVE_INVALID"),
         plane: input.plane,
         departmentId,
@@ -300,6 +322,7 @@ export class CorporationKernel {
         proposition: `Corporate task ${taskId} is a traceable proposition for executive consideration.`,
         payload: {
           taskId,
+          goal: normalized.goal,
           objective: normalized.objective,
           plane: normalized.plane,
           departmentId,
