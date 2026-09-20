@@ -206,3 +206,13 @@ export type CorporateEvent = {
   at: string;
   payload: Record<string, unknown>;
 };
+
+export type CorporationSnapshot = {
+  schemaVersion: 1;
+  language: "HLL";
+  departments: Department[];
+  roles: RoleContract[];
+  recruitments: RecruitmentRequest[];
+  tasks: CorporateTask[];
+  updatedAt: string;
+};
