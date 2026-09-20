@@ -4,6 +4,7 @@ import { InnovationRadar } from "../src/corporation/innovation.js";
 import { NoveltySourceRegistry } from "../src/corporation/novelty-sources.js";
 import { defaultOrganizationModel } from "../src/corporation/organization.js";
 import { CorporatePortfolio } from "../src/corporation/portfolio.js";
+import { createApprovalReceipt } from "../src/corporation/receipts.js";
 import type { HllDecision } from "../src/corporation/domain.js";
 
 function ratified(statementId = "HLL-SIGNAL-1"): HllDecision {
@@ -166,7 +167,8 @@ describe("growth operations", () => {
       organization: "Example Law",
       email: "contact@example.test",
       sourceRef: "directory:example",
-      lawfulBasisRef: "legal-review:pending",
+      lawfulBasisRef: "legal-basis:legitimate-interest-reviewed",
+      jurisdiction: "UK",
       relevance: "legal-tech target",
       evidenceRefs: ["directory:example"],
       status: "CONTACTABLE"
@@ -192,14 +194,37 @@ describe("growth operations", () => {
       legalReviewRef: "legal:pass",
       qcReviewRef: "qc:pass"
     });
-    growth.authoriseCampaign(reviewed.campaignId, "owner-auth:outreach-1");
+    growth.authoriseCampaign(reviewed.campaignId, "owner-auth:campaign-plan");
+
+    const authority = { authorityId: "outreach-owner", epoch: "1" };
+    const approval = createApprovalReceipt({
+      authority,
+      action: "outreach.send_email",
+      subjectId: contact.contactId,
+      payload: {
+        campaignId: campaign.campaignId,
+        contactId: contact.contactId,
+        action: "SEND_EMAIL",
+        messageArtifactRef: null
+      },
+      scope: {
+        policyId: policy.policyId,
+        channelId: channel.channelId,
+        recipient: contact.contactId,
+        jurisdiction: "UK"
+      },
+      validUntil: new Date(Date.now() + 60_000).toISOString()
+    });
 
     const authorised = growth.planExecution({
       campaignId: campaign.campaignId,
       contactId: contact.contactId,
-      action: "SEND_EMAIL"
+      action: "SEND_EMAIL",
+      approvalReceipt: approval,
+      approvalAuthority: authority
     });
     expect(authorised.status).toBe("AUTHORISED");
+    expect(authorised.approvalReceiptId).toBe(approval.receiptId);
   });
 });
 
