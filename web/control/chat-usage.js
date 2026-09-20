@@ -91,7 +91,7 @@ async function loadUsage24h() {
       : "";
 
     usage24h.textContent = activeModels.length
-      ? `ACTIVE ${activeModels.length} · FREE ${activeFree.length} · FREE USED 24H ${compactNumber(freeTokens)} · SUB USED 24H ${compactNumber(harnessTokens)}${budgetText}`
+      ? `ACTIVE ROUTES ${activeModels.length} · FREE ROUTES ${activeFree.length} · FREE TOKENS USED 24H ${compactNumber(freeTokens)} · SUB TOKENS USED 24H ${compactNumber(harnessTokens)}${budgetText}`
       : `USED 24H · FREE/OAUTH ${compactNumber(freeTokens)} · SUBSCRIPTION ${compactNumber(harnessTokens)} · PAYG ${compactNumber(paidTokens)}`;
     usage24h.className = `usage-24h ${paidTokens > 0 || unknownRequests > 0 ? "attention" : "clean"}`;
     usage24h.title = [
