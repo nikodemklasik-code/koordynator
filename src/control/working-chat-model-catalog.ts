@@ -118,7 +118,11 @@ function prefix(model: string): string {
 
 function routeKey(model: string): string {
   const slash = model.indexOf("/");
-  return (slash > 0 ? model.slice(slash + 1) : model).toLowerCase();
+  let key = (slash > 0 ? model.slice(slash + 1) : model).toLowerCase();
+  key = key
+    .replace(/(claude-(?:fable|opus)-\d+)-(\d+)/, "$1.$2")
+    .replace(/-(?:thinking-)?(?:none|low|medium|high|xhigh|max|extra-high)(?:-fast)?$/, "");
+  return key;
 }
 
 function sourceOf(catalog: ChatModelCatalog, model: string): ChatModelBillingSource {
