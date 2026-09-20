@@ -1,3 +1,4 @@
+import { providerOnboardingPlan, type ProviderOnboardingPlan } from "./provider-onboarding.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -48,6 +49,7 @@ export type SelfImprovementOpportunity = {
   detail: string;
   requiresApproval: boolean;
   checkedAt: string;
+  onboarding: ProviderOnboardingPlan;
 };
 
 export type SelfImprovementReceipt = {
@@ -94,6 +96,7 @@ export type SelfImprovementProbeOptions = {
     model?: string;
     health?: string;
     connectAction?: string;
+    connectCommand?: string;
     detail?: string;
     checkedAt?: string;
   }>>;
@@ -354,6 +357,7 @@ export class SelfImprovementSupervisor {
       for (const route of routes) {
         const family = String(route.family ?? "");
         if (!FREE_FAMILIES.has(family) || route.health === "HEALTHY") continue;
+        const onboarding = providerOnboardingPlan(route);
         opportunities.push({
           opportunityId: opportunityIdFor(family),
           family,
@@ -361,8 +365,9 @@ export class SelfImprovementSupervisor {
           model: String(route.model ?? "-"),
           action: String(route.connectAction ?? "CHECK"),
           detail: String(route.detail ?? "Free-tier route is not healthy yet"),
-          requiresApproval: ["AUTH", "CONNECT", "OPEN"].includes(String(route.connectAction ?? "").toUpperCase()),
-          checkedAt: String(route.checkedAt ?? now)
+          requiresApproval: onboarding.automation === "USER_APPROVAL",
+          checkedAt: String(route.checkedAt ?? now),
+          onboarding
         });
       }
     }
