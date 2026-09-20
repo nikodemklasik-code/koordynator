@@ -40,7 +40,7 @@ export function authoriseAction(input: {
     decision: input.decision,
     receipt: input.decisionReceipt,
     action: input.brainAction,
-    now: input.now
+    ...(input.now === undefined ? {} : { now: input.now })
   });
 
   const used: ApprovalReceipt[] = [];
@@ -62,7 +62,7 @@ export function authoriseAction(input: {
       subjectId: input.subjectId,
       payload: input.payload,
       scope: input.scope,
-      now: input.now
+      ...(input.now === undefined ? {} : { now: input.now })
     });
     used.push(receipt);
   }
