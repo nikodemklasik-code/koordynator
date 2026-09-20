@@ -28,6 +28,11 @@ const stateDir = resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator");
 const materialisationEnabled = process.env.KOORDYNATOR_CHAT_MATERIALISE !== "0";
 const signing = materialisationEnabled ? await loadOrCreateControlSigningKey(stateDir) : null;
 
+const selfImprovementIntervalRaw = Number(process.env.KOORDYNATOR_SELF_IMPROVEMENT_INTERVAL_MS ?? "300000");
+const selfImprovementIntervalMs = Number.isFinite(selfImprovementIntervalRaw) && selfImprovementIntervalRaw >= 60_000
+  ? Math.floor(selfImprovementIntervalRaw)
+  : 300_000;
+
 const keeper = spawn(process.execPath, [resolve("scripts/omniroute-keeper.mjs")], {
   cwd: process.cwd(),
   env: process.env,
@@ -58,6 +63,8 @@ const server = createControlServer({
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
   chatDefaultModel: route.model,
   chatModelCatalog,
+  selfImprovementEnabled: process.env.KOORDYNATOR_SELF_IMPROVEMENT !== "0",
+  selfImprovementIntervalMs,
   chatBillingPolicy: { freeOnly: process.env.KOORDYNATOR_FREE_ONLY === "1" },
   ...(process.env.KOORDYNATOR_HARMONIA_MODEL?.trim()
     ? { chatHarmoniaModel: process.env.KOORDYNATOR_HARMONIA_MODEL.trim() }
