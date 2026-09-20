@@ -20,6 +20,24 @@ afterEach(async () => {
 });
 
 describe("receipt binding invariants", () => {
+  function confirmedDecision(statement: ReturnType<typeof makeHllStatement>): HllDecision {
+    return {
+      decisionId: `DEC-${statement.statementId}`,
+      statementId: statement.statementId,
+      subjectId: `SUBJECT-${statement.statementId}`,
+      truthState: "CONFIRMED",
+      eligibleForFact: true,
+      blockers: [],
+      allowedBrainActions: statement.requestedBrainActions.map((action) => ({
+        action,
+        scope: action === "EXTERNAL_SEND" ? "EXTERNAL" : "INTERNAL"
+      })),
+      provenanceIds: [`PROV-${statement.statementId}`],
+      hllVersion: "HLL/1.0",
+      canonicalRecordHash: `REC-${statement.statementId}`
+    };
+  }
+
   it("rejects HLL receipt reuse after statement mutation", () => {
     const statement = makeHllStatement({
       subject: "TASK",
@@ -31,18 +49,9 @@ describe("receipt binding invariants", () => {
         evidenceRefs: ["owner:1"],
         observedAt: new Date().toISOString()
       },
-      requestedBrainActions: ["corporation.plan-task"]
+      requestedBrainActions: ["RECORD"]
     });
-    const decision: HllDecision = {
-      decisionId: "DEC-1",
-      statementId: statement.statementId,
-      truthState: "RATIFIED",
-      verdict: "ALLOW",
-      reasons: [],
-      allowedBrainActions: ["corporation.plan-task"],
-      requiredAuthorisations: [],
-      decidedAt: new Date().toISOString()
-    };
+    const decision = confirmedDecision(statement);
     const receipt = createDecisionReceipt({
       statement,
       decision,
@@ -53,7 +62,6 @@ describe("receipt binding invariants", () => {
       statement,
       decision,
       receipt,
-      action: "corporation.plan-task",
       expectedAuthority: { authorityId: "hll", epoch: "42" }
     });
 
@@ -62,12 +70,11 @@ describe("receipt binding invariants", () => {
       statement: mutated,
       decision,
       receipt,
-      action: "corporation.plan-task",
       expectedAuthority: { authorityId: "hll", epoch: "42" }
     })).toThrow("HLL_RECEIPT_STATEMENT_FINGERPRINT_MISMATCH");
   });
 
-  it("requires every HLL-declared authorisation before an action can execute", () => {
+  it("keeps Harmonia semantic permission separate from VERA/owner approval requirements", () => {
     const statement = makeHllStatement({
       subject: "OUTREACH",
       proposition: "A specific external action may be executed.",
@@ -78,18 +85,9 @@ describe("receipt binding invariants", () => {
         evidenceRefs: ["campaign:1"],
         observedAt: new Date().toISOString()
       },
-      requestedBrainActions: ["corporation.external-send"]
+      requestedBrainActions: ["EXTERNAL_SEND"]
     });
-    const decision: HllDecision = {
-      decisionId: "DEC-OUTREACH",
-      statementId: statement.statementId,
-      truthState: "RATIFIED",
-      verdict: "ALLOW",
-      reasons: [],
-      allowedBrainActions: ["corporation.external-send"],
-      requiredAuthorisations: ["owner.external-send"],
-      decidedAt: new Date().toISOString()
-    };
+    const decision = confirmedDecision(statement);
     const decisionReceipt = createDecisionReceipt({
       statement,
       decision,
@@ -100,10 +98,11 @@ describe("receipt binding invariants", () => {
       statement,
       decision,
       decisionReceipt,
-      brainAction: "corporation.external-send",
+      brainAction: "EXTERNAL_SEND",
       subjectId: "CONTACT-1",
       payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
       scope: { channel: "email" },
+      requiredAuthorisations: ["owner.external-send"],
       approvals: [],
       authorities: {
         "owner.external-send": { authorityId: "owner", epoch: "9" }
@@ -123,10 +122,11 @@ describe("receipt binding invariants", () => {
       statement,
       decision,
       decisionReceipt,
-      brainAction: "corporation.external-send",
+      brainAction: "EXTERNAL_SEND",
       subjectId: "CONTACT-1",
       payload: { contactId: "CONTACT-1", messageHash: "msg-1" },
       scope: { channel: "email" },
+      requiredAuthorisations: ["owner.external-send"],
       approvals: [approval],
       authorities: {
         "owner.external-send": { authorityId: "owner", epoch: "9" }
