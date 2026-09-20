@@ -517,7 +517,8 @@ export class CorporationKernel {
     const result = compareCandidates(candidates, trust, policy);
     await this.event("CANDIDATES_COMPARED", taskId, {
       candidates: candidates.length,
-      eligible: result.eligible.length,
+      admissible: result.admissible.length,
+      costRevision: result.costRevision.length,
       pareto: result.paretoFront.length,
       selectedCandidateId: result.selected?.candidateId ?? null
     });
