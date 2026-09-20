@@ -1,4 +1,13 @@
+import { canonicalDigest } from "../crypto/canonical-digest.js";
 import type { SolutionCandidate, SolutionMetrics } from "./domain.js";
+import type { VerificationReceipt } from "./receipts.js";
+import { verifyVerificationReceipt } from "./receipts.js";
+import { VerifierTrustRegistry } from "./verification-trust.js";
+
+export type VerifiedSolutionCandidate = Omit<SolutionCandidate, "verified"> & {
+  artifactFingerprint: string;
+  verificationReceipt: VerificationReceipt;
+};
 
 export type CandidatePolicy = {
   minimumCorrectness: number;
@@ -7,10 +16,10 @@ export type CandidatePolicy = {
 };
 
 export type CandidateComparison = {
-  eligible: SolutionCandidate[];
-  rejected: Array<{ candidate: SolutionCandidate; reasons: string[] }>;
-  paretoFront: SolutionCandidate[];
-  selected?: SolutionCandidate;
+  eligible: VerifiedSolutionCandidate[];
+  rejected: Array<{ candidate: VerifiedSolutionCandidate; reasons: string[] }>;
+  paretoFront: VerifiedSolutionCandidate[];
+  selected?: VerifiedSolutionCandidate;
 };
 
 const DEFAULT_POLICY: CandidatePolicy = {
@@ -39,7 +48,7 @@ function benefit(metrics: SolutionMetrics): number {
   );
 }
 
-function dominates(left: SolutionCandidate, right: SolutionCandidate): boolean {
+function dominates(left: VerifiedSolutionCandidate, right: VerifiedSolutionCandidate): boolean {
   const l = left.metrics;
   const r = right.metrics;
   const benefits: Array<keyof SolutionMetrics> = [
@@ -67,17 +76,46 @@ function dominates(left: SolutionCandidate, right: SolutionCandidate): boolean {
 }
 
 export function compareCandidates(
-  candidates: SolutionCandidate[],
+  candidates: VerifiedSolutionCandidate[],
+  trustRegistry: VerifierTrustRegistry,
   policy: CandidatePolicy = DEFAULT_POLICY
 ): CandidateComparison {
-  const eligible: SolutionCandidate[] = [];
+  const eligible: VerifiedSolutionCandidate[] = [];
   const rejected: CandidateComparison["rejected"] = [];
 
   for (const candidate of candidates) {
     const reasons: string[] = [];
-    if (policy.requireVerified && !candidate.verified) reasons.push("NOT_VERIFIED");
+    const receipt = candidate.verificationReceipt;
+
+    try {
+      verifyVerificationReceipt(receipt);
+      trustRegistry.assertReceiptLineage({
+        trustRootId: receipt.trustRootId,
+        verifierId: receipt.verifierId,
+        independentGroupId: receipt.independentGroupId,
+        providerLineageId: receipt.providerLineageId
+      });
+    } catch {
+      reasons.push("VERIFICATION_RECEIPT_UNTRUSTED");
+    }
+
+    if (receipt.artifactFingerprint !== candidate.artifactFingerprint) {
+      reasons.push("VERIFICATION_ARTIFACT_MISMATCH");
+    }
+    if (receipt.metricsFingerprint !== canonicalDigest(candidate.metrics)) {
+      reasons.push("VERIFICATION_METRICS_MISMATCH");
+    }
+    if (policy.requireVerified && receipt.result !== "PASS") reasons.push("NOT_VERIFIED");
     if (candidate.metrics.correctness < policy.minimumCorrectness) reasons.push("CORRECTNESS_BELOW_MINIMUM");
     if (candidate.metrics.security < policy.minimumSecurity) reasons.push("SECURITY_BELOW_MINIMUM");
+    if (
+      receipt.result === "FAIL"
+      && receipt.severity === "CRITICAL"
+      && receipt.failureClass !== undefined
+      && ["CORRECTNESS", "SECURITY", "INTEGRITY", "PRIVACY", "COMPLIANCE"].includes(receipt.failureClass)
+    ) {
+      reasons.push("CRITICAL_VERIFICATION_FAILURE");
+    }
 
     if (reasons.length) rejected.push({ candidate, reasons });
     else eligible.push(candidate);
