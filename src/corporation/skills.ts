@@ -12,6 +12,12 @@ export type SkillManifest = {
   incompatibleModelIds: string[];
   riskClass: "LOW" | "MEDIUM" | "HIGH";
   source: "CORE" | "PROVIDER" | "LEARNED" | "OPERATOR";
+  contentDigest: string;
+  publisherId: string;
+  trustRootId: string;
+  permissions: string[];
+  reviewReceiptRefs: string[];
+  revokedAt?: string;
   evidenceRefs: string[];
 };
 
@@ -39,12 +45,16 @@ function includesAll(haystack: string[], needles: string[]): boolean {
 }
 
 function compatible(skill: SkillManifest, model: ModelProfile): boolean {
+  if (!skill.contentDigest.trim() || !skill.publisherId.trim() || !skill.trustRootId.trim()) return false;
+  if (skill.revokedAt) return false;
+  if (["LEARNED", "OPERATOR"].includes(skill.source) && !skill.reviewReceiptRefs.length) return false;
   if (skill.incompatibleModelIds.includes(model.modelId)) return false;
   if (
     skill.compatibleModelFamilies.length
     && !skill.compatibleModelFamilies.includes(model.family)
   ) return false;
-  return includesAll(model.supportedToolsets, skill.requiredToolsets);
+  if (!includesAll(model.supportedToolsets, skill.requiredToolsets)) return false;
+  return includesAll(skill.requiredToolsets, skill.permissions);
 }
 
 /**
@@ -112,6 +122,9 @@ export function bindSkillsToTask(input: {
     rationale: [
       "skills selected for the assigned task",
       "skill compatibility checked against the chosen model",
+      "skill digest, publisher, trust root and revocation state checked",
+      "LEARNED/OPERATOR skills require review receipts",
+      "skill permissions must cover every requested toolset",
       "skills cannot expand officially supported model capabilities",
       uncovered.length ? "capability gap remains and requires another model/role/recruitment" : "required capability coverage achieved"
     ]
