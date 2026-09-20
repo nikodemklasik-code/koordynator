@@ -132,6 +132,27 @@ describe("AuthoritativeHllPort", () => {
     expect(committed.receipt.decisionId).toBe(assessment.decision.decisionId);
   });
 
+  it("rejects a commit from a different authority epoch than the assessment", async () => {
+    const port = new AuthoritativeHllPort(transport({
+      commit: async (request) => ({
+        ...commitResponseFor(request),
+        authority: {
+          ...commitResponseFor(request).authority,
+          epoch: "different-epoch"
+        }
+      })
+    }));
+    const input = statement();
+    const assessment = await port.assess(input);
+
+    await expect(port.commit({
+      statement: input,
+      assessment,
+      action: "RECORD",
+      rationale: "record"
+    })).rejects.toThrow("HLL_AUTHORITY_COMMIT_AUTHORITY_EPOCH_MISMATCH");
+  });
+
   it("rejects a commit that is rebound to another Harmonia decision", async () => {
     const port = new AuthoritativeHllPort(transport({
       commit: async (request) => ({
