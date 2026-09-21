@@ -1,1 +1,78 @@
-import { afterEach, describe, expect, it, vi } from "vitest";\nimport { readFile } from "node:fs/promises";\nimport { studioProviderCatalog } from "../src/control/studio-provider-catalog.js";\n\nafterEach(() => {\n  vi.unstubAllEnvs();\n});\n\ndescribe("Studio media workspace", () => {\n  it("restores separate Graphics, Video, Voice and Frontend screens", async () => {\n    const [html, js, server, shell] = await Promise.all([\n      readFile(new URL("../web/control/studio.html", import.meta.url), "utf8"),\n      readFile(new URL("../web/control/studio.js", import.meta.url), "utf8"),\n      readFile(new URL("../src/control/server.ts", import.meta.url), "utf8"),\n      readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")\n    ]);\n\n    expect(html).toContain('data-studio-tab="image"');\n    expect(html).toContain('data-studio-tab="video"');\n    expect(html).toContain('data-studio-tab="voice"');\n    expect(html).toContain('data-studio-tab="frontend"');\n    expect(html).toContain("OpenAI Image");\n    expect(html).toContain("VEED Fabric");\n    expect(html).toContain("ElevenLabs");\n    expect(html).toContain("OmniRoute model fabric");\n\n    expect(js).toContain('fetch("/api/studio/providers"');\n    expect(js).toContain('fetch("/api/studio/image/generate"');\n    expect(js).toContain('fetch("/api/studio/voice/voices"');\n    expect(js).toContain('fetch("/api/studio/voice/tts"');\n    expect(js).toContain('fetch("/api/chat/models"');\n\n    expect(server).toContain('"/studio": { name: "studio.html"');\n    expect(server).toContain('"/studio.css": { name: "studio.css"');\n    expect(server).toContain('"/studio.js": { name: "studio.js"');\n    expect(server).toContain('url.pathname === "/api/studio/providers"');\n    expect(server).toContain('url.pathname === "/api/studio/image/generate"');\n    expect(server).toContain('url.pathname === "/api/studio/voice/tts"');\n    expect(shell).toContain('["studio", "Studio", "/studio"]');\n  });\n\n  it("reports provider bindings truthfully from runtime configuration", () => {\n    vi.stubEnv("OPENAI_API_KEY", "");\n    vi.stubEnv("FAL_KEY", "");\n    vi.stubEnv("VEED_API_KEY", "");\n    vi.stubEnv("ELEVENLABS_API_KEY", "");\n    vi.stubEnv("HARMONIA_ELEVEN_API_KEY", "");\n\n    const unavailable = studioProviderCatalog([]);\n    expect(unavailable.find((item) => item.capability === "image")?.state).toBe("NOT_CONFIGURED");\n    expect(unavailable.find((item) => item.capability === "video")?.state).toBe("NOT_CONFIGURED");\n    expect(unavailable.find((item) => item.capability === "voice")?.state).toBe("NOT_CONFIGURED");\n    expect(unavailable.find((item) => item.capability === "frontend")?.state).toBe("NOT_CONFIGURED");\n\n    vi.stubEnv("OPENAI_API_KEY", "configured");\n    vi.stubEnv("FAL_KEY", "configured");\n    vi.stubEnv("ELEVENLABS_API_KEY", "configured");\n    const ready = studioProviderCatalog(["cx/gpt-5.6-sol"]);\n    expect(ready.find((item) => item.capability === "image")?.state).toBe("READY");\n    expect(ready.find((item) => item.capability === "video")?.state).toBe("READY");\n    expect(ready.find((item) => item.capability === "voice")?.state).toBe("READY");\n    expect(ready.find((item) => item.capability === "frontend")?.state).toBe("ROUTED");\n  });\n\n  it("keeps media secrets server-side and names current provider models", async () => {\n    const [catalog, server] = await Promise.all([\n      readFile(new URL("../src/control/studio-provider-catalog.ts", import.meta.url), "utf8"),\n      readFile(new URL("../src/control/server.ts", import.meta.url), "utf8")\n    ]);\n    expect(catalog).toContain('"gpt-image-2.5-sunburst"');\n    expect(catalog).toContain('"veed/fabric-1.0"');\n    expect(catalog).toContain('"eleven_multilingual_v2"');\n    expect(server).toContain('"xi-api-key": key');\n    expect(server).toContain("authorization:");\n    expect(server).not.toContain("OPENAI_API_KEY=");\n    expect(server).not.toContain("ELEVENLABS_API_KEY=");\n  });\n});\n
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFile } from "node:fs/promises";
+import { studioProviderCatalog } from "../src/control/studio-provider-catalog.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
+describe("Studio media workspace", () => {
+  it("restores separate Graphics, Video, Voice and Frontend screens", async () => {
+    const [html, js, server, shell] = await Promise.all([
+      readFile(new URL("../web/control/studio.html", import.meta.url), "utf8"),
+      readFile(new URL("../web/control/studio.js", import.meta.url), "utf8"),
+      readFile(new URL("../src/control/server.ts", import.meta.url), "utf8"),
+      readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
+    ]);
+
+    expect(html).toContain('data-studio-tab="image"');
+    expect(html).toContain('data-studio-tab="video"');
+    expect(html).toContain('data-studio-tab="voice"');
+    expect(html).toContain('data-studio-tab="frontend"');
+    expect(html).toContain("OpenAI Image");
+    expect(html).toContain("VEED Fabric");
+    expect(html).toContain("ElevenLabs");
+    expect(html).toContain("OmniRoute model fabric");
+
+    expect(js).toContain('fetch("/api/studio/providers"');
+    expect(js).toContain('fetch("/api/studio/image/generate"');
+    expect(js).toContain('fetch("/api/studio/voice/voices"');
+    expect(js).toContain('fetch("/api/studio/voice/tts"');
+    expect(js).toContain('fetch("/api/chat/models"');
+
+    expect(server).toContain('"/studio": { name: "studio.html"');
+    expect(server).toContain('"/studio.css": { name: "studio.css"');
+    expect(server).toContain('"/studio.js": { name: "studio.js"');
+    expect(server).toContain('url.pathname === "/api/studio/providers"');
+    expect(server).toContain('url.pathname === "/api/studio/image/generate"');
+    expect(server).toContain('url.pathname === "/api/studio/voice/tts"');
+    expect(shell).toContain('["studio", "Studio", "/studio"]');
+  });
+
+  it("reports provider bindings truthfully from runtime configuration", () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    vi.stubEnv("FAL_KEY", "");
+    vi.stubEnv("VEED_API_KEY", "");
+    vi.stubEnv("ELEVENLABS_API_KEY", "");
+    vi.stubEnv("HARMONIA_ELEVEN_API_KEY", "");
+
+    const unavailable = studioProviderCatalog([]);
+    expect(unavailable.find((item) => item.capability === "image")?.state).toBe("NOT_CONFIGURED");
+    expect(unavailable.find((item) => item.capability === "video")?.state).toBe("NOT_CONFIGURED");
+    expect(unavailable.find((item) => item.capability === "voice")?.state).toBe("NOT_CONFIGURED");
+    expect(unavailable.find((item) => item.capability === "frontend")?.state).toBe("NOT_CONFIGURED");
+
+    vi.stubEnv("OPENAI_API_KEY", "configured");
+    vi.stubEnv("FAL_KEY", "configured");
+    vi.stubEnv("ELEVENLABS_API_KEY", "configured");
+    const ready = studioProviderCatalog(["cx/gpt-5.6-sol"]);
+    expect(ready.find((item) => item.capability === "image")?.state).toBe("READY");
+    expect(ready.find((item) => item.capability === "video")?.state).toBe("READY");
+    expect(ready.find((item) => item.capability === "voice")?.state).toBe("READY");
+    expect(ready.find((item) => item.capability === "frontend")?.state).toBe("ROUTED");
+  });
+
+  it("keeps media secrets server-side and names current provider models", async () => {
+    const [catalog, server] = await Promise.all([
+      readFile(new URL("../src/control/studio-provider-catalog.ts", import.meta.url), "utf8"),
+      readFile(new URL("../src/control/server.ts", import.meta.url), "utf8")
+    ]);
+    expect(catalog).toContain('"gpt-image-2.5-sunburst"');
+    expect(catalog).toContain('"veed/fabric-1.0"');
+    expect(catalog).toContain('"eleven_multilingual_v2"');
+    expect(server).toContain('"xi-api-key": key');
+    expect(server).toContain("authorization:");
+    expect(server).not.toContain("OPENAI_API_KEY=");
+    expect(server).not.toContain("ELEVENLABS_API_KEY=");
+  });
+});
