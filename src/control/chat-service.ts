@@ -66,6 +66,9 @@ export type ChatSessionSummary = {
 
 export type ChatProcessStage =
   | "INTAKE"
+  | "STAGE_ZERO"
+  | "HARMONIA"
+  | "BRAIN"
   | "ROUTING"
   | "EXECUTION"
   | "STREAMING"
@@ -285,6 +288,11 @@ export class ChatService {
 
   private emit(sessionId: string, event: ChatEvent): void {
     for (const subscriber of this.subscribers.get(sessionId) ?? []) subscriber(event);
+  }
+
+  /** Emits an observable lifecycle checkpoint for UI/process receipts. */
+  emitProcessUpdate(update: ChatProcessUpdate): void {
+    this.emit(update.sessionId, { type: "process_update", update });
   }
 
   private persist(session: ChatSession): Promise<void> {
