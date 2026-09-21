@@ -113,6 +113,15 @@
   for (const [key, label, href] of canonicalProducts) {
     let el = preferred.get(key);
     if (!el && href) el = makeLink(label, href, key, key === "live-chat");
+    if (!el && (key === "harmonia-legal" || key === "job-app")) {
+      const placeholder = document.createElement("button");
+      placeholder.type = "button";
+      placeholder.textContent = label;
+      placeholder.disabled = true;
+      placeholder.title = `${label} launcher is not configured in this runtime`;
+      placeholder.className = "product-placeholder";
+      el = placeholder;
+    }
     if (!el) continue;
     el.hidden = false;
     el.dataset.shellKey = key;
