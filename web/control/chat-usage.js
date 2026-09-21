@@ -373,7 +373,7 @@ window.addEventListener("focus", () => {
   const input = document.getElementById("hermesInput");
   const send = document.getElementById("sendHermesButton");
   const stateBadge = document.getElementById("hermesState");
-  if (!term || !pane || !input || !send || document.getElementById("hermesTranscript")) return;
+  if (!term || !pane || !input || !send || document.getElementById("hermesTranscript") || document.querySelector(".runtime-terminal-toolbar")) return;
 
   const stack = document.createElement("div");
   stack.className = "terminal-output-stack";
