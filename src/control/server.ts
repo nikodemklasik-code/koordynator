@@ -141,6 +141,7 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/integrations/github/connect" ||
     pathname === "/api/integrations/hermes-grants" ||
     pathname === "/api/providers/connect-existing" ||
+    pathname === "/api/studio/image/generate" ||
     pathname === "/api/studio/voice/tts" ||
     pathname === "/api/tasks/project-pack" ||
     pathname === "/api/repositories" ||
@@ -332,6 +333,36 @@ export function createControlServer(options: ControlServerOptions): Server {
           ? (catalog as { models: unknown[] }).models.filter((value): value is string => typeof value === "string")
           : [];
         return sendJson(response, 200, { providers: studioProviderCatalog(models) });
+      }
+
+      if (method === "POST" && url.pathname === "/api/studio/image/generate") {
+        const key = process.env.OPENAI_API_KEY?.trim() || "";
+        if (!key) return sendJson(response, 503, { error: "OPENAI_IMAGE_NOT_CONFIGURED" });
+        const payload = await readJsonBody(request, 32 * 1024);
+        assertExactKeys(payload, ["prompt", "model", "size", "quality"]);
+        const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+        const model = typeof payload.model === "string" && payload.model.trim()
+          ? payload.model.trim()
+          : (process.env.KOORDYNATOR_IMAGE_MODEL?.trim() || "gpt-image-2.5-sunburst");
+        const size = typeof payload.size === "string" && payload.size.trim() ? payload.size.trim() : "1024x1024";
+        const quality = typeof payload.quality === "string" && payload.quality.trim() ? payload.quality.trim() : "medium";
+        if (!prompt || prompt.length > 8_000) return sendJson(response, 400, { error: "STUDIO_IMAGE_PROMPT_INVALID" });
+        if (!/^gpt-image-[A-Za-z0-9._-]+$/.test(model)) return sendJson(response, 400, { error: "STUDIO_IMAGE_MODEL_INVALID" });
+        if (!/^(?:auto|\d{3,4}x\d{3,4})$/.test(size)) return sendJson(response, 400, { error: "STUDIO_IMAGE_SIZE_INVALID" });
+        if (!/^(?:auto|low|medium|high|xhigh|max)$/.test(quality)) return sendJson(response, 400, { error: "STUDIO_IMAGE_QUALITY_INVALID" });
+
+        const upstream = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ model, prompt, size, quality }),
+          signal: AbortSignal.timeout(120_000)
+        });
+        const result = await upstream.json().catch(() => ({})) as { data?: Array<{ b64_json?: string; url?: string }>; error?: unknown };
+        if (!upstream.ok) return sendJson(response, upstream.status === 429 ? 429 : 502, { error: `OPENAI_IMAGE_HTTP_${upstream.status}` });
+        const first = Array.isArray(result.data) ? result.data[0] : undefined;
+        if (first?.b64_json) return sendJson(response, 200, { mimeType: "image/png", dataUrl: `data:image/png;base64,${first.b64_json}` });
+        if (first?.url) return sendJson(response, 200, { mimeType: "image/png", url: first.url });
+        return sendJson(response, 502, { error: "OPENAI_IMAGE_EMPTY_RESULT" });
       }
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/studio/voice/voices") {
