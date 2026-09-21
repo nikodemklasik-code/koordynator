@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 describe("chat runtime monitor", () => {
   it("loads the router/monitor before chat.js so fetch and SSE telemetry observe live sessions", async () => {
     const html = await readFile(new URL("../web/control/chat.html", import.meta.url), "utf8");
-    const router = html.indexOf('/chat-router.js?v=1');
+    const router = html.indexOf('/chat-router.js?v=2');
     const chat = html.indexOf('/chat.js?v=10');
     expect(router).toBeGreaterThan(-1);
     expect(chat).toBeGreaterThan(router);
