@@ -365,24 +365,26 @@ export class ChatService {
     if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
     try {
       const body = await readFile(sessionFile(this.root, sessionId), "utf8");
-      const session = JSON.parse(body) as ChatSession;
-      if (!this.active.has(sessionId) && !this.starting.has(sessionId)) {
-        const orphaned = session.messages.filter((message) => message.role === "assistant" && message.state === "streaming");
-        if (orphaned.length) {
-          const completedAt = now();
-          for (const message of orphaned) {
-            message.state = "stopped";
-            message.completedAt = completedAt;
-          }
-          session.updatedAt = completedAt;
-          await this.persist(session);
-        }
-      }
-      return session;
+      return JSON.parse(body) as ChatSession;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  }
+
+  async recoverSession(sessionId: string): Promise<ChatSession | null> {
+    const session = await this.getSession(sessionId);
+    if (!session || this.active.has(sessionId) || this.starting.has(sessionId)) return session;
+    const orphaned = session.messages.filter((message) => message.role === "assistant" && message.state === "streaming");
+    if (!orphaned.length) return session;
+    const completedAt = now();
+    for (const message of orphaned) {
+      message.state = "stopped";
+      message.completedAt = completedAt;
+    }
+    session.updatedAt = completedAt;
+    await this.persist(session);
+    return session;
   }
 
   async usageSummary(windowHours = 24): Promise<ChatUsageSummary> {
