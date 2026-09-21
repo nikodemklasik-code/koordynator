@@ -333,8 +333,9 @@ export function createControlServer(options: ControlServerOptions): Server {
           ]
         });
         if (!selected) throw new ChatServiceError("CHAT_UNAVAILABLE", 503);
-        const billingError = chatBillingErrorCode(selected.billing);
-        if (billingError) throw new ChatServiceError(billingError, 403);
+        // Session creation may preserve an explicitly selected blocked route so
+        // policy can reject it at execution time. Unlisted/stale routes are
+        // recovered above to the current executable working set.
         const session = await chat.createSession(selected.model);
         return sendJson(response, 201, {
           sessionId: session.sessionId,
