@@ -78,7 +78,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("grid-template-rows:var(--shell-row-height) minmax(0,1fr) 72px auto!important");
     expect(css).toContain("height:var(--shell-button-height)!important");
     expect(css).toContain("height:58px!important");
-    expect(css).toContain("font-size:14px!important");
+    expect(css).toContain("font-size:16px!important");
   });
 
   it("enforces one unified model control row with role, attach, stop and send", async () => {
