@@ -73,6 +73,14 @@ function realUserHome(env: NodeJS.ProcessEnv): string {
   return resolve(value || homedir());
 }
 
+const HERMES_INTERACTIVE_TICKET_TTL_MS = 8 * 60 * 60_000;
+
+function hermesTicketTtlMs(env: NodeJS.ProcessEnv): number {
+  const configured = Number(env.KOORDYNATOR_HERMES_TICKET_TTL_MS ?? "");
+  if (!Number.isFinite(configured) || configured <= 0) return HERMES_INTERACTIVE_TICKET_TTL_MS;
+  return Math.max(5 * 60_000, Math.min(configured, 24 * 60 * 60_000));
+}
+
 function dynamicSkillRoots(root: string, env: NodeJS.ProcessEnv): string[] {
   const home = realUserHome(env);
   return [...new Set([
@@ -133,7 +141,13 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
   await privateDirectory(home);
 
   const secret = randomBytes(32).toString("hex");
-  const { token } = mintTaskTicket(secret, { aud: "hermes", model: settings.model });
+  // Interactive PTY sessions live much longer than short task workers. The token is still
+  // scoped to this loopback proxy and becomes unusable as soon as launch.close() closes it.
+  const { token } = mintTaskTicket(secret, {
+    aud: "hermes",
+    model: settings.model,
+    ttlMs: hermesTicketTtlMs(env)
+  });
   let proxy: TicketProxy | undefined;
   try {
     proxy = await startTicketProxy({ upstream: settings.endpoint, apiKey: settings.apiKey, secret, audience: "hermes",

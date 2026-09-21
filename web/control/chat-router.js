@@ -1,5 +1,5 @@
 (() => {
-  const STORAGE_KEY = "koordynator.liveChat.routerReceipt.v1";
+  const STORAGE_KEY = "koordynator.liveChat.routerReceipt.v2";
   const PIN_KEY = "koordynator.liveChat.routerPinned.v1";
   const MAX_EVENTS = 80;
   const toolbar = document.querySelector(".v5-toolbar-left");
@@ -8,18 +8,6 @@
   const thread = document.getElementById("chatThread");
   if (!toolbar || !sendButton || !input || !thread) return;
 
-  const rules = [
-    { id: "research", label: "Research", agent: "Researcher", skills: ["research", "source-search", "repository-search"], re: /\b(znajd|wyszuk|poszuk|sprawd[zź].*źród|research|find|search|investigat|discover|lookup)\w*/i },
-    { id: "decomposition", label: "Decomposition", agent: "Planner", skills: ["decomposition", "planning", "scope-map"], re: /(podziel|rozbij|mniejsze element|etap(?:y|ów)?|plan(?:uj|owanie)?|decompos|break down|split into|milestone)/i },
-    { id: "repo", label: "Repository", agent: "Repository", skills: ["repository", "git", "github"], re: /(repo(?:zytorium)?|github|branch|commit|pull request|\bPR\b|git\b)/i },
-    { id: "implementation", label: "Implementation", agent: "Developer", skills: ["coding", "implementation", "terminal"], re: /(dopisz|napisz|kod|implement|napraw|fix|refactor|typescript|javascript|python|builder|build\b)/i },
-    { id: "frontend", label: "Frontend", agent: "Frontend Developer", skills: ["frontend", "ui", "browser"], re: /(frontend|interfejs|\bui\b|css|html|layout|ekran|button|przycisk|responsive|playwright|browser)/i },
-    { id: "security", label: "Security", agent: "Security", skills: ["security", "dependency-audit", "threat-check"], re: /(security|bezpiecze|podatno|vulnerab|audit|npm audit|secret|credential|auth)/i },
-    { id: "testing", label: "Verification", agent: "QC", skills: ["tests", "verification", "regression"], re: /(test|zweryfik|sprawdź wynik|verify|regression|\bqc\b|acceptance)/i },
-    { id: "files", label: "Files", agent: "File Worker", skills: ["files", "archive", "document-read"], re: /(plik|zip|pdf|docx|xlsx|folder|katalog|file|archive)/i },
-    { id: "innovation", label: "Innovation", agent: "Innovation Developer", skills: ["innovation", "architecture", "design"], re: /(innowac|zaprojekt|architekt|architecture|design|prototype|nowy mechanizm)/i }
-  ];
-
   const state = { receipt: loadReceipt(), open: false, pinned: loadPinned(), lastCapture: "", lastCaptureAt: 0 };
   function loadReceipt() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"); } catch { return null; } }
   function saveReceipt() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.receipt)); } catch {} }
@@ -27,7 +15,19 @@
   function savePinned() { try { localStorage.setItem(PIN_KEY, state.pinned ? "1" : "0"); } catch {} }
   function nowClock() { return new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
   function esc(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
-  function uniq(values) { return [...new Set(values)]; }
+  function clampProgress(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return 0;
+    return Math.max(0, Math.min(100, Math.round(number)));
+  }
+  function elapsedLabel(iso) {
+    const started = Date.parse(String(iso || ""));
+    if (!Number.isFinite(started)) return "0s";
+    const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ${seconds % 60}s`;
+  }
 
   const toggle = document.createElement("button");
   toggle.type = "button";
@@ -70,6 +70,7 @@
     backdrop.classList.toggle("open", state.open && !state.pinned);
     toggle.setAttribute("aria-expanded", state.open ? "true" : "false");
   }
+
   function setPinned(pinned) {
     state.pinned = Boolean(pinned);
     drawer.classList.toggle("pinned", state.pinned);
@@ -79,6 +80,7 @@
     backdrop.classList.toggle("open", state.open && !state.pinned);
     savePinned();
   }
+
   function event(text, kind = "info") {
     if (!state.receipt) return;
     state.receipt.events ||= [];
@@ -86,6 +88,7 @@
     if (state.receipt.events.length > MAX_EVENTS) state.receipt.events.splice(0, state.receipt.events.length - MAX_EVENTS);
     saveReceipt();
   }
+
   function setPhase(phase) {
     if (!state.receipt) return;
     state.receipt.phase = phase;
@@ -100,17 +103,6 @@
     }
   }
 
-  function analyse(text) {
-    const matches = rules.filter((rule) => rule.re.test(text));
-    if (!matches.length) matches.push({ id: "general", label: "General", agent: "General AI", skills: ["general-reasoning"], re: /.*/ });
-    const skills = uniq(matches.flatMap((rule) => rule.skills));
-    if (matches.some((rule) => rule.id === "implementation")) skills.push(...["tests", "verification"]);
-    const agents = uniq(matches.map((rule) => rule.agent));
-    if (matches.some((rule) => rule.id === "implementation") && !agents.includes("QC")) agents.push("QC");
-    const signalRows = matches.map((rule) => ({ signal: (String(text).match(rule.re)?.[0] || rule.label).slice(0, 54), route: rule.label }));
-    return { intents: matches.map((rule) => rule.label), skills: uniq(skills), agents, signals: signalRows };
-  }
-
   function captureRequest(text) {
     const clean = String(text || "").trim();
     if (!clean) return;
@@ -118,47 +110,91 @@
     if (state.lastCapture === clean && stamp - state.lastCaptureAt < 1200) return;
     state.lastCapture = clean;
     state.lastCaptureAt = stamp;
-    const route = analyse(clean);
-    state.receipt = { version: 1, createdAt: new Date().toISOString(), request: clean, phase: "routing", ...route,
-      agentStates: route.agents.map((name, index) => ({ name, state: index === 0 ? "running" : "waiting" })), events: [] };
+    state.receipt = {
+      version: 2,
+      createdAt: new Date().toISOString(),
+      request: clean,
+      phase: "routing",
+      stage: "INTAKE",
+      agent: "Koordynator",
+      process: "Awaiting backend lifecycle",
+      progress: 0,
+      activity: "Request captured in Live Chat",
+      model: null,
+      skills: [],
+      agentStates: [{ name: "Koordynator", state: "waiting" }],
+      events: []
+    };
     setPhase("routing");
     event("Request captured from Live Chat");
-    event(`Intent routing: ${route.intents.join(" · ")}`);
-    event(`Skills selected: ${route.skills.join(", ")}`);
-    setPhase("running");
-    event(`${route.agents[0]} started`);
-    saveReceipt(); render();
+    event("Awaiting authoritative backend process events");
+    saveReceipt();
+    render();
   }
 
-  function advanceAgents(finalState) {
-    if (!state.receipt?.agentStates?.length) return;
-    if (finalState === "done") for (const agent of state.receipt.agentStates) agent.state = "done";
-    else if (finalState === "error") (state.receipt.agentStates.find((agent) => agent.state === "running") || state.receipt.agentStates[0]).state = "error";
-    else if (finalState === "stopped") {
-      const running = state.receipt.agentStates.find((agent) => agent.state === "running");
-      if (running) running.state = "stopped";
-    }
+  function phaseForStage(stage) {
+    const value = String(stage || "").toUpperCase();
+    if (value === "DONE") return "done";
+    if (value === "ERROR") return "error";
+    if (value === "STOPPED") return "stopped";
+    return "running";
+  }
+
+  function applyProcess(update) {
+    if (!state.receipt || !update || typeof update !== "object") return;
+    const previous = [state.receipt.stage, state.receipt.agent, state.receipt.activity].join("|");
+    state.receipt.stage = String(update.stage || state.receipt.stage || "UNKNOWN");
+    state.receipt.agent = String(update.agent || state.receipt.agent || "Koordynator");
+    state.receipt.process = String(update.process || state.receipt.process || "Live Chat");
+    state.receipt.progress = clampProgress(update.progress ?? state.receipt.progress);
+    state.receipt.activity = String(update.activity || state.receipt.activity || "Active");
+    state.receipt.model = update.model ? String(update.model) : state.receipt.model;
+    if (Array.isArray(update.skills)) state.receipt.skills = update.skills.map((item) => String(item));
+    const phase = phaseForStage(state.receipt.stage);
+    state.receipt.agentStates = [{
+      name: state.receipt.agent,
+      state: phase === "done" ? "done" : phase === "error" ? "error" : phase === "stopped" ? "stopped" : "running"
+    }];
+    state.receipt.lastActivityAt = new Date().toISOString();
+    setPhase(phase);
+    const current = [state.receipt.stage, state.receipt.agent, state.receipt.activity].join("|");
+    if (current !== previous) event(`${state.receipt.stage} · ${state.receipt.agent} · ${state.receipt.activity}`);
+    saveReceipt();
+    render();
   }
 
   function render() {
     if (!body) return;
     setPinned(state.pinned);
     if (!state.receipt) {
-      body.innerHTML = '<div class="router-empty">Send a task in Live Chat. Routing Inspector will record the request, detected intent, required skill set and execution lifecycle here.</div>';
+      body.innerHTML = '<div class="router-empty">Send a task in Live Chat. Routing Inspector will show only observed backend lifecycle events, active agent, stage and process progress.</div>';
       delete toggle.dataset.routerState;
       if (live) { live.className = "router-live"; live.querySelector("b").textContent = "IDLE"; }
       return;
     }
     const r = state.receipt;
     setPhase(r.phase || "idle");
+    const progress = clampProgress(r.progress);
+    const skillHtml = (r.skills || []).length
+      ? r.skills.map((v) => `<span class="router-chip">✓ ${esc(v)}</span>`).join("")
+      : '<span class="router-empty-inline">not selected</span>';
+    const model = r.model ? `<span class="router-model">${esc(r.model)}</span>` : "";
     body.innerHTML = `
       <section class="router-section"><span class="router-label">REQUEST</span><p class="router-request">${esc(r.request)}</p></section>
-      <section class="router-section"><span class="router-label">UNDERSTANDING</span><div class="router-intents">${(r.intents || []).map((v) => `<span class="router-chip">${esc(v)}</span>`).join("")}</div></section>
-      <section class="router-section"><span class="router-label">DETECTED SIGNALS</span><div class="router-signal-list">${(r.signals || []).map((v) => `<div class="router-signal"><code>${esc(v.signal)}</code><span>→</span><strong>${esc(v.route)}</strong></div>`).join("")}</div></section>
-      <section class="router-section"><span class="router-label">SELECTED SKILL PLAN</span><div class="router-skills">${(r.skills || []).map((v) => `<span class="router-chip">✓ ${esc(v)}</span>`).join("")}</div></section>
+      <section class="router-section router-live-section">
+        <div class="router-process-head"><span class="router-label">LIVE PROCESS</span><span class="router-elapsed">${esc(elapsedLabel(r.createdAt))}</span></div>
+        <div class="router-process-grid">
+          <div class="router-process-card active"><span>AGENT</span><strong><i class="router-agent-pulse"></i>${esc(r.agent || "Koordynator")}</strong></div>
+          <div class="router-process-card"><span>STAGE</span><strong>${esc(r.stage || "INTAKE")}</strong></div>
+          <div class="router-process-card"><span>PROCESS</span><strong>${esc(r.process || "Awaiting backend")}</strong></div>
+        </div>
+        <div class="router-progress-row"><div class="router-progress-track"><i style="width:${progress}%"></i></div><strong class="router-progress-value">${progress}%</strong></div>
+        <div class="router-activity"><span class="router-activity-dot"></span><strong>${esc(r.activity || "Waiting")}</strong>${model}</div>
+      </section>
+      <section class="router-section"><span class="router-label">SELECTED SKILL PLAN</span><div class="router-skills">${skillHtml}</div></section>
       <section class="router-section"><span class="router-label">AGENT ROUTE</span><div class="router-agent-list">${(r.agentStates || []).map((v) => `<div class="router-agent"><strong>${esc(v.name)}</strong><span class="${esc(v.state)}">${esc(String(v.state).toUpperCase())}</span></div>`).join("")}</div></section>
       <section class="router-section"><span class="router-label">EXECUTION EVENTS</span><div class="router-event-list">${(r.events || []).map((v) => `<div class="router-event"><time>${esc(v.at)}</time><strong>${esc(v.text)}</strong></div>`).join("")}</div></section>
-      <div class="router-disclaimer">Inspector receipt shows observable routing decisions and execution lifecycle. It does not expose private model chain-of-thought. “Selected skill plan” is the capability route requested by Koordynator; actual tool execution is evidenced separately by chat/Hermes/task receipts.</div>`;
+      <div class="router-disclaimer">Progress is checkpoint progress from observable lifecycle events, not a guessed token/time estimate. Skills are shown only after an execution path actually selects them. The inspector does not expose private chain-of-thought.</div>`;
     body.scrollTop = body.scrollHeight;
   }
 
@@ -167,21 +203,17 @@
     const current = [...thread.querySelectorAll(".chat-message.assistant")].at(-1);
     if (!current) return;
     const status = current.querySelector(".message-state")?.textContent?.trim() || "";
-    const bubble = current.querySelector(".message-bubble")?.textContent || "";
-    if (status === "Generation failed") {
-      if (state.receipt.phase !== "error") { advanceAgents("error"); setPhase("error"); event("Assistant generation failed", "error"); saveReceipt(); render(); }
-      return;
+    if (status === "Generation failed" && state.receipt.phase !== "error") {
+      applyProcess({ stage: "ERROR", agent: "Koordynator", process: state.receipt.process, progress: state.receipt.progress, activity: "Assistant generation failed" });
+    } else if (status === "Generation stopped" && state.receipt.phase !== "stopped") {
+      applyProcess({ stage: "STOPPED", agent: "Koordynator", process: state.receipt.process, progress: state.receipt.progress, activity: "Generation stopped by operator" });
     }
-    if (status === "Generation stopped") {
-      if (state.receipt.phase !== "stopped") { advanceAgents("stopped"); setPhase("stopped"); event("Generation stopped by operator"); saveReceipt(); render(); }
-      return;
-    }
-    if (bubble && state.receipt.phase === "running") {
-      const hasStreamingMarker = current.querySelector(".message-bubble .streaming-cursor") || document.getElementById("statusText")?.textContent === "Generating";
-      if (!hasStreamingMarker && document.getElementById("statusText")?.textContent === "Connected") {
-        advanceAgents("done"); setPhase("done"); event("Assistant turn completed"); saveReceipt(); render();
-      }
-    }
+  }
+
+  function tickLive() {
+    if (!state.receipt) return;
+    const elapsed = drawer.querySelector(".router-elapsed");
+    if (elapsed) elapsed.textContent = elapsedLabel(state.receipt.createdAt);
   }
 
   toggle.addEventListener("click", () => setOpen(!state.open));
@@ -196,24 +228,43 @@
     if (action === "copy" && state.receipt) {
       try {
         await navigator.clipboard.writeText(JSON.stringify(state.receipt, null, 2));
-        button.classList.add("router-copy-ok"); const old = button.textContent; button.textContent = "Copied";
+        button.classList.add("router-copy-ok");
+        const old = button.textContent;
+        button.textContent = "Copied";
         setTimeout(() => { button.classList.remove("router-copy-ok"); button.textContent = old; }, 1200);
       } catch {}
     }
   });
+
   sendButton.addEventListener("click", () => captureRequest(input.value), true);
-  input.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) captureRequest(input.value); }, true);
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) captureRequest(input.value);
+  }, true);
   new MutationObserver(() => assistantLifecycle()).observe(thread, { childList: true, subtree: true, characterData: true });
   window.addEventListener("koordynator:routing-event", (ev) => {
     const detail = ev.detail || {};
+    if (!state.receipt && detail.request) captureRequest(String(detail.request));
     if (!state.receipt) return;
+    if (detail.stage || detail.agent || detail.process || detail.progress !== undefined || detail.activity) {
+      applyProcess(detail);
+      return;
+    }
     if (detail.text) event(String(detail.text), String(detail.kind || "info"));
     if (detail.phase) setPhase(String(detail.phase));
-    saveReceipt(); render();
+    saveReceipt();
+    render();
   });
-  window.koordynatorRouterInspector = { open: () => setOpen(true), close: () => setOpen(false), capture: captureRequest,
-    emit: (text, kind) => { event(text, kind); saveReceipt(); render(); }, receipt: () => state.receipt };
-  setPinned(state.pinned); render();
+  window.koordynatorRouterInspector = {
+    open: () => setOpen(true),
+    close: () => setOpen(false),
+    capture: captureRequest,
+    emit: (text, kind) => { event(text, kind); saveReceipt(); render(); },
+    process: applyProcess,
+    receipt: () => state.receipt
+  };
+  setInterval(tickLive, 1000);
+  setPinned(state.pinned);
+  render();
 })();
 
 /* Live app-level route telemetry and a readable Hermes mirror. */
@@ -427,8 +478,30 @@
         if (button.dataset.runtimeMode) setMode(button.dataset.runtimeMode);
         if (button.dataset.runtimeAction === "expand") { pane.classList.toggle("runtime-expanded"); button.textContent = pane.classList.contains("runtime-expanded") ? "Collapse" : "Expand"; requestAnimationFrame(() => window.dispatchEvent(new Event("resize"))); }
         if (button.dataset.runtimeAction === "copy") {
-          try { await navigator.clipboard.writeText(readableRoot?.innerText || ""); const old = button.textContent; button.textContent = "Copied"; setTimeout(() => { button.textContent = old; }, 1000); }
-          catch { button.textContent = "Copy failed"; }
+          try {
+            let text = "";
+            if (currentMode === "raw") {
+              text = window.koordynatorHermesTerminal?.getSelection?.() || "";
+              if (!text) {
+                button.textContent = "Select text first";
+                setTimeout(() => { button.textContent = "Copy"; }, 1200);
+                return;
+              }
+            } else {
+              const selection = window.getSelection();
+              const selected = selection && selection.anchorNode && readableRoot?.contains(selection.anchorNode)
+                ? selection.toString().trim()
+                : "";
+              text = selected || readableRoot?.innerText || "";
+            }
+            await navigator.clipboard.writeText(text);
+            const old = button.textContent;
+            button.textContent = "Copied";
+            setTimeout(() => { button.textContent = old; }, 1000);
+          } catch {
+            button.textContent = "Copy failed";
+            setTimeout(() => { button.textContent = "Copy"; }, 1200);
+          }
         }
       });
     }
