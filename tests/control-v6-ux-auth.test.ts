@@ -35,6 +35,9 @@ describe("Control V6 terminal and startup contracts", () => {
     expect(js).toContain("Readable");
     expect(js).toContain("Raw PTY");
     expect(js).toContain("navigator.clipboard.writeText");
+    expect(js).toContain("attachCustomKeyEventHandler");
+    expect(js).toContain("koordynatorHermesTerminal");
+    expect(js).toContain("getSelection");
     expect(js).toContain("terminal-question");
     expect(js).toContain("terminal-noise");
     expect(css).toContain("user-select:text");
