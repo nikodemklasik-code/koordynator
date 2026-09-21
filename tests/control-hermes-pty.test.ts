@@ -96,6 +96,9 @@ describe("Live Chat + Hermes PTY screen", () => {
       expect(css).toContain(".chat-workspace .composer-wrap,.hermes-composer{height:88px");
       const js = await fetch(`${base}/chat.js`).then((item) => item.text());
       expect(js).toContain("/api/hermes/pty");
+      expect(js).toContain("ensureHermesTerminalGrant");
+      expect(js).toContain("restoreHermesPty");
+      expect(js).toContain("reconcileChatSession");
       expect(js).toContain("muteHermes");
       expect(js).toContain("new Terminal");
     } finally {
@@ -165,25 +168,31 @@ describe("Hermes PTY HTTP", () => {
     roots.push(root);
     await grantTerminal(root);
     const fake = echoPty();
+    let preparedModel: string | undefined;
     const { base, close } = await listen({
       stateDir: root,
       webRoot: resolve("web/control"),
       hermesPty: {
         spawn: fake.spawn,
-        prepare: async () => ({ command: "echo", args: ["ok"], cwd: root, env: process.env })
+        prepare: async (model) => {
+          preparedModel = model;
+          return { command: "echo", args: ["ok"], cwd: root, env: process.env };
+        }
       }
     });
     try {
       const started = await fetch(`${base}/api/hermes/pty`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cols: 80, rows: 24 })
+        body: JSON.stringify({ cols: 80, rows: 24, model: "gh/claude-fable-5" })
       });
       expect(started.status).toBe(201);
-      const session = await started.json() as { sessionId: string; cols: number; rows: number };
+      const session = await started.json() as { sessionId: string; cols: number; rows: number; model: string | null };
       expect(session.sessionId).toMatch(/^[0-9a-f-]{36}$/i);
       expect(session.cols).toBe(100);
       expect(session.rows).toBe(32);
+      expect(session.model).toBe("gh/claude-fable-5");
+      expect(preparedModel).toBe("gh/claude-fable-5");
       expect(fake.resizes.at(-1)).toEqual({ cols: 100, rows: 32 });
 
       const events = await fetch(`${base}/api/hermes/pty/${session.sessionId}/events`);
