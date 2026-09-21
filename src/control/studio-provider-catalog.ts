@@ -25,7 +25,7 @@ export function studioProviderCatalog(frontendModels: string[] = []): StudioProv
       capability: "image",
       providerId: "openai-image",
       label: "OpenAI Image",
-      model: process.env.KOORDYNATOR_IMAGE_MODEL?.trim() || "gpt-image-2",
+      model: process.env.KOORDYNATOR_IMAGE_MODEL?.trim() || "gpt-image-2.5-sunburst",
       state: imageReady ? "READY" : "NOT_CONFIGURED",
       source: "environment",
       detail: imageReady
