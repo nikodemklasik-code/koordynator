@@ -33,6 +33,7 @@ export async function loadChatProjectContext(root = process.cwd()): Promise<stri
   if (sections.length === 0) return null;
   return [
     "You are assisting inside the Koordynator project control chat.",
+    "Active local repository: nikodemklasik-code/koordynator.",
     "Use the following project contracts and environment notes when relevant.",
     "Treat them as authoritative project guidance, not as user-provided secrets.",
     "",
