@@ -26,7 +26,18 @@
     document.querySelector(`.studio-provider-card[data-capability="${CSS.escape(name)}"]`)?.scrollIntoView({ block: "nearest" });
   }
 
-  tabs.forEach((button) => button.addEventListener("click", () => activateTab(button.dataset.studioTab)));
+  tabs.forEach((button) => button.addEventListener("click", () => {
+    const tab = button.dataset.studioTab;
+    activateTab(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    history.replaceState(null, "", url);
+  }));
+
+  const requestedTab = new URLSearchParams(window.location.search).get("tab");
+  if (requestedTab && panels.some((panel) => panel.dataset.studioPanel === requestedTab)) {
+    activateTab(requestedTab);
+  }
 
   function providerState(provider) {
     return provider?.state || "NOT_CONFIGURED";
