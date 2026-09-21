@@ -7,6 +7,27 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createControlServer } from "../src/control/server.js";
 
 const roots: string[] = [];
+const FREE_MODEL = "auto/best-free";
+const freeCatalog = {
+  models: [FREE_MODEL],
+  source: "OMNIROUTE" as const,
+  checkedAt: "2026-09-21T20:00:00.000Z",
+  billing: {
+    liveChatTransport: "OMNIROUTE_API" as const,
+    subscriptionHarnessUsed: false,
+    subscriptionHarnessPath: "NOT_AVAILABLE" as const,
+    modelSources: { [FREE_MODEL]: "FREE_CONFIRMED" as const },
+    modelRoutes: {
+      [FREE_MODEL]: {
+        provider: "test",
+        family: "TEST",
+        transport: "OMNIROUTE_API" as const,
+        subscriptionHarnessUsed: false,
+        billingSource: "FREE_CONFIRMED" as const
+      }
+    }
+  }
+};
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -96,6 +117,8 @@ describe("end conversation -> deterministic Tasks", () => {
       webRoot: resolve("web/control"),
       chatApiKey: "test-key",
       chatFetchImpl: fetchImpl,
+      chatDefaultModel: FREE_MODEL,
+      chatModelCatalog: { async list() { return freeCatalog; } },
       materialisationPrivateKeyPem: signingKey(),
       materialisationKeyId: "control-plane"
     });
@@ -110,7 +133,7 @@ describe("end conversation -> deterministic Tasks", () => {
       const session = await fetch(`${base}/api/chat/sessions`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({})
+        body: JSON.stringify({ model: FREE_MODEL })
       }).then((response) => response.json()) as { sessionId: string };
 
       const accepted = await fetch(`${base}/api/chat/sessions/${session.sessionId}/messages`, {
