@@ -140,8 +140,10 @@ describe("Shared Room", () => {
   it("preserves user-selected participant order and bounded round count", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-shared-order-"));
     roots.push(root);
-    const s1 = await seed(root, "First source", "cx/first-model");
-    const s2 = await seed(root, "Second source", "cc/second-model");
+    const s1 = "33333333-3333-4333-8333-333333333333";
+    const s2 = "44444444-4444-4444-8444-444444444444";
+    await seed(root, sourceSession(s1, "cx/first-model", "First source"));
+    await seed(root, sourceSession(s2, "cc/second-model", "Second source"));
     const bodies: Array<{ model?: string; messages?: Array<{ content: string }> }> = [];
     const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body ?? "{}"));
