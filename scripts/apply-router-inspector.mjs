@@ -16,7 +16,7 @@ async function patchFile(path, transform) {
 export function patchChatHtml(source) {
   let out = source;
   if (!out.includes('href="/chat-router.css')) {
-    const marker = '<link rel="stylesheet" href="/chat-v5.css?v=5" />';
+    const marker = '<link rel="stylesheet" href="/chat-v5.css?v=6" />';
     if (!out.includes(marker)) throw new Error("ROUTER_INSTALL_CHAT_CSS_MARKER_MISSING");
     out = out.replace(marker, `${marker}\n  <link rel="stylesheet" href="/chat-router.css?v=1" />`);
   }
