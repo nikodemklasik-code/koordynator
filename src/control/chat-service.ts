@@ -365,7 +365,20 @@ export class ChatService {
     if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
     try {
       const body = await readFile(sessionFile(this.root, sessionId), "utf8");
-      return JSON.parse(body) as ChatSession;
+      const session = JSON.parse(body) as ChatSession;
+      if (!this.active.has(sessionId) && !this.starting.has(sessionId)) {
+        const orphaned = session.messages.filter((message) => message.role === "assistant" && message.state === "streaming");
+        if (orphaned.length) {
+          const completedAt = now();
+          for (const message of orphaned) {
+            message.state = "stopped";
+            message.completedAt = completedAt;
+          }
+          session.updatedAt = completedAt;
+          await this.persist(session);
+        }
+      }
+      return session;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
