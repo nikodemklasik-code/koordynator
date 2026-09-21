@@ -662,6 +662,10 @@ function applyEvent(event) {
     if (!state.generating) setStatus("connected", "Connected");
     return;
   }
+  if (event.type === "process_update" && event.update) {
+    window.dispatchEvent(new CustomEvent("koordynator:routing-event", { detail: event.update }));
+    return;
+  }
   if (event.type === "user_message" || event.type === "assistant_start" || event.type === "assistant_done" || event.type === "stopped") {
     const message = { ...event.message };
     state.messages.set(message.id, message);

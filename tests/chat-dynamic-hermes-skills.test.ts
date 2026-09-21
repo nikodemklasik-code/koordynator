@@ -13,7 +13,7 @@ afterEach(async () => {
 const EMPTY_ZIP_BASE64 = "UEsFBgAAAAAAAAAAAAAAAAAAAAAAAA==";
 
 describe("Live Chat dynamic Hermes skill routing", () => {
-  it("recognises every substantive natural-language turn so unused skills remain discoverable", () => {
+  it("can recognise substantive text without treating recognition as execution authority", () => {
     expect(isActionableSkillTask("podziel na mniejsze elementy", 1)).toBe(true);
     expect(isActionableSkillTask("Rozbij ten ZIP na moduły", 1)).toBe(true);
     expect(isActionableSkillTask("implement this package", 1)).toBe(true);
@@ -25,7 +25,7 @@ describe("Live Chat dynamic Hermes skill routing", () => {
     expect(isActionableSkillTask("", 1)).toBe(true);
   });
 
-  it("routes ZIP + natural-language decomposition through injected Hermes skill executor and persists the result", async () => {
+  it("routes only an explicit /skill request through the Hermes skill executor", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-skills-"));
     roots.push(root);
     const calls: SkillRun[] = [];
@@ -38,7 +38,6 @@ describe("Live Chat dynamic Hermes skill routing", () => {
         calls.push(run);
         expect(run.attachments).toHaveLength(1);
         expect(run.attachments[0]?.name).toBe("codepack.zip");
-        expect(run.context.at(-1)).toMatchObject({ role: "user", content: "podziel na mniejsze elementy" });
         run.emit("Podział wykonany.\nSKILLS_USED: codebase-inspection, planning\n");
       }
     });
@@ -54,7 +53,7 @@ describe("Live Chat dynamic Hermes skill routing", () => {
 
     await chat.startMessage(
       session.sessionId,
-      "podziel na mniejsze elementy",
+      "/skill podziel na mniejsze elementy",
       undefined,
       [{
         name: "codepack.zip",
@@ -71,38 +70,42 @@ describe("Live Chat dynamic Hermes skill routing", () => {
     expect(calls).toHaveLength(1);
     expect(assistant.state).toBe("complete");
     expect(assistant.content).toContain("SKILLS_USED: codebase-inspection, planning");
-
-    const persisted = await chat.getSession(session.sessionId);
-    expect(persisted?.messages.at(-1)?.state).toBe("complete");
-    expect(persisted?.messages.at(-1)?.content).toContain("Podział wykonany");
-    expect(persisted?.messages.at(-2)?.attachments?.[0]?.mimeType).toBe("application/zip");
     chat.close();
   });
 
-  it("routes a previously unused natural-language skill trigger without an attachment", async () => {
-    const root = await mkdtemp(join(tmpdir(), "koord-chat-unused-skill-"));
+  it("does not let the legacy every-turn flag bypass the normal chat path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-no-auto-skill-"));
     roots.push(root);
     const calls: SkillRun[] = [];
     const chat = new ChatService({
       stateDir: root,
       apiKey: "fixture-key",
+      defaultModel: "oc/test-model",
       hermesSkillsEveryTurn: true,
       skillExecutor: async (run) => {
         calls.push(run);
-        run.emit("Skill loaded dynamically.\nSKILLS_USED: never-used-before\n");
-      }
+        run.emit("SHOULD_NOT_RUN");
+      },
+      fetchImpl: async () => new Response(
+        'data: {"choices":[{"delta":{"content":"Normal chat route"}}]}\n\ndata: [DONE]\n\n',
+        { status: 200, headers: { "content-type": "text/event-stream" } }
+      )
     });
     const session = await chat.createSession();
     const done = new Promise<ChatMessage>((resolve) => {
       const unsubscribe = chat.subscribe(session.sessionId, (event) => {
-        if (event.type === "assistant_done") { unsubscribe(); resolve(event.message); }
+        if (event.type === "assistant_done") {
+          unsubscribe();
+          resolve(event.message);
+        }
       });
     });
+
     await chat.startMessage(session.sessionId, "przygotuj audyt dostępności interfejsu");
     const assistant = await done;
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.attachments).toEqual([]);
-    expect(assistant.content).toContain("SKILLS_USED: never-used-before");
+
+    expect(calls).toHaveLength(0);
+    expect(assistant.content).toContain("Normal chat route");
     chat.close();
   });
 });

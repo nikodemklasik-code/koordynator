@@ -138,6 +138,15 @@ export class StageZeroService {
     if (!project) throw new StageZeroError("STAGE_ZERO_NEEDS_INPUT", 400);
 
     const sessionModel = session.model;
+    this.options.chat.emitProcessUpdate({
+      sessionId,
+      stage: "HARMONIA",
+      agent: "Harmonia",
+      process: "Etap 0 · samotne poznanie",
+      progress: 20,
+      activity: "Reading the selected conversation scope",
+      model: this.options.harmoniaModel?.trim() || sessionModel
+    });
     const shared = {
       ...(this.options.endpoint === undefined ? {} : { endpoint: this.options.endpoint }),
       ...(this.options.apiKey === undefined ? {} : { apiKey: this.options.apiKey }),
@@ -170,8 +179,27 @@ export class StageZeroService {
       throw error;
     }
 
+    this.options.chat.emitProcessUpdate({
+      sessionId,
+      stage: "HARMONIA",
+      agent: "Harmonia",
+      process: "Etap 0 · samotne poznanie",
+      progress: 45,
+      activity: `Decision: ${reading.decision.status.toUpperCase()}`,
+      model: reading.model
+    });
+
     let roadmap: Roadmap | null = null;
     if (reading.decision.status === "allow") {
+      this.options.chat.emitProcessUpdate({
+        sessionId,
+        stage: "BRAIN",
+        agent: "Brain",
+        process: "Etap 0 · mapa wykonawcza",
+        progress: 60,
+        activity: "Harmonia allowed progression; Brain is writing the roadmap",
+        model: sessionModel
+      });
       try {
         // Mózg spisuje mapę na modelu sesji — to ręka wykonawcza, nie poznanie.
         roadmap = await new BrainRoadmapWriter({ ...shared, model: sessionModel }).write(project, reading);
@@ -190,6 +218,17 @@ export class StageZeroService {
       runAt: new Date().toISOString()
     };
     await this.persist(run);
+    this.options.chat.emitProcessUpdate({
+      sessionId,
+      stage: "DONE",
+      agent: roadmap ? "Brain" : "Harmonia",
+      process: "Etap 0",
+      progress: 100,
+      activity: roadmap
+        ? "Etap 0 completed; roadmap persisted"
+        : `Etap 0 completed with ${reading.decision.status.toUpperCase()}; no execution roadmap admitted`,
+      model: roadmap ? sessionModel : reading.model
+    });
     return run;
   }
 

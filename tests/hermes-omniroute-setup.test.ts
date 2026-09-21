@@ -139,6 +139,8 @@ describe("Hermes / OmniRoute operator setup", () => {
       expect(launch.env.OPENAI_API_KEY).toMatch(/^tkt\./);
       expect(launch.env.OPENAI_API_KEY).not.toBe(settings.apiKey);
       expect(launch.env.OMNIROUTE_TASK_TICKET).toBe(launch.env.OPENAI_API_KEY);
+      const payload = JSON.parse(Buffer.from(launch.env.OPENAI_API_KEY!.split(".")[1]!, "base64url").toString("utf8")) as { iat: number; exp: number };
+      expect(payload.exp - payload.iat).toBe(8 * 60 * 60_000);
       await rm(path);
       const outside = join(root, "untouched");
       await writeFile(outside, "preserve");

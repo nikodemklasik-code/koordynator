@@ -12,14 +12,21 @@ describe("Coordinator Router inspector", () => {
     const css = await readFile(join(repo, "web/control/chat-router.css"), "utf8");
 
     expect(js).toContain("COORDINATOR ROUTER");
+    expect(js).toContain("LIVE PROCESS");
     expect(js).toContain("SELECTED SKILL PLAN");
-    expect(js).toContain("DETECTED SIGNALS");
     expect(js).toContain("EXECUTION EVENTS");
+    expect(js).toContain("router-progress-value");
+    expect(js).toContain("checkpoint progress");
     expect(js).toContain("koordynatorRouterInspector");
-    expect(js).toContain("private model chain-of-thought");
+    expect(js).toContain("private chain-of-thought");
+    expect(js).not.toContain("general-reasoning");
+    expect(js).not.toContain("function analyse(");
     expect(css).toContain(".router-drawer");
     expect(css).toContain("transform:translateX(102%)");
     expect(css).toContain("width:clamp(420px,44vw,720px)");
+    expect(css).toContain(".router-process-grid");
+    expect(css).toContain(".router-agent-pulse");
+    expect(css).toContain("@keyframes routerLivePulse");
   });
 
   it("patches chat assets and static routes idempotently", async () => {
