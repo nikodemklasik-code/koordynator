@@ -162,49 +162,67 @@
   }
 
   function ensureExplorerStyles() {
-    if (document.getElementById("v5ModelExplorerStyles")) return;
-    const style = document.createElement("style");
-    style.id = "v5ModelExplorerStyles";
-    style.textContent = `
-      .v5-model-explorer{position:relative;display:flex;align-items:center;gap:6px;min-width:0}
-      .v5-model-search{width:190px;height:40px;padding:0 10px;border:1px solid #27333d;border-radius:9px;background:#0b1116;color:#d9e2e8;font-size:12px;outline:none}
-      .v5-model-search:focus{border-color:#44779a;box-shadow:0 0 0 3px rgba(77,139,181,.10)}
-      .v5-model-role{height:40px;max-width:150px;padding:0 8px;border:1px solid #27333d;border-radius:9px;background:#0b1116;color:#9fb0bb;font-size:11px;outline:none}
-      .v5-model-results{position:absolute;z-index:180;left:0;bottom:46px;width:min(620px,70vw);max-height:340px;overflow:auto;padding:6px;border:1px solid #2b3944;border-radius:12px;background:#090e13;box-shadow:0 24px 70px rgba(0,0,0,.62)}
-      .v5-model-results[hidden]{display:none}
-      .v5-model-result{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px 9px;border:0;border-radius:8px;background:transparent;color:#dce5eb;text-align:left;cursor:pointer}
-      .v5-model-result:hover,.v5-model-result.active{background:#111b23}
-      .v5-model-result strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 12px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace}
-      .v5-model-result small{display:block;margin-top:3px;color:#687986;font-size:10px}
-      .v5-model-tags{display:flex;gap:3px;justify-content:flex-end;flex-wrap:wrap;max-width:210px}
-      .v5-model-tag{padding:2px 5px;border:1px solid #263844;border-radius:999px;color:#7194aa;font-size:8px;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
-      .v5-model-empty{padding:14px;color:#6f7e89;font-size:11px;text-align:center}
-      @media (max-width:980px){.v5-model-search{width:130px}.v5-model-role{max-width:110px}.v5-model-results{width:min(520px,88vw)}}
-      @media (max-width:720px){.v5-model-explorer{width:100%}.v5-model-search{flex:1;width:auto}.v5-model-role{max-width:140px}}
-    `;
-    document.head.appendChild(style);
+    // Canonical layout lives in chat-shell.css. Keep this hook for older runtimes
+    // that still call it, but never inject a competing third layout definition.
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
   }
 
   function ensureModelExplorer() {
     if (!modelSelect || document.getElementById("modelSearchInput")) return;
     ensureExplorerStyles();
+
     const picker = modelSelect.closest(".v5-model-picker") || modelSelect.parentElement;
     const actions = modelSelect.closest(".v5-composer-actions") || picker?.parentElement;
     if (!picker || !actions) return;
 
-    const explorer = document.createElement("div");
-    explorer.className = "v5-model-explorer";
-    explorer.innerHTML = `
-      <input id="modelSearchInput" class="v5-model-search" type="search" autocomplete="off" spellcheck="false" placeholder="Search model…" aria-label="Search AI model" />
-      <select id="modelRoleFilter" class="v5-model-role" aria-label="Model role category">
-        ${MODEL_ROLES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}
-      </select>
-      <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>`;
-    actions.insertBefore(explorer, picker);
+    const attach = document.getElementById("attachButton");
+    const stop = document.getElementById("stopButton");
+    const send = document.getElementById("sendButton");
 
-    const input = explorer.querySelector("#modelSearchInput");
-    const role = explorer.querySelector("#modelRoleFilter");
-    const results = explorer.querySelector("#modelSearchResults");
+    const row = document.createElement("div");
+    row.className = "v5-control-row";
+    row.setAttribute("aria-label", "Model, role and message controls");
+
+    const unified = document.createElement("div");
+    unified.className = "v5-unified-model-select";
+    unified.setAttribute("role", "combobox");
+    unified.setAttribute("aria-haspopup", "listbox");
+    unified.setAttribute("aria-expanded", "false");
+    unified.innerHTML = `
+      <input id="modelSearchInput" class="v5-model-search" type="search"
+        autocomplete="off" spellcheck="false"
+        placeholder="SEARCH OR CHOOSE MODEL"
+        aria-label="Search or choose AI model" />
+      <button id="modelMenuButton" class="v5-model-menu-button" type="button"
+        aria-label="Open model menu" aria-expanded="false">⌄</button>
+      <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>`;
+
+    const role = document.createElement("select");
+    role.id = "modelRoleFilter";
+    role.className = "v5-model-role";
+    role.setAttribute("aria-label", "Model role category");
+    role.innerHTML = MODEL_ROLES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+
+    picker.classList.add("v5-native-model-picker");
+    picker.setAttribute("aria-hidden", "true");
+
+    actions.insertBefore(row, picker);
+    unified.appendChild(picker);
+    row.append(unified, role);
+    if (attach) row.appendChild(attach);
+    if (stop) row.appendChild(stop);
+    if (send) row.appendChild(send);
+
+    const input = unified.querySelector("#modelSearchInput");
+    const menuButton = unified.querySelector("#modelMenuButton");
+    const results = unified.querySelector("#modelSearchResults");
 
     function entries() {
       return [...modelSelect.options]
@@ -212,53 +230,136 @@
         .map((option) => ({ option, roles: rolesForOption(option) }));
     }
 
-    function renderResults(forceOpen = false) {
-      const query = String(input.value || "").trim().toLowerCase();
+    function selectedLabel() {
+      const option = modelSelect.selectedOptions?.[0];
+      return option?.textContent?.trim() || option?.value || "";
+    }
+
+    function closeResults({ restore = true } = {}) {
+      results.hidden = true;
+      unified.setAttribute("aria-expanded", "false");
+      menuButton.setAttribute("aria-expanded", "false");
+      if (restore) input.value = selectedLabel();
+    }
+
+    function renderResults({ forceOpen = false, ignoreQuery = false } = {}) {
+      const rawQuery = ignoreQuery ? "" : String(input.value || "").trim().toLowerCase();
       const selectedRole = role.value;
       const filtered = entries().filter(({ option, roles }) => {
         const roleMatch = selectedRole === "ALL" || roles.has(selectedRole);
         const text = `${option.value} ${option.textContent || ""}`.toLowerCase();
-        return roleMatch && (!query || text.includes(query));
-      }).slice(0, 20);
+        return roleMatch && (!rawQuery || text.includes(rawQuery));
+      }).slice(0, 24);
 
-      if (!forceOpen && !query && selectedRole === "ALL") {
-        results.hidden = true;
+      if (!forceOpen && !rawQuery && selectedRole === "ALL") {
+        closeResults({ restore: false });
         return;
       }
+
       results.hidden = false;
+      unified.setAttribute("aria-expanded", "true");
+      menuButton.setAttribute("aria-expanded", "true");
+
       if (!filtered.length) {
-        results.innerHTML = '<div class="v5-model-empty">No matching executable model.</div>';
+        results.innerHTML = '<div class="v5-model-empty">NO MATCHING EXECUTABLE MODEL</div>';
         return;
       }
+
       results.innerHTML = filtered.map(({ option, roles }) => {
         const labels = [...roles].filter((item) => item !== "GENERAL").slice(0, 3);
-        return `<button type="button" class="v5-model-result${option.value === modelSelect.value ? " active" : ""}" data-model="${option.value.replaceAll("&", "&amp;").replaceAll('"', "&quot;")}">
-          <span><strong>${(option.textContent || option.value).replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</strong><small>${option.value.replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</small></span>
-          <span class="v5-model-tags">${labels.map((item) => `<i class="v5-model-tag">${MODEL_ROLES.find(([value]) => value === item)?.[1] || item}</i>`).join("")}</span>
+        const active = option.value === modelSelect.value ? " active" : "";
+        return `<button type="button" class="v5-model-result${active}" data-model="${escapeHtml(option.value)}">
+          <span><strong>${escapeHtml(option.textContent || option.value)}</strong><small>${escapeHtml(option.value)}</small></span>
+          <span class="v5-model-tags">${labels.map((item) => `<i class="v5-model-tag">${escapeHtml(MODEL_ROLES.find(([value]) => value === item)?.[1] || item)}</i>`).join("")}</span>
         </button>`;
       }).join("");
     }
 
-    input.addEventListener("input", () => renderResults(true));
-    input.addEventListener("focus", () => renderResults(Boolean(input.value || role.value !== "ALL")));
-    role.addEventListener("change", () => renderResults(true));
-    results.addEventListener("click", (event) => {
-      const button = event.target.closest("button[data-model]");
-      if (!button) return;
-      const value = button.dataset.model;
+    function commitModel(value) {
       const option = [...modelSelect.options].find((item) => item.value === value && !item.disabled);
       if (!option) return;
       modelSelect.value = value;
       modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
-      input.value = "";
-      results.hidden = true;
+      closeResults({ restore: true });
+    }
+
+    input.value = selectedLabel();
+
+    input.addEventListener("focus", () => {
+      input.select();
+      renderResults({ forceOpen: true, ignoreQuery: true });
     });
+    input.addEventListener("input", () => renderResults({ forceOpen: true }));
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeResults({ restore: true });
+      } else if (event.key === "ArrowDown") {
+        event.preventDefault();
+        renderResults({ forceOpen: true });
+        results.querySelector("button[data-model]")?.focus();
+      }
+    });
+
+    menuButton.addEventListener("click", () => {
+      if (!results.hidden) {
+        closeResults({ restore: true });
+        return;
+      }
+      input.focus();
+      input.select();
+      renderResults({ forceOpen: true, ignoreQuery: true });
+    });
+
+    role.addEventListener("change", () => {
+      input.focus();
+      input.select();
+      renderResults({ forceOpen: true, ignoreQuery: true });
+    });
+
+    results.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-model]");
+      if (!button) return;
+      commitModel(button.dataset.model);
+    });
+
+    results.addEventListener("keydown", (event) => {
+      const button = event.target.closest("button[data-model]");
+      if (!button) return;
+      const items = [...results.querySelectorAll("button[data-model]")];
+      const index = items.indexOf(button);
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        items[Math.min(items.length - 1, index + 1)]?.focus();
+      } else if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (index <= 0) input.focus();
+        else items[index - 1]?.focus();
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        commitModel(button.dataset.model);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        input.focus();
+        closeResults({ restore: true });
+      }
+    });
+
+    modelSelect.addEventListener("change", () => {
+      if (document.activeElement !== input) input.value = selectedLabel();
+      if (!results.hidden) renderResults({ forceOpen: true });
+    });
+
     document.addEventListener("pointerdown", (event) => {
-      if (!explorer.contains(event.target)) results.hidden = true;
+      if (!unified.contains(event.target) && event.target !== role) closeResults({ restore: true });
     });
+
     new MutationObserver(() => {
-      if (!results.hidden) renderResults(true);
+      if (document.activeElement !== input) input.value = selectedLabel();
+      if (!results.hidden) renderResults({ forceOpen: true });
     }).observe(modelSelect, { childList: true, subtree: true });
+
+    actions.classList.add("v5-canonical-control-row");
   }
 
   function installHermesReadableSanitizer() {
