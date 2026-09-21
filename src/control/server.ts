@@ -151,7 +151,7 @@ function isControlPost(pathname: string): boolean {
     /^\/api\/tasks\/TASK-[A-Za-z0-9._-]+\/run$/.test(pathname) ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
-    /^\/api\/chat\/sessions\/[0-9a-f-]+\/(?:title|invite|delete)$/i.test(pathname) ||
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/(?:title|invite|delete|conclude)$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stage-zero$/i.test(pathname) ||
     pathname === "/api/hermes/pty" ||
@@ -480,6 +480,17 @@ export function createControlServer(options: ControlServerOptions): Server {
         assertExactKeys(payload, []);
         await chat.deleteSession(sessionId);
         return sendJson(response, 200, { deleted: true, sessionId });
+      }
+
+      const chatConcludeMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/conclude$/i.exec(url.pathname);
+      if (method === "POST" && chatConcludeMatch?.[1]) {
+        const sessionId = safeSessionId(chatConcludeMatch[1]);
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, []);
+        return sendJson(response, 200, {
+          sessionId,
+          conclusion: await chat.endConversation(sessionId)
+        });
       }
 
       const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
