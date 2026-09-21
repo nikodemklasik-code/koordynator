@@ -14,10 +14,10 @@ export function isGenericAutoRoute(model: string): boolean {
 }
 
 export function resolveExecutableChatModel(input: {
-  requestedModel?: string;
+  requestedModel?: string | undefined;
   catalog: ChatModelCatalog;
-  policy?: ChatBillingPolicyOptions;
-  preferredModels?: string[];
+  policy?: ChatBillingPolicyOptions | undefined;
+  preferredModels?: string[] | undefined;
 }): ExecutableChatModelResolution | null {
   const requested = input.requestedModel?.trim() || undefined;
   const listed = new Set(input.catalog.models);
