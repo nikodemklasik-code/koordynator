@@ -717,3 +717,44 @@ button { color: inherit; }
 .v5-statusbar { min-height: 32px !important; height: 32px !important; font-size: 9px !important; }
 .ci-status,.v5-runtime-meta,.status-badge { font-size: 9px !important; }
 .v5-rail-foot { font-size: 10px !important; }
+
+
+/* LIGHTER-SLATE-2026-09
+   V5 workspace keeps the compact dark UI but lifts all primary surfaces away from near-black. */
+:root{
+  --v5-bg:#13202b;
+  --v5-panel:#172633;
+  --v5-panel-raised:#1c2e3c;
+  --v5-panel-soft:#223746;
+  --v5-line:#3a5064;
+  --v5-line-strong:#4a6278;
+  --v5-text:#f3f7fa;
+  --v5-text-soft:#c4ced7;
+  --v5-muted:#94a5b4;
+  --v5-faint:#6f8292;
+}
+body.workspace-v5,.v5-shell{background:var(--v5-bg)}
+.v5-rail{background:#172632;border-right-color:var(--v5-line)}
+.v5-logo{background:linear-gradient(145deg,#233b50,#192a38);border-color:#466a88}
+.v5-logo:hover{background:#29465d;border-color:#5c82a1}
+.v5-nav-item{color:#8498a8}.v5-nav-item:hover{background:#213544;border-color:#3c5367;color:#d7e1e8}.v5-nav-item.active{background:#26445d;border-color:#4e7697;color:#a9dcff}
+.v5-main{background:radial-gradient(circle at 35% -15%,rgba(91,157,208,.16),transparent 38%),var(--v5-bg)}
+.v5-topbar{background:rgba(23,38,51,.96);border-bottom-color:var(--v5-line)}
+.v5-env,.v5-action,.v5-icon-button,.v5-mini-button,.v5-more summary{background:#1b2d3b;border-color:#3d5468}
+.v5-action.primary{background:#244158;border-color:#4f7390}
+.v5-action:hover,.v5-icon-button:hover,.v5-mini-button:hover,.v5-more summary:hover{background:#294256;border-color:#5b758d}
+.v5-toolbar{background:rgba(21,35,47,.94);border-bottom-color:#32485b}
+.v5-more-menu{background:#1a2b38;border-color:#40566a}
+.v5-more-menu button:hover{background:#263d4f}
+.v5-chat-pane,.chat-frame{background:#172632}
+.v5-routebar,.chat-connection-bar{background:#1a2b38!important;border-bottom-color:#31485b!important}
+.v5-thread,.chat-thread{background:#172632!important}
+.chat-message.user .message-bubble{background:#274762!important;border-color:#4d7595!important}
+.v5-composer-zone,.composer-wrap{background:#152430!important;border-top-color:#31485b!important}
+.v5-composer,.composer{background:#1d3040!important;border-color:#405b72!important}
+.v5-composer:focus-within,.composer:focus-within{border-color:#5c85a6!important}
+.v5-terminal-pane,.hermes-pane{background:#14232e!important}
+.v5-terminal-head,.hermes-pane-head{background:#1a2a37!important;border-bottom-color:#344b5e!important}
+.hermes-term,.v5-terminal{background:#101b24!important}
+.v5-statusbar,.chat-statusbar{background:#152430!important;border-top-color:#31485b!important}
+
