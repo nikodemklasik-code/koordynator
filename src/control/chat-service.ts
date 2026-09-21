@@ -4,7 +4,7 @@ import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
 import { createSkillExecutor, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api/provider-usage.js";
 import type { ChatBillingDecision } from "./chat-billing-policy.js";
@@ -52,6 +52,10 @@ export type ChatSession = {
   createdAt: string;
   updatedAt: string;
   model: string;
+  /** User-controlled persistent title. Falls back to the first user message for legacy sessions. */
+  title?: string;
+  /** Other persisted chats explicitly invited into this chat as read-only collaboration context. */
+  invitedSessionIds?: string[];
   messages: ChatMessage[];
 };
 
@@ -61,6 +65,7 @@ export type ChatSessionSummary = {
   updatedAt: string;
   model: string;
   title: string;
+  invitedSessionIds: string[];
   messageCount: number;
 };
 
@@ -179,7 +184,16 @@ function parseAttachmentDataUrl(value: unknown, mimeType: string): { dataUrl: st
   return { dataUrl: value, base64: match[2], bytes: decoded.length };
 }
 
+function safeSessionTitle(value: unknown): string {
+  if (typeof value !== "string") throw new ChatServiceError("CHAT_TITLE_INVALID", 400);
+  const title = value.trim().replace(/\s+/g, " ");
+  if (!title || title.length > 120) throw new ChatServiceError("CHAT_TITLE_INVALID", 400);
+  return title;
+}
+
 function sessionTitle(session: ChatSession): string {
+  const explicit = typeof session.title === "string" ? session.title.trim().replace(/\s+/g, " ") : "";
+  if (explicit) return explicit.length > 120 ? explicit.slice(0, 120) : explicit;
   const firstUser = session.messages.find((message) => message.role === "user");
   const fromText = firstUser?.content.trim().replace(/\s+/g, " ");
   if (fromText) return fromText.length > 80 ? `${fromText.slice(0, 77)}…` : fromText;
@@ -379,6 +393,9 @@ export class ChatService {
           updatedAt: session.updatedAt,
           model: session.model,
           title: sessionTitle(session),
+          invitedSessionIds: Array.isArray(session.invitedSessionIds)
+            ? session.invitedSessionIds.filter((value) => typeof value === "string" && SESSION_RE.test(value))
+            : [],
           messageCount: session.messages.length
         } satisfies ChatSessionSummary;
       } catch {
@@ -415,6 +432,45 @@ export class ChatService {
     session.updatedAt = completedAt;
     await this.persist(session);
     return session;
+  }
+
+  async updateTitle(sessionId: string, title: string): Promise<ChatSession> {
+    const session = await this.getSession(sessionId);
+    if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    session.title = safeSessionTitle(title);
+    session.updatedAt = now();
+    await this.persist(session);
+    return session;
+  }
+
+  async setInvitation(sessionId: string, invitedSessionId: string, invited: boolean): Promise<ChatSession> {
+    if (!SESSION_RE.test(invitedSessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
+    if (sessionId === invitedSessionId) throw new ChatServiceError("CHAT_INVITE_SELF_FORBIDDEN", 400);
+    const [session, invitedSession] = await Promise.all([this.getSession(sessionId), this.getSession(invitedSessionId)]);
+    if (!session || !invitedSession) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    const current = new Set((session.invitedSessionIds ?? []).filter((value) => SESSION_RE.test(value)));
+    if (invited) {
+      if (current.size >= 8 && !current.has(invitedSessionId)) throw new ChatServiceError("CHAT_INVITE_LIMIT", 409);
+      current.add(invitedSessionId);
+    } else {
+      current.delete(invitedSessionId);
+    }
+    session.invitedSessionIds = [...current];
+    session.updatedAt = now();
+    await this.persist(session);
+    return session;
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
+    if (this.starting.has(sessionId) || this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
+    try {
+      await unlink(sessionFile(this.root, sessionId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+      throw error;
+    }
+    this.subscribers.delete(sessionId);
   }
 
   async usageSummary(windowHours = 24): Promise<ChatUsageSummary> {
@@ -467,7 +523,32 @@ export class ChatService {
     return { role: message.role, content: parts };
   }
 
-  private async boundedHistory(messages: ChatMessage[]): Promise<UpstreamMessage[]> {
+  private async collaborationContext(session: ChatSession): Promise<UpstreamMessage[]> {
+    const ids = [...new Set(session.invitedSessionIds ?? [])].filter((value) => SESSION_RE.test(value)).slice(0, 8);
+    if (!ids.length) return [];
+    const chunks: string[] = [
+      "COLLABORATING CHATS",
+      "The following chats were explicitly invited by the user. Treat them as read-only peer context. Preserve disagreement instead of pretending all chats already agree."
+    ];
+    for (const invitedId of ids) {
+      const invited = await this.getSession(invitedId);
+      if (!invited) continue;
+      const messages = invited.messages
+        .filter((message) => message.state !== "error" && String(message.content || "").trim())
+        .slice(-12);
+      if (!messages.length) continue;
+      chunks.push(`\n[CHAT: ${sessionTitle(invited)} | model: ${invited.model} | id: ${invited.sessionId}]`);
+      for (const message of messages) {
+        const role = message.role === "user" ? "USER" : "ASSISTANT";
+        chunks.push(`${role}: ${message.content.slice(0, 6000)}`);
+      }
+    }
+    const content = chunks.join("\n").slice(0, 48_000);
+    return content.includes("[CHAT:") ? [{ role: "system", content }] : [];
+  }
+
+  private async boundedHistory(session: ChatSession): Promise<UpstreamMessage[]> {
+    const messages = session.messages;
     const selected: ChatMessage[] = [];
     let chars = 0;
     let attachmentBytes = 0;
@@ -483,13 +564,14 @@ export class ChatService {
     }
     const history = [];
     for (const message of selected.reverse()) history.push(await this.upstreamMessage(message));
-    if (!this.projectContextProvider) return history;
+    const collaboration = await this.collaborationContext(session);
+    if (!this.projectContextProvider) return [...collaboration, ...history];
     try {
       const context = (await this.projectContextProvider())?.trim();
-      if (!context) return history;
-      return [{ role: "system", content: context.slice(0, 24_000) }, ...history];
+      if (!context) return [...collaboration, ...history];
+      return [{ role: "system", content: context.slice(0, 24_000) }, ...collaboration, ...history];
     } catch {
-      return history;
+      return [...collaboration, ...history];
     }
   }
 
@@ -803,7 +885,8 @@ export class ChatService {
           model: session.model
         }
       });
-      const history = await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id));
+      const historySession: ChatSession = { ...session, messages: session.messages.filter((item) => item.id !== assistant.id) };
+      const history = await this.boundedHistory(historySession);
       const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
       let response: Response | undefined;
       let lastRateLimit: ChatServiceError | undefined;
