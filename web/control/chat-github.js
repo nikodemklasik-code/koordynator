@@ -9,13 +9,16 @@ const githubMessageInput = document.getElementById("messageInput");
 const githubSendButton = document.getElementById("sendButton");
 
 const GITHUB_REPOSITORY_STORAGE_KEY = "koordynator.chat.github.repository";
-const GITHUB_FALLBACK_REPOSITORY = "nikodemklasik-code/koordynator";
+const FIXED_WORKSPACE_REPOSITORY = window.koordynatorWorkspace?.fixedRepository
+  ? String(window.koordynatorWorkspace.repository || "").trim()
+  : "";
 
 function storedRepository() {
+  if (FIXED_WORKSPACE_REPOSITORY) return FIXED_WORKSPACE_REPOSITORY;
   try {
-    return localStorage.getItem(GITHUB_REPOSITORY_STORAGE_KEY)?.trim() || GITHUB_FALLBACK_REPOSITORY;
+    return localStorage.getItem(GITHUB_REPOSITORY_STORAGE_KEY)?.trim() || "";
   } catch {
-    return GITHUB_FALLBACK_REPOSITORY;
+    return "";
   }
 }
 
@@ -38,7 +41,7 @@ githubRepositoryMenu.setAttribute("aria-label", "GitHub repositories");
 document.body.appendChild(githubRepositoryMenu);
 
 function selectedRepositoryName() {
-  return String(githubChatState.selectedRepository || "").split("/").pop() || "repository";
+  return String(githubChatState.selectedRepository || "").split("/").pop() || "choose repo";
 }
 
 function closeRepositoryMenu() {
@@ -56,8 +59,14 @@ function positionRepositoryMenu() {
 function selectRepository(repository) {
   const value = String(repository || "").trim();
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)) return;
+  if (FIXED_WORKSPACE_REPOSITORY && value.toLowerCase() !== FIXED_WORKSPACE_REPOSITORY.toLowerCase()) {
+    githubNotice(`This workspace is locked to ${FIXED_WORKSPACE_REPOSITORY}`, "error");
+    return;
+  }
   githubChatState.selectedRepository = value;
-  try { localStorage.setItem(GITHUB_REPOSITORY_STORAGE_KEY, value); } catch { /* private mode */ }
+  if (!FIXED_WORKSPACE_REPOSITORY) {
+    try { localStorage.setItem(GITHUB_REPOSITORY_STORAGE_KEY, value); } catch { /* private mode */ }
+  }
   renderGitHubChatStatus(githubChatState.status);
   renderRepositoryMenu();
   githubNotice(`Repository attached to chat: ${value}`, "success");
@@ -126,8 +135,19 @@ function renderRepositoryMenu() {
 
   const header = document.createElement("div");
   header.className = "github-repository-menu-head";
-  header.innerHTML = "<strong>GitHub repositories</strong><span>Choose repository for this chat</span>";
+  header.innerHTML = FIXED_WORKSPACE_REPOSITORY
+    ? "<strong>Workspace repository</strong><span>Fixed for this product screen</span>"
+    : "<strong>GitHub repositories</strong><span>Choose repository for this chat</span>";
   githubRepositoryMenu.appendChild(header);
+
+  if (FIXED_WORKSPACE_REPOSITORY) {
+    const fixed = document.createElement("div");
+    fixed.className = "github-repository-item active fixed";
+    fixed.innerHTML = "<strong></strong><span>fixed workspace binding</span>";
+    fixed.querySelector("strong").textContent = FIXED_WORKSPACE_REPOSITORY;
+    githubRepositoryMenu.appendChild(fixed);
+    return;
+  }
 
   if (!rows.length) {
     const empty = document.createElement("div");
@@ -165,8 +185,8 @@ async function loadGitHubRepositories(force = false) {
       const repositories = Array.isArray(payload.repositories) ? payload.repositories : [];
       const fallback = typeof payload.defaultRepository === "string" && payload.defaultRepository.trim()
         ? payload.defaultRepository.trim()
-        : GITHUB_FALLBACK_REPOSITORY;
-      const selected = githubChatState.selectedRepository || fallback;
+        : "";
+      const selected = FIXED_WORKSPACE_REPOSITORY || githubChatState.selectedRepository || fallback;
       const normalized = repositories
         .filter((row) => row && typeof row.repository === "string")
         .map((row) => ({
@@ -177,12 +197,12 @@ async function loadGitHubRepositories(force = false) {
           private: row.private === true,
           archived: row.archived === true
         }));
-      if (!normalized.some((row) => row.repository === selected)) {
+      if (selected && !normalized.some((row) => row.repository === selected)) {
         normalized.unshift({
           repository: selected,
           url: `https://github.com/${selected}`,
           defaultBranch: "main",
-          visibility: "LOCAL",
+          visibility: FIXED_WORKSPACE_REPOSITORY ? "FIXED" : "LOCAL",
           private: false,
           archived: false
         });
@@ -328,7 +348,11 @@ document.addEventListener("keydown", (event) => {
 githubChatButton?.addEventListener("click", async () => {
   const status = await loadGitHubChatStatus(true);
   if (status?.state === "CONNECTED") {
-    githubNotice(`GitHub connected. Active repository: ${githubChatState.selectedRepository}`, "success");
+    githubNotice(FIXED_WORKSPACE_REPOSITORY
+      ? `GitHub connected. Workspace repository is fixed: ${FIXED_WORKSPACE_REPOSITORY}`
+      : githubChatState.selectedRepository
+        ? `GitHub connected. Active repository: ${githubChatState.selectedRepository}`
+        : "GitHub connected. Choose a repository from this menu.", "success");
     if (githubRepositoryMenu.classList.contains("hidden")) await openRepositoryMenu();
     else closeRepositoryMenu();
     return;
