@@ -59,7 +59,10 @@ export async function selectWorkingFreeRoutes(settings: { endpoint: string; apiK
     try {
       const response = await fetchImpl(`${settings.endpoint.replace(/\/+$/, "")}/chat/completions`, {
         method: "POST",
-        headers: { authorization: `Bearer ${settings.apiKey}`, "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          ...(settings.apiKey?.trim() ? { authorization: `Bearer ${settings.apiKey}` } : {})
+        },
         body: JSON.stringify({ model, stream: false, max_tokens: 64,
           messages: [{ role: "user", content: "Call koordynator_probe with no arguments." }],
           tools: [{ type: "function", function: { name: "koordynator_probe", description: "Verify tool calling", parameters: { type: "object", properties: {}, additionalProperties: false } } }],

@@ -105,7 +105,7 @@
             <label>Direction<textarea id="videoPrompt" rows="6" placeholder="Describe motion, shot, duration, pacing, subtitles or lip-sync."></textarea></label>
             <div class="studio-row">
               <label>Provider<select id="videoProvider"><option>VEED Fabric</option></select></label>
-              <label>Model<input id="videoModel" value="veed/fabric-1.0" readonly /></label>
+              <label>Model<input id="videoModel" value="veed/fabric-1.0/text" readonly /></label>
             </div>
             <label class="studio-upload">Image / video / audio source<input id="videoInput" type="file" accept="image/*,video/*,audio/*" multiple /></label>
             <div class="studio-actions">
@@ -195,6 +195,6 @@
     <span id="studioConnection">CONNECTING</span>
     <span>Provider bindings are capability-specific. No silent fallback between image, video, voice and frontend.</span>
   </footer>
-  <script src="/studio.js?v=2" defer></script>
+  <script src="/studio.js?v=3" defer></script>
 </body>
 </html>

@@ -232,7 +232,6 @@ export type HermesLaunch = {
 
 /** Managed, repo-local profile: global Nous/OpenRouter configuration is never edited. */
 export async function prepareHermes(settings: ReturnType<typeof omniRouteSettings>, root = process.cwd(), env: NodeJS.ProcessEnv = process.env): Promise<HermesLaunch> {
-  if (!settings.apiKey) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
   const authorizeModel = env.KOORDYNATOR_FREE_ONLY === "1" ? freeRouteGuard(settings) : undefined;
   if (authorizeModel && !await authorizeModel(settings.model)) throw new Error("FREE_ROUTE_DENIED");
   const state = resolve(root, ".orchestrator");

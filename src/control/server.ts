@@ -35,7 +35,7 @@ import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
 import { elevenLabsKey, studioProviderCatalog } from "./studio-provider-catalog.js";
 
-const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V3";
+const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V4";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -143,6 +143,7 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/integrations/hermes-grants" ||
     pathname === "/api/providers/connect-existing" ||
     pathname === "/api/studio/image/generate" ||
+    pathname === "/api/studio/video/generate" ||
     pathname === "/api/studio/voice/tts" ||
     pathname === "/api/tasks/project-pack" ||
     pathname === "/api/repositories" ||
@@ -330,11 +331,20 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/studio/providers") {
-        const catalog = await modelCatalog.list();
-        const models = Array.isArray((catalog as { models?: unknown }).models)
-          ? (catalog as { models: unknown[] }).models.filter((value): value is string => typeof value === "string")
-          : [];
-        return sendJson(response, 200, { providers: studioProviderCatalog(models) });
+        let models: string[] = [];
+        let modelError: string | undefined;
+        try {
+          const catalog = await modelCatalog.list();
+          models = Array.isArray((catalog as { models?: unknown }).models)
+            ? (catalog as { models: unknown[] }).models.filter((value): value is string => typeof value === "string")
+            : [];
+        } catch (error) {
+          modelError = error instanceof Error ? error.message : "CHAT_MODEL_CATALOG_UNAVAILABLE";
+        }
+        return sendJson(response, 200, {
+          providers: studioProviderCatalog(models),
+          ...(modelError === undefined ? {} : { modelError })
+        });
       }
 
       if (method === "POST" && url.pathname === "/api/studio/image/generate") {
@@ -365,6 +375,36 @@ export function createControlServer(options: ControlServerOptions): Server {
         if (first?.b64_json) return sendJson(response, 200, { mimeType: "image/png", dataUrl: `data:image/png;base64,${first.b64_json}` });
         if (first?.url) return sendJson(response, 200, { mimeType: "image/png", url: first.url });
         return sendJson(response, 502, { error: "OPENAI_IMAGE_EMPTY_RESULT" });
+      }
+
+      if (method === "POST" && url.pathname === "/api/studio/video/generate") {
+        const key = process.env.FAL_KEY?.trim() || "";
+        if (!key) return sendJson(response, 503, { error: "FAL_VIDEO_NOT_CONFIGURED" });
+        const payload = await readJsonBody(request, 24 * 1024 * 1024);
+        assertExactKeys(payload, ["prompt", "imageDataUrl", "resolution"]);
+        const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+        const imageDataUrl = typeof payload.imageDataUrl === "string" ? payload.imageDataUrl.trim() : "";
+        const resolution = typeof payload.resolution === "string" ? payload.resolution.trim() : "720p";
+        if (!prompt || prompt.length > 8_000) return sendJson(response, 400, { error: "STUDIO_VIDEO_PROMPT_INVALID" });
+        if (!/^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$/i.test(imageDataUrl)) {
+          return sendJson(response, 400, { error: "STUDIO_VIDEO_IMAGE_REQUIRED" });
+        }
+        if (!/^(?:480p|720p)$/.test(resolution)) return sendJson(response, 400, { error: "STUDIO_VIDEO_RESOLUTION_INVALID" });
+
+        const upstream = await fetch("https://fal.run/veed/fabric-1.0/text", {
+          method: "POST",
+          headers: { authorization: `Key ${key}`, "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ image_url: imageDataUrl, text: prompt, resolution }),
+          signal: AbortSignal.timeout(300_000)
+        });
+        const result = await upstream.json().catch(() => ({})) as {
+          video?: { url?: string; content_type?: string };
+          data?: { video?: { url?: string; content_type?: string } };
+        };
+        if (!upstream.ok) return sendJson(response, upstream.status === 429 ? 429 : 502, { error: `FAL_VIDEO_HTTP_${upstream.status}` });
+        const video = result.video ?? result.data?.video;
+        if (!video?.url) return sendJson(response, 502, { error: "FAL_VIDEO_EMPTY_RESULT" });
+        return sendJson(response, 200, { url: video.url, mimeType: video.content_type || "video/mp4" });
       }
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/studio/voice/voices") {

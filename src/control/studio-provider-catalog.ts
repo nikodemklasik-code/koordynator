@@ -15,8 +15,8 @@ function configured(...names: string[]): boolean {
 }
 
 export function studioProviderCatalog(frontendModels: string[] = []): StudioProviderStatus[] {
-  const imageReady = configured("OPENAI_API_KEY", "KOORDYNATOR_IMAGE_PROVIDER");
-  const videoReady = configured("FAL_KEY", "VEED_API_KEY", "KOORDYNATOR_VIDEO_PROVIDER");
+  const imageReady = configured("OPENAI_API_KEY");
+  const videoReady = configured("FAL_KEY");
   const voiceReady = configured("ELEVENLABS_API_KEY", "HARMONIA_ELEVEN_API_KEY");
   const frontendReady = frontendModels.length > 0;
 
@@ -36,12 +36,12 @@ export function studioProviderCatalog(frontendModels: string[] = []): StudioProv
       capability: "video",
       providerId: "veed-fabric",
       label: "VEED Fabric",
-      model: process.env.KOORDYNATOR_VIDEO_MODEL?.trim() || "veed/fabric-1.0",
+      model: process.env.KOORDYNATOR_VIDEO_MODEL?.trim() || "veed/fabric-1.0/text",
       state: videoReady ? "READY" : "NOT_CONFIGURED",
       source: "environment",
       detail: videoReady
-        ? "VEED/Fabric provider binding is configured for video workflows."
-        : "Set FAL_KEY, VEED_API_KEY or KOORDYNATOR_VIDEO_PROVIDER to enable video execution."
+        ? "VEED Fabric 1.0 text-driven image-to-video is configured through fal.ai."
+        : "Set FAL_KEY to enable VEED Fabric video generation."
     },
     {
       capability: "voice",

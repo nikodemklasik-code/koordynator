@@ -2,8 +2,17 @@ import { ChatModelCatalogService } from "../control/chat-model-catalog.js";
 import { evaluateChatBilling } from "../control/chat-billing-policy.js";
 import { omniRouteSettings } from "./local-config.js";
 
+function isLoopbackEndpoint(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 export async function checkOmniRoute(settings: ReturnType<typeof omniRouteSettings>, fetchImpl: typeof fetch = fetch) {
-  if (!settings.apiKey) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
+  if (!settings.apiKey && !isLoopbackEndpoint(settings.endpoint)) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
   const catalog = await new ChatModelCatalogService({ endpoint: settings.endpoint, apiKey: settings.apiKey, fetchImpl }).list();
   const listed = catalog.models.includes(settings.model);
   const billing = evaluateChatBilling(settings.model, catalog);
@@ -19,7 +28,10 @@ export async function probeOmniRoute(settings: ReturnType<typeof omniRouteSettin
   try {
     response = await fetchImpl(`${settings.endpoint}/chat/completions`, {
       method: "POST", redirect: "error", signal: AbortSignal.timeout(60000),
-      headers: { "content-type": "application/json", authorization: `Bearer ${settings.apiKey}` },
+      headers: {
+        "content-type": "application/json",
+        ...(settings.apiKey ? { authorization: `Bearer ${settings.apiKey}` } : {})
+      },
       body: JSON.stringify({ model: settings.model, stream: false, max_tokens: 64,
         messages: [{ role: "user", content: "Reply with OK." }] })
     });

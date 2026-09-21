@@ -25,12 +25,16 @@ describe("Hermes / OmniRoute operator setup", () => {
     const root = await mkdtemp(join(tmpdir(), "koord-env-"));
     try {
       const path = join(root, ".env");
-      await writeFile(path, 'OMNIROUTE_API_KEY="local-key"\nKOORDYNATOR_CHAT_MODEL=cc/claude-test\nOMNIROUTE_LITERAL=$(touch /tmp/should-not-run)\nNODE_OPTIONS=--inspect\nPATH=bad\n');
+      await writeFile(path, 'OMNIROUTE_API_KEY="local-key"\nKOORDYNATOR_CHAT_MODEL=cc/claude-test\nOPENAI_API_KEY=studio-openai\nELEVENLABS_API_KEY=studio-eleven\nFAL_KEY=studio-fal\nVEED_API_KEY=studio-veed\nOMNIROUTE_LITERAL=$(touch /tmp/should-not-run)\nNODE_OPTIONS=--inspect\nPATH=bad\n');
       const env = { OMNIROUTE_API_KEY: "process-key" } as NodeJS.ProcessEnv;
       loadLocalConfig(path, env);
       expect(env.OMNIROUTE_API_KEY).toBe("process-key");
       expect(env.KOORDYNATOR_CHAT_MODEL).toBe("cc/claude-test");
       expect(env.OMNIROUTE_LITERAL).toBe("$(touch /tmp/should-not-run)");
+      expect(env.OPENAI_API_KEY).toBe("studio-openai");
+      expect(env.ELEVENLABS_API_KEY).toBe("studio-eleven");
+      expect(env.FAL_KEY).toBe("studio-fal");
+      expect(env.VEED_API_KEY).toBe("studio-veed");
       expect(env.NODE_OPTIONS).toBeUndefined();
       expect(env.PATH).toBeUndefined();
       expect(() => loadLocalConfig(join(root, "missing"), env)).not.toThrow();
@@ -99,6 +103,23 @@ describe("Hermes / OmniRoute operator setup", () => {
     expect(mock.calls.some(call => call.init?.method === "POST")).toBe(false);
   });
 
+  it("checks and probes a loopback OmniRoute endpoint without a redundant gateway key", async () => {
+    const model = "cx/gpt-test";
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (input, init) => {
+      const url = String(input);
+      calls.push({ url, ...(init === undefined ? {} : { init }) });
+      if (url.endsWith("/v1/models")) return Response.json({ data: [{ id: model, billingSource: "FREE_OAUTH" }] });
+      if (url.endsWith("/chat/completions")) return Response.json({ choices: [{ message: { content: "OK" } }] });
+      if (url.includes("/pricing")) return Response.json({});
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    const result = await probeOmniRoute({ endpoint: "http://127.0.0.1:20128/v1", apiKey: "", model }, fetchImpl);
+    expect(result).toMatchObject({ inference: "PASS", model });
+    const post = calls.find((call) => call.init?.method === "POST");
+    expect((post?.init?.headers as Record<string, string>)?.authorization).toBeUndefined();
+  });
+
   it("does not call a reachable catalog a successful inference", async () => {
     const mock = gateway([{ id: settings.model }], { error: { message: "secret upstream error" } }, 429);
     expect(await checkOmniRoute(settings, mock.fetchImpl)).toMatchObject({ ready: true, listed: true });
@@ -149,6 +170,23 @@ describe("Hermes / OmniRoute operator setup", () => {
       expect(await readFile(outside, "utf8")).toBe("preserve");
     } finally {
       await Promise.all(launches.map((item) => item.close()));
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("prepares Hermes against a loopback OmniRoute endpoint even when the gateway itself needs no API key", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-hermes-loopback-no-key-"));
+    let launch: Awaited<ReturnType<typeof prepareHermes>> | undefined;
+    try {
+      launch = await prepareHermes(
+        { endpoint: "http://127.0.0.1:20128/v1", apiKey: "", model: "cx/gpt-5.6-sol" },
+        root,
+        { ...process.env, KOORDYNATOR_FALLBACK_MODELS: "", KOORDYNATOR_FREE_ONLY: "0" } as NodeJS.ProcessEnv
+      );
+      expect(launch.env.OPENAI_API_KEY).toMatch(/^tkt\./);
+      expect(launch.env.OPENAI_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+    } finally {
+      await launch?.close();
       await rm(root, { recursive: true, force: true });
     }
   });
