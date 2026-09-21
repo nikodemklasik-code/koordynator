@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/chat.css" />
   <link rel="stylesheet" href="/chat-usage.css" />
   <link rel="stylesheet" href="/xterm.css" />
-  <link rel="stylesheet" href="/chat-v5.css?v=7" />
+  <link rel="stylesheet" href="/chat-v5.css?v=8" />
   <link rel="stylesheet" href="/chat-router.css?v=1" />
   <link rel="stylesheet" href="/chat-shell.css?v=11" />
 </head>
@@ -203,18 +203,26 @@
         </div>
         <button value="cancel" type="submit" aria-label="Close shared room dialog">×</button>
       </header>
-      <p>Join the current AI with an agent from another conversation. Each agent keeps its own source context and model; only the common topic is discussed here.</p>
-      <label>
-        <span>Common topic / shared element</span>
-        <input id="sharedRoomTopic" type="text" maxlength="160" placeholder="e.g. WWW / frontend" />
-      </label>
+      <p>Połącz bieżącego agenta z agentem z innej rozmowy. Każdy zachowuje swój model i własną historię, a wspólna dyskusja dotyczy tylko wskazanego elementu projektu.</p>
+      <section class="shared-room-step shared-room-topic-step" aria-labelledby="sharedRoomTopicLabel">
+        <div class="shared-room-step-head">
+          <span class="shared-room-step-number">1</span>
+          <div>
+            <strong id="sharedRoomTopicLabel">WSPÓLNY TEMAT / ELEMENT PROJEKTU</strong>
+            <small>To jest zakres współpracy obu agentów, np. WWW / frontend.</small>
+          </div>
+        </div>
+        <input id="sharedRoomTopic" type="text" maxlength="160" required aria-describedby="sharedRoomTopicHelp"
+          placeholder="np. WWW / frontend" />
+        <small id="sharedRoomTopicHelp" class="shared-room-field-help">Wpisz konkretny wspólny element. Nie mieszaj całych projektów, jeśli łączy je tylko jedna funkcja.</small>
+      </section>
       <div class="shared-room-current" id="sharedRoomCurrentAgent"></div>
-      <label>
-        <span>Second agent from conversation</span>
+      <label class="shared-room-step">
+        <span class="shared-room-step-inline"><b>2</b> DRUGI AGENT Z ROZMOWY</span>
         <select id="sharedRoomSourceSession"><option value="">Loading conversations…</option></select>
       </label>
-      <label>
-        <span>Second agent role</span>
+      <label class="shared-room-step">
+        <span class="shared-room-step-inline"><b>3</b> ROLA DRUGIEGO AGENTA</span>
         <select id="sharedRoomSecondRole">
           <option value="FRONTEND_DEVELOPER">Frontend Developer</option>
           <option value="FRONTEND_BUILDER">Frontend Builder</option>
@@ -229,7 +237,7 @@
       <div class="attachment-error hidden" id="sharedRoomError" role="alert"></div>
       <footer>
         <button value="cancel" type="submit">Cancel</button>
-        <button id="sharedRoomCreateButton" type="button" class="primary-button">Create shared room</button>
+        <button id="sharedRoomCreateButton" type="button" class="primary-button">Utwórz wspólny czat</button>
       </footer>
     </form>
   </dialog>
@@ -298,7 +306,7 @@
   <script src="/chat-github.js?v=7" defer></script>
   <script src="/chat-usage.js?v=6" defer></script>
   <script src="/chat-v5.js?v=9" defer></script>
-  <script src="/chat-shared-room.js?v=1" defer></script>
+  <script src="/chat-shared-room.js?v=2" defer></script>
   <script src="/chat-shell.js?v=7" defer></script>
   <script src="/chat-local-access.js?v=4" defer></script>
 </body>

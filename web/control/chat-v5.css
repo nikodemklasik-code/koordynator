@@ -799,6 +799,37 @@ button { color: inherit; }
 .shared-room-participant strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e2ff;font-size:9px}
 .shared-room-participant small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8f94bd;font-size:7px}
 .chat-message.assistant .message-author[title*="source"]{color:#c5c7ff}
+.shared-room-step{
+  margin:0 16px!important;
+  padding:12px!important;
+  border:1px solid #2f4051!important;
+  border-radius:10px!important;
+  background:#0a151d!important;
+}
+.shared-room-topic-step{
+  display:grid;
+  gap:10px;
+  border-color:#555a91!important;
+  background:linear-gradient(180deg,#14172b,#0b131c)!important;
+  box-shadow:inset 3px 0 0 #7772af;
+}
+.shared-room-step-head{display:flex;align-items:flex-start;gap:10px}
+.shared-room-step-number{
+  width:24px;height:24px;display:grid;place-items:center;flex:0 0 24px;
+  border:1px solid #696aa5;border-radius:7px;background:#23264a;color:#f5f4ff;
+  font-size:10px;font-weight:900
+}
+.shared-room-step-head>div{display:grid;gap:3px}
+.shared-room-step-head strong{font-size:10px;color:#f0efff;letter-spacing:.05em}
+.shared-room-step-head small,.shared-room-field-help{font-size:9px!important;color:#818da0!important;line-height:1.45}
+.shared-room-step-inline{display:flex!important;align-items:center;gap:7px;color:#aebac4!important}
+.shared-room-step-inline b{
+  width:20px;height:20px;display:grid;place-items:center;border:1px solid #405364;border-radius:6px;
+  background:#101c25;color:#d6e3eb;font-size:9px
+}
+#sharedRoomTopic{height:44px!important;border-color:#555a91!important;background:#080f18!important;font-size:12px!important;font-weight:700!important}
+#sharedRoomTopic:focus{border-color:#8588d2!important;box-shadow:0 0 0 3px rgba(133,136,210,.16)!important}
+#sharedRoomTopic.invalid{border-color:#9b4c59!important;box-shadow:0 0 0 3px rgba(155,76,89,.14)!important}
 @media(max-width:760px){
   .shared-room-bar{align-items:flex-start;flex-direction:column}
   .shared-room-participants{width:100%;justify-content:flex-start}
