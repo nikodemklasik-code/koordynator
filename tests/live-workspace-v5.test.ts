@@ -31,7 +31,7 @@ describe("Live Workspace V5", () => {
     const html = await readFile(new URL("../web/control/chat.html", import.meta.url), "utf8");
 
     expect(html).toContain("Koordynator · Live Workspace");
-    expect(html).toContain('/chat-v5.css?v=7');
+    expect(html).toContain('/chat-v5.css?v=8');
     expect(html).toContain('/chat-v5.js?v=9');
     expect(html).not.toContain("control-workspace-v3");
     expect(html).not.toContain("control-workspace-v4");
