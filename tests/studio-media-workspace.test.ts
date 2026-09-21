@@ -56,12 +56,16 @@ describe("Studio media workspace", () => {
     vi.stubEnv("ELEVENLABS_API_KEY", "");
     vi.stubEnv("HARMONIA_ELEVEN_API_KEY", "");
 
+    vi.stubEnv("KOORDYNATOR_IMAGE_PROVIDER", "placeholder-only");
+    vi.stubEnv("KOORDYNATOR_VIDEO_PROVIDER", "placeholder-only");
     const unavailable = studioProviderCatalog([]);
     expect(unavailable.find((item) => item.capability === "image")?.state).toBe("NOT_CONFIGURED");
     expect(unavailable.find((item) => item.capability === "video")?.state).toBe("NOT_CONFIGURED");
     expect(unavailable.find((item) => item.capability === "voice")?.state).toBe("NOT_CONFIGURED");
     expect(unavailable.find((item) => item.capability === "frontend")?.state).toBe("NOT_CONFIGURED");
 
+    vi.stubEnv("KOORDYNATOR_IMAGE_PROVIDER", "");
+    vi.stubEnv("KOORDYNATOR_VIDEO_PROVIDER", "");
     vi.stubEnv("OPENAI_API_KEY", "configured");
     vi.stubEnv("FAL_KEY", "configured");
     vi.stubEnv("ELEVENLABS_API_KEY", "configured");
