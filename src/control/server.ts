@@ -764,6 +764,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat-router.js": { name: "chat-router.js", type: "text/javascript; charset=utf-8" },
         "/chat-v5.js": { name: "chat-v5.js", type: "text/javascript; charset=utf-8" },
         "/chat-shell.js": { name: "chat-shell.js", type: "text/javascript; charset=utf-8" },
+        "/chat-local-access.js": { name: "chat-local-access.js", type: "text/javascript; charset=utf-8" },
         "/ustroj.js": { name: "ustroj.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
