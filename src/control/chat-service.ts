@@ -73,6 +73,7 @@ export type SharedAgentParticipantInput = {
 export type SharedRoomMeta = {
   topic: string;
   participants: SharedAgentParticipant[];
+  rounds: number;
 };
 
 export type ChatSession = {
@@ -431,8 +432,12 @@ export class ChatService {
     return session;
   }
 
-  async createSharedRoom(topicValue: unknown, inputs: SharedAgentParticipantInput[]): Promise<ChatSession> {
+  async createSharedRoom(topicValue: unknown, inputs: SharedAgentParticipantInput[], roundsValue: unknown = 3): Promise<ChatSession> {
     const topic = safeSharedText(topicValue, "CHAT_SHARED_TOPIC_INVALID", 160);
+    const rounds = Number(roundsValue);
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5) {
+      throw new ChatServiceError("CHAT_SHARED_ROUNDS_INVALID", 400);
+    }
     if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > 4) {
       throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
     }
@@ -482,7 +487,7 @@ export class ChatService {
       model: participants[0]!.model,
       title: `Shared · ${topic}`,
       messages: [],
-      sharedRoom: { topic, participants }
+      sharedRoom: { topic, participants, rounds }
     };
     await this.persist(session);
     return session;
@@ -529,7 +534,9 @@ export class ChatService {
     assistant: ChatMessage,
     participant: SharedAgentParticipant,
     controller: AbortController,
-    key?: string
+    key?: string,
+    round = 1,
+    rounds = 1
   ): Promise<void> {
     const billing = await this.authorizeModel?.(participant.model);
     if (billing && !billing.allowed) throw new ChatServiceError("CHAT_SHARED_AGENT_BILLING_DENIED", 403);
@@ -541,8 +548,12 @@ export class ChatService {
       `You are ${participant.label}, an AI agent in a shared project room.`,
       `ROLE: ${participant.role}`,
       `SHARED TOPIC: ${session.sharedRoom?.topic ?? "shared project"}`,
+      `DISCUSSION ROUND: ${round} of ${rounds}`,
       "Keep your source-project identity and expertise. Use only the source context below plus the shared-room transcript.",
-      "Treat other named agents as peers. Respond to their concrete points, identify dependencies or contradictions, and move the shared topic toward an implementable agreement.",
+      "Treat other named agents as peers. Respond directly to the most recent named agent's concrete points, identify dependencies or contradictions, and move the shared topic toward an implementable agreement.",
+      round === 1
+        ? "Open with your own position on the user's topic, while considering any agent messages already present in this round."
+        : "This is an ongoing debate. Do not restart from scratch. Challenge, refine, accept or reject earlier points and explain why.",
       "Do not invent facts from the other project. If a dependency is missing, state exactly what the other agent or user must supply.",
       `SOURCE CONVERSATION CONTEXT:\n${sourceContext || "(no readable source context)"}`
     ].join("\n\n");
@@ -551,7 +562,7 @@ export class ChatService {
       "SHARED ROOM TRANSCRIPT:",
       transcript || "(room just created)",
       "",
-      "Continue the discussion as your named agent. Focus only on the shared topic."
+      `Continue the discussion as your named agent. This is round ${round} of ${rounds}. Focus only on the shared topic and respond to the latest peer contribution.`
     ].join("\n");
 
     this.emit(session.sessionId, {
@@ -641,39 +652,43 @@ export class ChatService {
 
   private async runSharedTurn(session: ChatSession, controller: AbortController, key?: string): Promise<void> {
     const participants = session.sharedRoom?.participants ?? [];
-    for (const participant of participants) {
-      if (controller.signal.aborted) break;
-      const assistant: ChatMessage = {
-        id: randomUUID(),
-        sessionId: session.sessionId,
-        role: "assistant",
-        content: "",
-        createdAt: now(),
-        state: "streaming",
-        model: participant.model,
-        agentId: participant.agentId,
-        agentLabel: participant.label,
-        agentRole: participant.role,
-        sourceSessionId: participant.sourceSessionId
-      };
-      session.messages.push(assistant);
-      session.updatedAt = now();
-      await this.persist(session);
-      this.emit(session.sessionId, { type: "assistant_start", message: assistant });
+    const rounds = Math.min(Math.max(session.sharedRoom?.rounds ?? 3, 1), 5);
+    for (let round = 1; round <= rounds; round += 1) {
+      for (const participant of participants) {
+        if (controller.signal.aborted) break;
+        const assistant: ChatMessage = {
+          id: randomUUID(),
+          sessionId: session.sessionId,
+          role: "assistant",
+          content: "",
+          createdAt: now(),
+          state: "streaming",
+          model: participant.model,
+          agentId: participant.agentId,
+          agentLabel: participant.label,
+          agentRole: participant.role,
+          sourceSessionId: participant.sourceSessionId
+        };
+        session.messages.push(assistant);
+        session.updatedAt = now();
+        await this.persist(session);
+        this.emit(session.sessionId, { type: "assistant_start", message: assistant });
 
-      try {
-        await this.generateSharedAgent(session, assistant, participant, controller, key);
-      } catch (error) {
-        if (controller.signal.aborted) {
-          await this.finalize(session, assistant, "stopped");
-          this.emit(session.sessionId, { type: "stopped", message: assistant });
-          break;
+        try {
+          await this.generateSharedAgent(session, assistant, participant, controller, key, round, rounds);
+        } catch (error) {
+          if (controller.signal.aborted) {
+            await this.finalize(session, assistant, "stopped");
+            this.emit(session.sessionId, { type: "stopped", message: assistant });
+            break;
+          }
+          const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_SHARED_AGENT_FAILED";
+          if (!assistant.content.trim()) assistant.content = `Agent unavailable: ${code}`;
+          await this.finalize(session, assistant, "error");
+          this.emit(session.sessionId, { type: "assistant_done", message: assistant });
         }
-        const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_SHARED_AGENT_FAILED";
-        if (!assistant.content.trim()) assistant.content = `Agent unavailable: ${code}`;
-        await this.finalize(session, assistant, "error");
-        this.emit(session.sessionId, { type: "assistant_done", message: assistant });
       }
+      if (controller.signal.aborted) break;
     }
 
     if (!controller.signal.aborted) {
@@ -685,7 +700,7 @@ export class ChatService {
           agent: "Shared Room",
           process: `Shared Room · ${session.sharedRoom?.topic ?? "collaboration"}`,
           progress: 100,
-          activity: "All room agents completed this turn"
+          activity: `All room agents completed ${rounds} discussion round${rounds === 1 ? "" : "s"}`
         }
       });
     }
