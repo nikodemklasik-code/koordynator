@@ -118,3 +118,54 @@ button,[role="button"],a{ -webkit-tap-highlight-color:transparent }
 @media(max-width:1600px){.provider-content{grid-template-columns:1fr!important}.fabric-card,.receipts-card{grid-column:1!important}}
 @media(max-width:1100px){.app-shell{grid-template-columns:188px minmax(0,1fr)}.provider-shell{grid-template-columns:188px minmax(0,1fr)!important}.topbar{grid-template-columns:1fr auto}.building-block{display:none}.operator-block{justify-self:end}}
 @media(max-width:760px){.app-shell{grid-template-columns:1fr;grid-template-rows:64px auto minmax(0,1fr)}.topbar{grid-column:1;padding:0 16px;min-height:64px}.brand-subtitle,.operator-block>span:not(.operator-icon),.operator-block .caret{display:none}.sidebar{border-right:0;border-bottom:1px solid var(--ui-border);padding:8px 12px}.nav-list{display:flex;overflow-x:auto;gap:7px}.nav-item{flex:0 0 auto;padding:0 12px;height:40px;min-height:40px}.sidebar-foot{display:none}.content{grid-row:3}.page-head{padding:18px 16px 12px;align-items:flex-start;flex-direction:column}.toolbar{width:100%;flex-wrap:wrap}.search-box{width:100%;max-width:none}.filter-row{padding:0 16px 12px}.table-wrap{margin:0 16px 16px}.statusbar{padding:0 16px}.runtime-meta{display:none}.provider-shell{grid-template-columns:1fr!important}.provider-sidebar{display:block!important;border-right:0!important;border-bottom:1px solid var(--ui-border)}.provider-brand{min-height:64px!important}.provider-sidebar nav{display:flex!important;overflow-x:auto!important;overflow-y:hidden!important;padding:8px 12px!important}.provider-sidebar nav a{flex:0 0 auto;min-height:40px!important}.provider-health{display:none!important}.provider-main{height:100vh!important;grid-template-rows:64px minmax(0,1fr) 50px!important}.provider-content{padding:16px!important}.provider-topbar{padding:0 16px!important}.mode{display:none}}
+
+
+/* LIGHTER-SLATE-2026-09
+   Shared control palette: deliberately lighter than the near-black legacy theme
+   while preserving dark-mode contrast and existing status colours. */
+:root{
+  --bg:#13202b;
+  --panel:#172633;
+  --panel-2:#1b2d3b;
+  --panel-3:#213545;
+  --line:#3a5064;
+  --line-soft:#2b4052;
+
+  --ui-bg:#13202b;
+  --ui-surface:#172633;
+  --ui-surface-2:#1c2e3c;
+  --ui-surface-3:#23394a;
+  --ui-border:#3b536a;
+  --ui-border-soft:#2b4053;
+  --ui-text:#f5f8fb;
+  --ui-muted:#b2bfcb;
+  --ui-muted-2:#8294a5;
+  --ui-shadow:0 18px 54px rgba(4,10,16,.24);
+}
+html{background:var(--ui-bg)}
+body{
+  background:
+    radial-gradient(circle at 28% -12%,rgba(100,174,235,.15),transparent 34%),
+    linear-gradient(180deg,#172633 0%,#13202b 100%);
+}
+.app-shell{background:transparent}
+.topbar{background:rgba(23,38,51,.96);border-bottom-color:var(--ui-border)}
+.sidebar{background:linear-gradient(180deg,#1a2a37,#152430);border-right-color:var(--ui-border)}
+.nav-item{color:#d7e0e8}.nav-item:hover{background:#223746;border-color:#3a5268}
+.nav-item.active{background:linear-gradient(180deg,rgba(91,169,235,.22),rgba(91,169,235,.13));border-color:rgba(112,186,247,.46)}
+.content{background:transparent}
+.ghost-button,.icon-button,.filter-chip,.add-button,.secondary-button,.primary-button{background:#1d3040;border-color:#3a5267}
+.ghost-button:hover,.icon-button:hover,.filter-chip:hover,.add-button:hover,.secondary-button:hover,.primary-button:hover{background:#263e50;border-color:#58718a}
+.search-box{background:#1a2b39;border-color:#3a5267}
+.filter-row{border-bottom-color:var(--ui-border-soft)}
+.table-wrap{background:rgba(27,45,59,.9);border-color:var(--ui-border);box-shadow:var(--ui-shadow)}
+.task-table th{background:#1a2b39;border-bottom-color:var(--ui-border);color:#9fb0c0}
+.task-table td{border-bottom-color:var(--ui-border-soft)}
+.task-table tbody tr:hover{background:rgba(97,174,236,.08)}
+.statusbar{background:rgba(21,36,48,.94);border-top-color:var(--ui-border)}
+.loading-state,.empty-state{background:#182936}
+.task-dialog{background:#1a2b38;border-color:#405970}
+.prose pre{background:#13212c;border-color:#3a5064}
+.field input{background:#192a37;border-color:#40566a}
+.repository-chip{background:#1b2e3d;border-color:#405b74}
+
