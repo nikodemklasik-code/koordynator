@@ -886,3 +886,182 @@ body.koord-shell-active .v5-terminal-pane.runtime-monitor-installed{
 .github-repository-item.fixed{
   cursor:default!important;
 }
+
+
+/* V1.3: information hierarchy.
+   Products are a distinct semantic group; repository context sits beside them.
+   Workflow actions are ranked below navigation instead of every control shouting equally. */
+body.koord-shell-active .koord-shell-primary{
+  gap:10px!important;
+  padding:0!important;
+}
+body.koord-shell-active .koord-shell-group{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:0 0 auto;
+}
+body.koord-shell-active .koord-shell-group + .koord-shell-group{
+  position:relative;
+  margin-left:6px;
+  padding-left:13px;
+}
+body.koord-shell-active .koord-shell-group + .koord-shell-group::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:7px;
+  width:1px;
+  height:24px;
+  background:#29404f;
+}
+body.koord-shell-active .koord-shell-group-conversation{
+  margin-left:auto!important;
+}
+body.koord-shell-active .koord-shell-group-projects{
+  padding:3px 5px!important;
+  border:1px solid #293a53;
+  border-radius:12px;
+  background:#0d1420;
+}
+body.koord-shell-active .koord-shell-group-projects::before{
+  display:none!important;
+}
+body.koord-shell-active .koord-project-button{
+  border-color:#3b4668!important;
+  background:#161b2b!important;
+  color:#cbd4f6!important;
+}
+body.koord-shell-active .koord-project-button:hover{
+  border-color:#6676ad!important;
+  background:#1c2540!important;
+  color:#f0f3ff!important;
+}
+body.koord-shell-active .koord-project-button.active{
+  border-color:#7689c8!important;
+  background:linear-gradient(180deg,#27345a,#1b2947)!important;
+  color:#f5f7ff!important;
+  box-shadow:inset 0 0 0 1px rgba(170,185,255,.09)!important;
+}
+body.koord-shell-active .koord-shell-group-projects .product-placeholder{
+  opacity:.48!important;
+}
+body.koord-shell-active .koord-shell-group-projects .importance-repository{
+  border-color:#28634e!important;
+  background:#0b2019!important;
+  color:#9ee3bf!important;
+  max-width:260px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+body.koord-shell-active .koord-shell-group-projects .importance-repository:hover{
+  border-color:#3f8a6e!important;
+  background:#0e2a20!important;
+  color:#c7f3dd!important;
+}
+body.koord-shell-active .koord-shell-group-operations .koord-shell-button{
+  color:#aebbc5!important;
+  background:#0a151e!important;
+  border-color:#203441!important;
+}
+body.koord-shell-active .koord-shell-group-conversation .koord-shell-button{
+  background:#09141c!important;
+  color:#9cadb8!important;
+  border-color:#1e303c!important;
+}
+
+/* Workflow row hierarchy: cognition first, document creation second, utilities last. */
+body.koord-shell-active #koordShellTools [data-shell-key="routing"],
+body.koord-shell-active #koordShellTools [data-shell-key="stage-zero"]{
+  border-color:#376783!important;
+  background:#0e2533!important;
+  color:#c9ebff!important;
+}
+body.koord-shell-active #koordShellTools [data-shell-key="create-document"]{
+  border-color:#315044!important;
+  background:#0d1e18!important;
+  color:#bce4cf!important;
+}
+body.koord-shell-active #koordShellTools [data-shell-key="terminal"],
+body.koord-shell-active #koordShellTools [data-shell-key="popout"],
+body.koord-shell-active #koordShellTools [data-shell-key="settings"]{
+  color:#93a4af!important;
+  background:#09131a!important;
+}
+
+/* Hermes: title + every terminal control share one row.
+   There is no second button strip to be swallowed by the terminal surface. */
+body.koord-shell-active .v5-terminal-pane.runtime-monitor-installed{
+  grid-template-rows:var(--shell-row-height) minmax(0,1fr) 72px auto!important;
+}
+body.koord-shell-active .v5-terminal-head{
+  display:grid!important;
+  grid-template-columns:minmax(104px,auto) minmax(0,1fr)!important;
+  align-items:center!important;
+  gap:7px!important;
+  overflow:hidden!important;
+}
+body.koord-shell-active .v5-terminal-head>.hermes-state,
+body.koord-shell-active .v5-terminal-head>.v5-terminal-actions{
+  display:none!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar{
+  min-width:0!important;
+  width:100%!important;
+  height:var(--shell-row-height)!important;
+  min-height:var(--shell-row-height)!important;
+  max-height:var(--shell-row-height)!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:flex-end!important;
+  gap:4px!important;
+  padding:3px 0!important;
+  border:0!important;
+  background:transparent!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  scrollbar-width:none!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar::-webkit-scrollbar{display:none!important}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-button,
+body.koord-shell-active .runtime-terminal-toolbar .v5-mini-button{
+  flex:0 0 auto!important;
+  width:auto!important;
+  min-width:0!important;
+  height:32px!important;
+  min-height:32px!important;
+  max-height:32px!important;
+  padding:0 8px!important;
+  border-radius:8px!important;
+  font-size:9.5px!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-summary{
+  flex:0 0 auto!important;
+  width:auto!important;
+  min-width:42px!important;
+  padding:0 5px!important;
+  gap:5px!important;
+  font-size:9px!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-summary>span{
+  display:none!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-start{
+  border-color:#2d6647!important;
+  color:#9fe0ba!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-stop{
+  border-color:#5c3940!important;
+  color:#d9a7ad!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar [data-runtime-action="expand"]{
+  border-color:#314b5e!important;
+  color:#a8c7dc!important;
+}
+
+@media(max-width:1180px){
+  body.koord-shell-active .koord-shell-group-projects .importance-repository{max-width:180px}
+  body.koord-shell-active .koord-shell-group{gap:4px}
+  body.koord-shell-active .koord-shell-group + .koord-shell-group{margin-left:3px;padding-left:9px}
+}
