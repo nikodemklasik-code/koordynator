@@ -789,7 +789,9 @@ export class ChatService {
     if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
     try {
       const body = await readFile(sessionFile(this.root, sessionId), "utf8");
-      return JSON.parse(body) as ChatSession;
+      const session = JSON.parse(body) as ChatSession;
+      if (!session.title) session.title = sessionTitle(session);
+      return session;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
