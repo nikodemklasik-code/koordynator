@@ -286,7 +286,11 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.hermesPty?.spawn === undefined ? {} : { spawn: options.hermesPty.spawn }),
     prepare: options.hermesPty?.prepare ?? (async (requestedModel, context): Promise<HermesLaunchSpec> => {
       const settings = omniRouteSettings();
-      const workspaceRoot = await resolveHermesWorkspaceRoot({ context, projectRoot, stateDir });
+      const workspaceRoot = await resolveHermesWorkspaceRoot({
+        projectRoot,
+        stateDir,
+        ...(context === undefined ? {} : { context })
+      });
       const launch = await prepareHermes({
         endpoint: options.chatEndpoint ?? settings.endpoint,
         apiKey: options.chatApiKey ?? settings.apiKey,
@@ -560,7 +564,10 @@ export function createControlServer(options: ControlServerOptions): Server {
         try { repository = assertWorkspaceRepository(workspace, requestedRepository); }
         catch { throw new HermesPtyError("WORKSPACE_REPOSITORY_FIXED", 403); }
         const model = typeof payload.model === "string" ? safeChatModel(payload.model) : undefined;
-        return sendJson(response, 201, await hermesPty.start(payload, model, { workspace, repository }));
+        return sendJson(response, 201, await hermesPty.start(payload, model, {
+          workspace,
+          ...(repository === undefined ? {} : { repository })
+        }));
       }
       const hermesPtyMatch = /^\/api\/hermes\/pty\/([0-9a-f-]+)\/(events|input|resize|stop)$/i.exec(url.pathname);
       if (hermesPtyMatch?.[1] && hermesPtyMatch[2]) {
