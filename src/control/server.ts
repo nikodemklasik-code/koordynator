@@ -331,11 +331,20 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/studio/providers") {
-        const catalog = await modelCatalog.list();
-        const models = Array.isArray((catalog as { models?: unknown }).models)
-          ? (catalog as { models: unknown[] }).models.filter((value): value is string => typeof value === "string")
-          : [];
-        return sendJson(response, 200, { providers: studioProviderCatalog(models) });
+        let models: string[] = [];
+        let modelError: string | undefined;
+        try {
+          const catalog = await modelCatalog.list();
+          models = Array.isArray((catalog as { models?: unknown }).models)
+            ? (catalog as { models: unknown[] }).models.filter((value): value is string => typeof value === "string")
+            : [];
+        } catch (error) {
+          modelError = error instanceof Error ? error.message : "CHAT_MODEL_CATALOG_UNAVAILABLE";
+        }
+        return sendJson(response, 200, {
+          providers: studioProviderCatalog(models),
+          ...(modelError === undefined ? {} : { modelError })
+        });
       }
 
       if (method === "POST" && url.pathname === "/api/studio/image/generate") {
