@@ -103,6 +103,23 @@ describe("Hermes / OmniRoute operator setup", () => {
     expect(mock.calls.some(call => call.init?.method === "POST")).toBe(false);
   });
 
+  it("checks and probes a loopback OmniRoute endpoint without a redundant gateway key", async () => {
+    const model = "cx/gpt-test";
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = (async (input, init) => {
+      const url = String(input);
+      calls.push({ url, ...(init === undefined ? {} : { init }) });
+      if (url.endsWith("/v1/models")) return Response.json({ data: [{ id: model, billingSource: "FREE_OAUTH" }] });
+      if (url.endsWith("/chat/completions")) return Response.json({ choices: [{ message: { content: "OK" } }] });
+      if (url.includes("/pricing")) return Response.json({});
+      return new Response(null, { status: 404 });
+    }) as typeof fetch;
+    const result = await probeOmniRoute({ endpoint: "http://127.0.0.1:20128/v1", apiKey: "", model }, fetchImpl);
+    expect(result).toMatchObject({ inference: "PASS", model });
+    const post = calls.find((call) => call.init?.method === "POST");
+    expect((post?.init?.headers as Record<string, string>)?.authorization).toBeUndefined();
+  });
+
   it("does not call a reachable catalog a successful inference", async () => {
     const mock = gateway([{ id: settings.model }], { error: { message: "secret upstream error" } }, 429);
     expect(await checkOmniRoute(settings, mock.fetchImpl)).toMatchObject({ ready: true, listed: true });
