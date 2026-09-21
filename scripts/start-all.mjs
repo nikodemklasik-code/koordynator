@@ -26,7 +26,7 @@ const chatUrl = `http://${host}:${port}/chat`;
 const pidDir = resolve(root, ".orchestrator", "runtime");
 const pidFile = resolve(pidDir, "control.pid");
 const logFile = resolve(pidDir, "control.log");
-const expectedRuntimeRevision = "CHAT_HERMES_V3";
+const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V1";
 const runtimeEnv = {
   ...process.env,
   PATH: [process.env.HOME ? resolve(process.env.HOME, ".local", "bin") : "", process.env.PATH || ""]
@@ -71,8 +71,12 @@ function healthJson(url) {
 function controlRuntimeState() {
   const health = healthJson(`http://${host}:${port}/api/health`);
   if (!health) return { state: "DOWN", health: null };
+  const routes = Array.isArray(health.workspaceRoutes) ? health.workspaceRoutes : [];
   if (
     health.runtimeRevision === expectedRuntimeRevision &&
+    health.productWorkspaces === true &&
+    routes.includes("/corporation") &&
+    routes.includes("/harmonia-legal") &&
     health.modelCatalogMode === "WORKING_SET_ACTIVE_ONLY" &&
     health.hermesPtyModelParameter === true
   ) return { state: "CURRENT", health };
