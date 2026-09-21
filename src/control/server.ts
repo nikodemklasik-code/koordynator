@@ -358,8 +358,11 @@ export function createControlServer(options: ControlServerOptions): Server {
         if (payload.repository !== undefined && typeof payload.repository !== "string") throw new RepositoryRegistryError("REPOSITORY_INVALID", 400);
 
         let selectedRepository: string | undefined;
-        if (typeof payload.repository === "string" && payload.repository.trim()) {
-          const parsedRepository = parseRepositoryReference(payload.repository);
+        const requestedRepository = typeof payload.repository === "string" && payload.repository.trim()
+          ? payload.repository.trim()
+          : options.chatDefaultRepository?.trim();
+        if (requestedRepository) {
+          const parsedRepository = parseRepositoryReference(requestedRepository);
           selectedRepository = `${parsedRepository.owner}/${parsedRepository.name}`;
         }
 
@@ -388,8 +391,8 @@ export function createControlServer(options: ControlServerOptions): Server {
         let repoContext = null;
         if (!isRepoTask && selectedRepository && selectedIsLocalWorkspace && wantsWorkspaceContext(options)) {
           // The selected Koordynator repository is already the running local workspace.
-          // Read it directly instead of cloning the same repository on every chat turn.
-          repoContext = await workspaceRepositories.fromMessage(`repo ${payload.message}`);
+          // Hydrate source context only when the message actually asks for workspace/repository work.
+          repoContext = await workspaceRepositories.fromMessage(payload.message);
         } else if (!isRepoTask && selectedRepository && wantsGithubContext(options)) {
           repoContext = await githubRepositories.fromMessage(`${payload.message}\nhttps://github.com/${selectedRepository}`);
         } else if (!isRepoTask && wantsGithubContext(options)) {
