@@ -157,6 +157,23 @@ describe("Hermes / OmniRoute operator setup", () => {
     }
   });
 
+  it("prepares Hermes against a loopback OmniRoute endpoint even when the gateway itself needs no API key", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-hermes-loopback-no-key-"));
+    let launch: Awaited<ReturnType<typeof prepareHermes>> | undefined;
+    try {
+      launch = await prepareHermes(
+        { endpoint: "http://127.0.0.1:20128/v1", apiKey: "", model: "cx/gpt-5.6-sol" },
+        root,
+        { ...process.env, KOORDYNATOR_FALLBACK_MODELS: "", KOORDYNATOR_FREE_ONLY: "0" } as NodeJS.ProcessEnv
+      );
+      expect(launch.env.OPENAI_API_KEY).toMatch(/^tkt\./);
+      expect(launch.env.OPENAI_BASE_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
+    } finally {
+      await launch?.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes OmniRoute fallback providers into the managed Hermes profile", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-fallback-"));
     let launch: Awaited<ReturnType<typeof prepareHermes>> | undefined;
