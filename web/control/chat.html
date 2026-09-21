@@ -234,6 +234,23 @@
           <option value="GENERAL">General</option>
         </select>
       </label>
+      <label class="shared-room-step">
+        <span class="shared-room-step-inline"><b>4</b> KTO ZACZYNA DYSKUSJĘ</span>
+        <select id="sharedRoomStarter">
+          <option value="current">Bieżący agent</option>
+          <option value="second">Drugi agent</option>
+        </select>
+      </label>
+      <label class="shared-room-step">
+        <span class="shared-room-step-inline"><b>5</b> RUNDY DYSKUSJI</span>
+        <select id="sharedRoomRounds">
+          <option value="1">1 runda</option>
+          <option value="2">2 rundy</option>
+          <option value="3" selected>3 rundy</option>
+          <option value="4">4 rundy</option>
+          <option value="5">5 rund</option>
+        </select>
+      </label>
       <div class="attachment-error hidden" id="sharedRoomError" role="alert"></div>
       <footer>
         <button value="cancel" type="submit">Cancel</button>
@@ -306,7 +323,7 @@
   <script src="/chat-github.js?v=7" defer></script>
   <script src="/chat-usage.js?v=6" defer></script>
   <script src="/chat-v5.js?v=9" defer></script>
-  <script src="/chat-shared-room.js?v=3" defer></script>
+  <script src="/chat-shared-room.js?v=4" defer></script>
   <script src="/chat-shell.js?v=7" defer></script>
   <script src="/chat-local-access.js?v=4" defer></script>
 </body>
