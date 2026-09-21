@@ -166,7 +166,11 @@ function chooseAliases(catalog: ChatModelCatalog, preferred: string[]): string[]
   const seen = new Set<string>();
   const out: string[] = [];
   for (const model of sorted) {
-    const key = routeKey(model);
+    const source = sourceOf(catalog, model);
+    // Verified-free routes can carry independent provider quotas even when they
+    // resolve to the same underlying model. Keep every exact free route.
+    // Subscription aliases remain compact to avoid duplicate picker entries.
+    const key = FREE_SOURCES.has(source) ? `free:${model}` : routeKey(model);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(model);
