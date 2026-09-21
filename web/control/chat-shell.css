@@ -3,6 +3,7 @@
 
 :root {
   --shell-row-height: 48px;
+  --shell-button-height: 38px;
   --shell-gap: 7px;
   --shell-bg: #071018;
   --shell-bg-soft: #0a141d;
@@ -97,8 +98,8 @@ body.koord-shell-active .v5-main {
 .koord-shell button,
 .koord-shell a,
 .koord-shell summary {
-  min-height: 38px !important;
-  height: 38px !important;
+  min-height: var(--shell-button-height) !important;
+  height: var(--shell-button-height) !important;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -226,7 +227,10 @@ body.koord-shell-active .github-chat-button {
 }
 
 @media (max-width: 1120px) {
-  :root { --shell-row-height: 46px; }
+  :root {
+    --shell-row-height: 46px;
+    --shell-button-height: 36px;
+  }
   .koord-shell-button,
   .koord-shell button,
   .koord-shell a,
@@ -270,8 +274,8 @@ body.koord-shell-active .github-chat-button {
   background:#29404f;
 }
 .koord-shell-primary .koord-shell-button{
-  min-height:36px!important;
-  height:36px!important;
+  min-height:var(--shell-button-height)!important;
+  height:var(--shell-button-height)!important;
   padding:0 11px!important;
   font-size:10px!important;
 }
@@ -375,7 +379,7 @@ body.koord-shell-active .v5-routebar .session-id{display:none!important}
    Chat = text area + one control row.
    Hermes = max two control rows + terminal surface + one command row. */
 :root{
-  --workspace-control-height:40px;
+  --workspace-control-height:var(--shell-button-height);
   --workspace-control-radius:9px;
   --chat-composer-height:176px;
   --hermes-input-height:58px;
@@ -451,10 +455,10 @@ body.koord-shell-active .v5-composer-actions.v5-canonical-control-row{
 
 body.koord-shell-active .v5-control-row{
   width:100%!important;
-  height:40px!important;
-  min-height:40px!important;
-  display:grid!important;
-  grid-template-columns:minmax(220px,1fr) minmax(120px,160px) 40px 40px 40px!important;
+  height:var(--workspace-control-height)!important;
+  min-height:var(--workspace-control-height)!important;
+  display:flex!important;
+  flex-wrap:nowrap!important;
   gap:7px!important;
   align-items:center!important;
   overflow:visible!important;
@@ -462,8 +466,10 @@ body.koord-shell-active .v5-control-row{
 
 body.koord-shell-active .v5-unified-model-select{
   position:relative!important;
-  min-width:0!important;
-  height:40px!important;
+  flex:1 1 auto!important;
+  width:auto!important;
+  min-width:180px!important;
+  height:var(--workspace-control-height)!important;
   display:grid!important;
   grid-template-columns:minmax(0,1fr) 38px!important;
   align-items:center!important;
@@ -481,7 +487,7 @@ body.koord-shell-active .v5-unified-model-select:focus-within{
 body.koord-shell-active .v5-model-search{
   width:100%!important;
   min-width:0!important;
-  height:38px!important;
+  height:calc(var(--workspace-control-height) - 2px)!important;
   padding:0 11px!important;
   border:0!important;
   outline:0!important;
@@ -493,7 +499,7 @@ body.koord-shell-active .v5-model-search{
 
 body.koord-shell-active .v5-model-menu-button{
   width:38px!important;
-  height:38px!important;
+  height:calc(var(--workspace-control-height) - 2px)!important;
   padding:0!important;
   display:grid!important;
   place-items:center!important;
@@ -507,9 +513,11 @@ body.koord-shell-active .v5-model-menu-button{
 }
 
 body.koord-shell-active .v5-model-role{
-  width:100%!important;
-  min-width:0!important;
-  height:40px!important;
+  flex:0 0 146px!important;
+  width:146px!important;
+  min-width:120px!important;
+  max-width:160px!important;
+  height:var(--workspace-control-height)!important;
   padding:0 10px!important;
   border:1px solid #2a3b47!important;
   border-radius:var(--workspace-control-radius)!important;
@@ -534,12 +542,13 @@ body.koord-shell-active .v5-native-model-picker{
 body.koord-shell-active .v5-control-row .v5-attach,
 body.koord-shell-active .v5-control-row .v5-stop,
 body.koord-shell-active .v5-control-row .v5-send{
-  width:40px!important;
-  min-width:40px!important;
-  max-width:40px!important;
-  height:40px!important;
-  min-height:40px!important;
-  max-height:40px!important;
+  flex:0 0 var(--workspace-control-height)!important;
+  width:var(--workspace-control-height)!important;
+  min-width:var(--workspace-control-height)!important;
+  max-width:var(--workspace-control-height)!important;
+  height:var(--workspace-control-height)!important;
+  min-height:var(--workspace-control-height)!important;
+  max-height:var(--workspace-control-height)!important;
   margin:0!important;
   padding:0!important;
   display:grid!important;
@@ -575,21 +584,22 @@ body.koord-shell-active .v5-route-note{display:none!important}
 /* HERMES. Maximum two control rows above terminal surface. */
 body.koord-shell-active .v5-terminal-pane.runtime-monitor-installed{
   display:grid!important;
-  grid-template-rows:48px 42px minmax(0,1fr) 72px auto!important;
+  grid-template-rows:var(--shell-row-height) var(--shell-row-height) minmax(0,1fr) 72px auto!important;
   min-height:0!important;
   overflow:hidden!important;
 }
 
 body.koord-shell-active .v5-terminal-pane:not(.runtime-monitor-installed){
   display:grid!important;
-  grid-template-rows:48px minmax(0,1fr) 72px auto!important;
+  grid-template-rows:var(--shell-row-height) minmax(0,1fr) 72px auto!important;
   min-height:0!important;
   overflow:hidden!important;
 }
 
 body.koord-shell-active .v5-terminal-head{
-  height:48px!important;
-  min-height:48px!important;
+  height:var(--shell-row-height)!important;
+  min-height:var(--shell-row-height)!important;
+  max-height:var(--shell-row-height)!important;
   padding:0 9px!important;
   display:grid!important;
   grid-template-columns:minmax(0,1fr) auto auto!important;
@@ -611,8 +621,9 @@ body.koord-shell-active .v5-terminal-actions{
 
 body.koord-shell-active .v5-terminal-actions .v5-mini-button,
 body.koord-shell-active .runtime-terminal-button{
-  height:40px!important;
-  min-height:40px!important;
+  height:var(--shell-button-height)!important;
+  min-height:var(--shell-button-height)!important;
+  max-height:var(--shell-button-height)!important;
   padding:0 10px!important;
   border-radius:var(--workspace-control-radius)!important;
   font-size:11px!important;
@@ -620,9 +631,9 @@ body.koord-shell-active .runtime-terminal-button{
 }
 
 body.koord-shell-active .runtime-terminal-toolbar{
-  height:42px!important;
-  min-height:42px!important;
-  max-height:42px!important;
+  height:var(--shell-row-height)!important;
+  min-height:var(--shell-row-height)!important;
+  max-height:var(--shell-row-height)!important;
   display:grid!important;
   grid-template-columns:auto auto minmax(0,1fr) auto auto!important;
   gap:6px!important;
@@ -729,9 +740,10 @@ body.koord-shell-active .koord-session-footer,
 body.koord-shell-active .koord-session-value{font-size:9px!important}
 
 @media(max-width:1050px){
-  body.koord-shell-active .v5-control-row{
-    grid-template-columns:minmax(180px,1fr) minmax(108px,132px) 40px 40px 40px!important;
-    gap:5px!important;
+  body.koord-shell-active .v5-control-row{gap:5px!important}
+  body.koord-shell-active .v5-model-role{
+    flex-basis:124px!important;
+    width:124px!important;
   }
   body.koord-shell-active .runtime-terminal-summary span{display:none!important}
 }
@@ -740,8 +752,11 @@ body.koord-shell-active .koord-session-value{font-size:9px!important}
   body.koord-shell-active .v5-workspace{grid-template-columns:minmax(0,1fr)!important}
   body.koord-shell-active .v5-splitter,
   body.koord-shell-active .v5-terminal-pane{display:none!important}
-  body.koord-shell-active .v5-control-row{
-    grid-template-columns:minmax(150px,1fr) minmax(95px,120px) 38px 38px 38px!important;
-    gap:4px!important;
+  body.koord-shell-active .v5-control-row{gap:4px!important}
+  body.koord-shell-active .v5-unified-model-select{min-width:150px!important}
+  body.koord-shell-active .v5-model-role{
+    flex-basis:110px!important;
+    width:110px!important;
+    min-width:95px!important;
   }
 }
