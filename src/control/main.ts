@@ -96,6 +96,7 @@ const server = createControlServer({
   ...(controlToken === undefined ? {} : { controlToken }),
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT !== "0",
   chatAllowWorkspaceContext: process.env.KOORDYNATOR_CHAT_WORKSPACE_CONTEXT !== "0",
+  chatDefaultRepository: process.env.KOORDYNATOR_CHAT_DEFAULT_REPOSITORY?.trim() || "nikodemklasik-code/koordynator",
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
