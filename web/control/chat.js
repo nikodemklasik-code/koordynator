@@ -1304,10 +1304,14 @@ async function ensureHermesTerminalGrant() {
 
 async function sendHermesInput(data) {
   if (!state.hermesSessionId || !data) return;
+  const workspace = window.koordynatorWorkspace?.id || "general";
+  const repository = typeof window.koordynatorSelectedRepository === "function"
+    ? window.koordynatorSelectedRepository()
+    : window.koordynatorWorkspace?.repository || undefined;
   const response = await fetch(`/api/hermes/pty/${encodeURIComponent(state.hermesSessionId)}/input`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ data })
+    body: JSON.stringify({ data, workspace, ...(repository ? { repository } : {}) })
   }).catch(() => null);
   if (!response?.ok) {
     if (response?.status === 404) {
@@ -1447,7 +1451,11 @@ async function startHermesPty() {
     const term = ensureHermesTerminal();
     term?.reset();
     const { cols, rows } = hermesDimensions();
-    const body = { cols, rows, ...(modelSelect.value ? { model: modelSelect.value } : {}) };
+    const workspace = window.koordynatorWorkspace?.id || "general";
+    const repository = typeof window.koordynatorSelectedRepository === "function"
+      ? window.koordynatorSelectedRepository()
+      : window.koordynatorWorkspace?.repository || undefined;
+    const body = { cols, rows, workspace, ...(repository ? { repository } : {}), ...(modelSelect.value ? { model: modelSelect.value } : {}) };
     const response = await fetch("/api/hermes/pty", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
@@ -1540,6 +1548,7 @@ async function sendMessage() {
     const requestBody = {
       message,
       attachments,
+      workspace: window.koordynatorWorkspace?.id || "general",
       ...(modelSelect.value ? { model: modelSelect.value } : {}),
       ...(repository ? { repository } : {})
     };
