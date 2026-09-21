@@ -26,7 +26,7 @@ const chatUrl = `http://${host}:${port}/chat`;
 const pidDir = resolve(root, ".orchestrator", "runtime");
 const pidFile = resolve(pidDir, "control.pid");
 const logFile = resolve(pidDir, "control.log");
-const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V3";
+const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V4";
 const runtimeEnv = {
   ...process.env,
   PATH: [process.env.HOME ? resolve(process.env.HOME, ".local", "bin") : "", process.env.PATH || ""]
@@ -166,6 +166,40 @@ function startControlWithLog() {
   process.exit(1);
 }
 
+function runtimePreflight() {
+  const modelPayload = healthJson(`http://${host}:${port}/api/chat/models`);
+  const models = Array.isArray(modelPayload?.models) ? modelPayload.models : [];
+  if (!models.length) {
+    console.error("PREFLIGHT_MODELS_UNAVAILABLE: Control returned zero executable chat routes.");
+    console.error(`See log: ${logFile}`);
+    process.exit(1);
+  }
+  console.log(`OmniRoute/Chat: READY · ${models.length} executable route${models.length === 1 ? "" : "s"}`);
+
+  const hermesVersion = spawnSync("hermes", ["--version"], { env: runtimeEnv, encoding: "utf8", stdio: "pipe" });
+  if ((hermesVersion.status ?? 1) !== 0) {
+    console.error("PREFLIGHT_HERMES_BINARY_UNAVAILABLE");
+    process.exit(1);
+  }
+  const hermesStatus = healthJson(`http://${host}:${port}/api/hermes/pty`);
+  if (!hermesStatus) {
+    console.error("PREFLIGHT_HERMES_API_UNAVAILABLE");
+    process.exit(1);
+  }
+  console.log(`Hermes: READY · ${String(hermesVersion.stdout || hermesVersion.stderr || "").trim().split("\n")[0] || "installed"}`);
+
+  const studioPayload = healthJson(`http://${host}:${port}/api/studio/providers`);
+  const studioProviders = Array.isArray(studioPayload?.providers) ? studioPayload.providers : [];
+  if (!studioProviders.length) {
+    console.error("PREFLIGHT_STUDIO_PROVIDERS_UNAVAILABLE");
+    process.exit(1);
+  }
+  console.log("Studio:");
+  for (const provider of studioProviders) {
+    console.log(`  ${provider.capability}: ${provider.state} · ${provider.label} · ${provider.model}`);
+  }
+}
+
 function openChat() {
   if (process.platform === "darwin") {
     run("Open chat", "open", [chatUrl], { allowFail: true });
@@ -182,6 +216,7 @@ ensureOmniRoute();
 run("Reuse existing AI sessions (no login)", "npm", ["run", "ai:connect-existing", "--", "--no-bootstrap"], { allowFail: true });
 run("AI always-on (no login)", "npm", ["run", "ai:always-on"]);
 startControlWithLog();
+runtimePreflight();
 openChat();
 console.log(`\nDone. Chat: ${chatUrl}`);
 console.log("Fresh vendor authorization is never launched here. Run npm run ai:auth-missing only when a missing route needs one-time consent.");
