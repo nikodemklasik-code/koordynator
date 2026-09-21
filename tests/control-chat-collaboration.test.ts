@@ -32,12 +32,21 @@ function streamingFetch(bodies: Array<Record<string, unknown>>): typeof fetch {
   }) as typeof fetch;
 }
 
-async function sendAndWait(service: ChatService, sessionId: string, message: string): Promise<void> {
+async function sendAndWait(
+  service: ChatService,
+  sessionId: string,
+  message: string,
+  expectedAssistantDone = 1
+): Promise<void> {
   const done = new Promise<void>((resolvePromise, reject) => {
+    let completed = 0;
     const unsubscribe = service.subscribe(sessionId, (event) => {
       if (event.type === "assistant_done") {
-        unsubscribe();
-        resolvePromise();
+        completed += 1;
+        if (completed >= expectedAssistantDone) {
+          unsubscribe();
+          resolvePromise();
+        }
       }
       if (event.type === "error") {
         unsubscribe();
@@ -84,7 +93,7 @@ describe("persistent chat collaboration", () => {
     expect(restored?.title).toBe("Main coordinator");
     expect(restored?.invitedSessionIds).toEqual([guest.sessionId]);
 
-    await sendAndWait(second, host.sessionId, "Continue using the invited chat.");
+    await sendAndWait(second, host.sessionId, "Continue using the invited chat.", 2);
     const latest = requestBodies.at(-1) as { messages?: Array<{ role?: string; content?: unknown }> } | undefined;
     const systemText = (latest?.messages ?? [])
       .filter((message) => message.role === "system" && typeof message.content === "string")
