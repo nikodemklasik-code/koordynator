@@ -47,6 +47,8 @@
 .stage-zero-range-list{list-style:none;margin:0;padding:0 10px 12px;overflow:auto;min-height:120px;max-height:42vh}
 .stage-zero-range-item{display:grid;grid-template-columns:28px 92px minmax(0,1fr);gap:8px;align-items:center;padding:8px 10px;margin:0 0 4px;border:1px solid #24323c;border-radius:8px;background:#0e151b;color:#d7e8f4;cursor:pointer;font-size:12px}
 .stage-zero-range-item.skipped{opacity:.45;cursor:default}
+.stage-zero-range-item.attachment-unreadable{border-color:rgba(255,107,120,.55);background:rgba(255,107,120,.08)}
+.stage-zero-range-item.attachment-unreadable .stage-zero-range-text::after{content:" · ZAŁĄCZNIK NIEODCZYTANY";color:#ff8b95;font-size:9px;font-weight:800;letter-spacing:.03em}
 .stage-zero-range-item.selected{border-color:rgba(77,163,255,.55);background:rgba(77,163,255,.12)}
 .stage-zero-range-item.start{box-shadow:inset 0 2px 0 #4da3ff}
 .stage-zero-range-item.end{box-shadow:inset 0 -2px 0 #4da3ff}
