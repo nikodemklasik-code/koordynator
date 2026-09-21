@@ -66,7 +66,8 @@ export function explicitProtectedPushRequest(
   const normalizedRepo = repository.toLowerCase();
   const policy = Object.values(WORKSPACE_REPOSITORY_POLICIES)
     .find((item) => item.repository?.toLowerCase() === normalizedRepo);
-  if (!policy || policy.protectedBranches.length === 0) return null;
+  if (!policy || !policy.repository || policy.protectedBranches.length === 0) return null;
+  const fixedRepository = policy.repository;
 
   const value = String(text || "").trim();
   if (!value) return null;
@@ -80,11 +81,11 @@ export function explicitProtectedPushRequest(
     return lower.includes(token) || lower.includes(`refs/heads/${token}`);
   });
   const branch = explicit ?? (
-    workspace === policy.id || policy.repository.toLowerCase() === normalizedRepo
+    workspace === policy.id || fixedRepository.toLowerCase() === normalizedRepo
       ? policy.defaultPublishBranch
       : null
   );
-  return branch ? { repository: policy.repository, branch: branchToken(branch) } : null;
+  return branch ? { repository: fixedRepository, branch: branchToken(branch) } : null;
 }
 
 export function protectedBranchesForRepository(repository: string): string[] {
