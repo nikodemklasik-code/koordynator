@@ -81,24 +81,50 @@ export function sessionToProject(session: ChatSession, range?: StageZeroRange): 
 export function stageZeroScope(session: ChatSession, range?: StageZeroRange): {
   messageCount: number;
   attachmentCount: number;
+  readableAttachmentCount: number;
+  unreadableAttachmentCount: number;
+  unreadableAttachments: Array<{ name: string; status: string }>;
   total: number;
   fromIndex: number;
   toIndex: number;
 } {
   let messageCount = 0;
   let attachmentCount = 0;
+  let readableAttachmentCount = 0;
+  let unreadableAttachmentCount = 0;
+  const unreadableAttachments: Array<{ name: string; status: string }> = [];
   const from = range?.fromIndex ?? 0;
   const to = range?.toIndex ?? session.messages.length - 1;
   session.messages.forEach((message, index) => {
     if (index < from || index > to) return;
     if (message.state === "error" || message.state === "streaming") return;
     const body = message.content.trim();
-    const attachments = message.attachments?.length ?? 0;
-    if (!body && attachments === 0) return;
+    const attachments = message.attachments ?? [];
+    if (!body && attachments.length === 0) return;
     messageCount += 1;
-    attachmentCount += attachments;
+    attachmentCount += attachments.length;
+    for (const attachment of attachments) {
+      if (attachment.extractedText?.trim()) {
+        readableAttachmentCount += 1;
+      } else {
+        unreadableAttachmentCount += 1;
+        unreadableAttachments.push({
+          name: attachment.name || "attachment",
+          status: attachment.extractionStatus || "NO_EXTRACTED_TEXT"
+        });
+      }
+    }
   });
-  return { messageCount, attachmentCount, total: session.messages.length, fromIndex: from, toIndex: to };
+  return {
+    messageCount,
+    attachmentCount,
+    readableAttachmentCount,
+    unreadableAttachmentCount,
+    unreadableAttachments,
+    total: session.messages.length,
+    fromIndex: from,
+    toIndex: to
+  };
 }
 
 function runFile(root: string, sessionId: string): string {
@@ -134,6 +160,10 @@ export class StageZeroService {
       throw new StageZeroError("STAGE_ZERO_CHAT_BUSY", 409);
     }
 
+    const scope = stageZeroScope(session, range);
+    if (scope.unreadableAttachmentCount > 0) {
+      throw new StageZeroError("STAGE_ZERO_ATTACHMENTS_UNREADABLE", 422);
+    }
     const project = sessionToProject(session, range);
     if (!project) throw new StageZeroError("STAGE_ZERO_NEEDS_INPUT", 400);
 
