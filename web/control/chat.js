@@ -1628,6 +1628,11 @@ async function sendMessage() {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || `CHAT_HTTP_${response.status}`);
     }
+    const currentLabel = document.getElementById("sessionLabel");
+    if (currentLabel && currentLabel.textContent === "New chat" && message) {
+      const autoTitle = message.replace(/\s+/g, " ").slice(0, 80);
+      currentLabel.textContent = autoTitle;
+    }
   } catch (error) {
     state.generating = false;
     const code = error instanceof Error ? error.message : "CHAT_UNAVAILABLE";
