@@ -165,10 +165,14 @@
   }
   if (!exportMenu.childElementCount) exportDetails.hidden = true;
 
-  const originalTopbar = main.querySelector(".v5-topbar");
-  const originalToolbar = main.querySelector(".v5-toolbar");
-  if (originalTopbar) originalTopbar.dataset.shellRetired = "true";
-  if (originalToolbar) originalToolbar.dataset.shellRetired = "true";
+  // Retire every pre-workspace shell container after its live controls have
+  // been moved. This also handles newer/local header implementations without
+  // letting an old third row survive underneath the canonical two-row shell.
+  for (const child of [...main.children]) {
+    if (child === shell || child === workspace) continue;
+    const relation = child.compareDocumentPosition(workspace);
+    if (relation & Node.DOCUMENT_POSITION_FOLLOWING) child.dataset.shellRetired = "true";
+  }
 
   const rail = document.querySelector(".v5-rail");
   if (rail) rail.dataset.shellRetired = "true";
