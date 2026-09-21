@@ -31,6 +31,8 @@ import { prepareHermes } from "../runtime/hermes-launch.js";
 import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
 
+const CONTROL_RUNTIME_REVISION = "CHAT_HERMES_V3";
+
 export type ControlServerOptions = {
   stateDir: string;
   webRoot?: string;
@@ -533,6 +535,9 @@ export function createControlServer(options: ControlServerOptions): Server {
           operator: options.operator ?? "operator@koordynator.local",
           ciVerify: options.ciVerify ?? "UNKNOWN",
           version: options.version ?? VERSION,
+          runtimeRevision: CONTROL_RUNTIME_REVISION,
+          modelCatalogMode: "WORKING_SET_ACTIVE_ONLY",
+          hermesPtyModelParameter: true,
           materialisationEnabled: materialisation !== null,
           chatDefaultModel: options.chatDefaultModel ?? null,
           chatFallbackModels: options.chatFallbackModels ?? [],
