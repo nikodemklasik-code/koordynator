@@ -2,7 +2,7 @@ import { readAttachment } from "./attachment-reader.js";
 import { detectProjectConsensus, type ProjectConsensus } from "./chat-consensus.js";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
-import { createSkillExecutor, isActionableSkillTask, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
+import { createSkillExecutor, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -64,6 +64,27 @@ export type ChatSessionSummary = {
   messageCount: number;
 };
 
+export type ChatProcessStage =
+  | "INTAKE"
+  | "ROUTING"
+  | "EXECUTION"
+  | "STREAMING"
+  | "FINALIZING"
+  | "DONE"
+  | "STOPPED"
+  | "ERROR";
+
+export type ChatProcessUpdate = {
+  sessionId: string;
+  stage: ChatProcessStage;
+  agent: string;
+  process: string;
+  /** Progress through observable lifecycle checkpoints, not a token/time estimate. */
+  progress: number;
+  activity: string;
+  model?: string;
+};
+
 export type ChatEvent =
   | { type: "task_materialised"; sessionId: string; taskId: string }
   | { type: "connected"; sessionId: string }
@@ -71,6 +92,7 @@ export type ChatEvent =
   | { type: "assistant_start"; message: ChatMessage }
   | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
   | { type: "assistant_done"; message: ChatMessage }
+  | { type: "process_update"; update: ChatProcessUpdate }
   | { type: "stopped"; message: ChatMessage }
   | { type: "error"; sessionId: string; code: string; message: string };
 
@@ -546,6 +568,18 @@ export class ChatService {
     await this.persist(session);
     this.emit(sessionId, { type: "user_message", message: user });
     this.emit(sessionId, { type: "assistant_start", message: assistant });
+    this.emit(sessionId, {
+      type: "process_update",
+      update: {
+        sessionId,
+        stage: "INTAKE",
+        agent: "Koordynator",
+        process: "Live Chat intake",
+        progress: 10,
+        activity: "Request accepted and persisted",
+        model
+      }
+    });
 
     const controller = new AbortController();
     this.active.set(sessionId, { controller, messageId: assistant.id });
@@ -594,20 +628,73 @@ export class ChatService {
     const sessionId = session.sessionId;
     const userMessage = session.messages.at(-2)!;
     const taskText = userMessage.content;
-    const naturalSkillTask = isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
-    const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText) || (this.hermesSkillsEveryTurn && naturalSkillTask);
+    // Skills are an execution capability, not an intake shortcut. Automatic "every turn"
+    // routing is deliberately disabled so Hermes cannot bypass Stage 0 / Harmonia / Brain.
+    const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText);
     const longRunning = Boolean(repositoryTask(taskText)) || skillTask;
     const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
       if (repositoryTask(taskText) && this.repositoryExecutor) {
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "EXECUTION",
+            agent: "Hermes · Repository",
+            process: "Repository execution",
+            progress: 35,
+            activity: "Hermes repository worker started",
+            model: session.model
+          }
+        });
+        let repositoryStreaming = false;
         await this.repositoryExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: userMessage.attachments ?? [], signal: controller.signal, emit: delta => {
+          if (!repositoryStreaming) {
+            repositoryStreaming = true;
+            this.emit(sessionId, {
+              type: "process_update",
+              update: {
+                sessionId,
+                stage: "STREAMING",
+                agent: "Hermes · Repository",
+                process: "Repository execution",
+                progress: 70,
+                activity: "Repository worker is producing output",
+                model: session.model
+              }
+            });
+          }
           assistant.content += delta;
           session.updatedAt = now();
           this.checkpoint(session);
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         } });
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "FINALIZING",
+            agent: "Koordynator",
+            process: "Repository execution",
+            progress: 90,
+            activity: "Persisting execution result",
+            model: assistant.model
+          }
+        });
         const audited = await this.finalize(session, assistant, "complete");
         if (!audited) throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "DONE",
+            agent: "Koordynator",
+            process: "Repository execution",
+            progress: 100,
+            activity: "Execution completed",
+            model: assistant.model
+          }
+        });
         this.emit(sessionId, { type: "assistant_done", message: assistant });
         return;
       }
@@ -629,21 +716,85 @@ export class ChatService {
               }))
             })
           }));
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "EXECUTION",
+            agent: "Hermes · Skills",
+            process: "Explicit skill execution",
+            progress: 35,
+            activity: "Explicit /skill request admitted",
+            model: session.model
+          }
+        });
         const attachments = session.messages
           .filter((message) => message.role === "user")
           .flatMap((message) => message.attachments ?? [])
           .filter((attachment, index, values) => values.findIndex((candidate) => candidate.id === attachment.id) === index);
+        let skillStreaming = false;
         await this.skillExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments, context, signal: controller.signal, emit: delta => {
+          if (!skillStreaming) {
+            skillStreaming = true;
+            this.emit(sessionId, {
+              type: "process_update",
+              update: {
+                sessionId,
+                stage: "STREAMING",
+                agent: "Hermes · Skills",
+                process: "Explicit skill execution",
+                progress: 70,
+                activity: "Hermes skill executor is producing output",
+                model: session.model
+              }
+            });
+          }
           assistant.content += delta;
           session.updatedAt = now();
           this.checkpoint(session);
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         } });
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "FINALIZING",
+            agent: "Koordynator",
+            process: "Explicit skill execution",
+            progress: 90,
+            activity: "Persisting Hermes result",
+            model: assistant.model
+          }
+        });
         const audited = await this.finalize(session, assistant, "complete");
         if (!audited) throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "DONE",
+            agent: "Koordynator",
+            process: "Explicit skill execution",
+            progress: 100,
+            activity: "Skill execution completed",
+            model: assistant.model
+          }
+        });
         this.emit(sessionId, { type: "assistant_done", message: assistant });
         return;
       }
+      this.emit(sessionId, {
+        type: "process_update",
+        update: {
+          sessionId,
+          stage: "ROUTING",
+          agent: "Koordynator Chat",
+          process: "Model route selection",
+          progress: 25,
+          activity: "Selecting an executable OmniRoute model",
+          model: session.model
+        }
+      });
       const history = await this.boundedHistory(session.messages.filter((item) => item.id !== assistant.id));
       const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
       let response: Response | undefined;
@@ -668,6 +819,18 @@ export class ChatService {
         assistant.model = model;
         if (billing) assistant.billing = billing;
         session.model = model;
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "EXECUTION",
+            agent: "Koordynator Chat",
+            process: "OmniRoute completion",
+            progress: 45,
+            activity: `Connected to ${model}`,
+            model
+          }
+        });
         break;
       }
       if (!response) throw lastRateLimit ?? new ChatServiceError("CHAT_RATE_LIMITED", 429);
@@ -679,6 +842,7 @@ export class ChatService {
       const decoder = new TextDecoder();
       let pending = "";
       let done = false;
+      let streamingAnnounced = false;
       while (!done) {
         const part = await reader.read();
         done = part.done;
@@ -695,17 +859,56 @@ export class ChatService {
           if (usage) assistant.usage = mergeUsage(assistant.usage, usage);
           const delta = extractDelta(parsed);
           if (!delta) continue;
+          if (!streamingAnnounced) {
+            streamingAnnounced = true;
+            this.emit(sessionId, {
+              type: "process_update",
+              update: {
+                sessionId,
+                stage: "STREAMING",
+                agent: "Koordynator Chat",
+                process: "OmniRoute completion",
+                progress: 70,
+                activity: "Receiving model output",
+                model: assistant.model
+              }
+            });
+          }
           assistant.content += delta;
           session.updatedAt = now();
           this.checkpoint(session);
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         }
       }
+      this.emit(sessionId, {
+        type: "process_update",
+        update: {
+          sessionId,
+          stage: "FINALIZING",
+          agent: "Koordynator",
+          process: "Live Chat finalization",
+          progress: 90,
+          activity: "Persisting response and usage receipt",
+          model: assistant.model
+        }
+      });
       const audited = await this.finalize(session, assistant, "complete");
       if (!audited) {
         this.emit(sessionId, { type: "error", sessionId, code: "CHAT_USAGE_LEDGER_WRITE_FAILED", message: "CHAT_USAGE_LEDGER_WRITE_FAILED" });
         return;
       }
+      this.emit(sessionId, {
+        type: "process_update",
+        update: {
+          sessionId,
+          stage: "DONE",
+          agent: "Koordynator",
+          process: "Live Chat",
+          progress: 100,
+          activity: "Response completed",
+          model: assistant.model
+        }
+      });
       this.emit(sessionId, { type: "assistant_done", message: assistant });
     } catch (error) {
       if (controller.signal.aborted) {
@@ -714,11 +917,35 @@ export class ChatService {
           this.emit(sessionId, { type: "error", sessionId, code: "CHAT_USAGE_LEDGER_WRITE_FAILED", message: "CHAT_USAGE_LEDGER_WRITE_FAILED" });
           return;
         }
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "STOPPED",
+            agent: "Koordynator",
+            process: "Live Chat",
+            progress: Math.min(95, assistant.content ? 70 : 25),
+            activity: "Generation stopped",
+            model: assistant.model
+          }
+        });
         this.emit(sessionId, { type: "stopped", message: assistant });
         return;
       }
       const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_UNAVAILABLE";
       await this.finalize(session, assistant, "error");
+      this.emit(sessionId, {
+        type: "process_update",
+        update: {
+          sessionId,
+          stage: "ERROR",
+          agent: "Koordynator",
+          process: "Live Chat",
+          progress: Math.min(95, assistant.content ? 70 : 25),
+          activity: code,
+          model: assistant.model
+        }
+      });
       this.emit(sessionId, { type: "error", sessionId, code, message: code });
     } finally {
       clearTimeout(timeout);
