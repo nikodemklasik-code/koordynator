@@ -145,6 +145,10 @@
   terminalButton?.addEventListener("click", () => openDialog("terminal"));
   diskButton?.addEventListener("click", () => openDialog("local-files"));
   approve?.addEventListener("click", () => void submit());
+  window.addEventListener("koordynator:hermes-grants-changed", (event) => {
+    if (event?.detail && typeof event.detail === "object") render(event.detail);
+    else void loadStatus();
+  });
 
   function removeDuplicateTerminalControls() {
     const runtimeToolbar = document.querySelector(".runtime-terminal-toolbar");
