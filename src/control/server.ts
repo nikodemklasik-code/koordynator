@@ -446,11 +446,19 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, await hermesGrants.status());
       }
       if (method === "POST" && url.pathname === "/api/integrations/hermes-grants") {
-        const payload = await readJsonBody(request, 1024);
-        assertExactKeys(payload, ["grant", "approved"]);
-        if (payload.grant !== "terminal") throw new HermesGrantError("HERMES_GRANT_UNKNOWN", 400);
+        const payload = await readJsonBody(request, 8 * 1024);
+        assertExactKeys(payload, ["grant", "approved", "roots"]);
         if (payload.approved !== true) throw new HermesGrantError("HERMES_GRANT_CONSENT_REQUIRED", 400);
-        return sendJson(response, 200, await hermesGrants.grant("terminal", true));
+        if (payload.grant === "terminal") {
+          return sendJson(response, 200, await hermesGrants.grant("terminal", true));
+        }
+        if (payload.grant === "local-files") {
+          if (!Array.isArray(payload.roots) || payload.roots.some((root) => typeof root !== "string")) {
+            throw new HermesGrantError("HERMES_LOCAL_ROOTS_INVALID", 400);
+          }
+          return sendJson(response, 200, await hermesGrants.grant("local-files", true, payload.roots));
+        }
+        throw new HermesGrantError("HERMES_GRANT_UNKNOWN", 400);
       }
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/hermes/pty") {
