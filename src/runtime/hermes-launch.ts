@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -54,6 +55,19 @@ function fallbackProviders(endpoint: string, settings: ReturnType<typeof omniRou
     base_url: endpoint,
     key_env: "OPENAI_API_KEY"
   }));
+}
+
+function resolveHermesBinary(env: NodeJS.ProcessEnv): string {
+  const configured = env.KOORDYNATOR_HERMES_BIN?.trim();
+  if (configured) return configured;
+  const probe = spawnSync("/usr/bin/env", ["sh", "-lc", "command -v hermes"], {
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  });
+  const command = typeof probe.stdout === "string" ? probe.stdout.trim().split(/\r?\n/)[0]?.trim() : "";
+  if (probe.status !== 0 || !command) throw new Error("HERMES_BINARY_UNAVAILABLE");
+  return command;
 }
 
 function realUserHome(env: NodeJS.ProcessEnv): string {
@@ -112,6 +126,7 @@ export type HermesLaunch = {
 
 /** Managed, repo-local profile: global Nous/OpenRouter configuration is never edited. */
 export async function prepareHermes(settings: ReturnType<typeof omniRouteSettings>, root = process.cwd(), env: NodeJS.ProcessEnv = process.env): Promise<HermesLaunch> {
+  const hermesCommand = resolveHermesBinary(env);
   if (!settings.apiKey) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
   const authorizeModel = env.KOORDYNATOR_FREE_ONLY === "1" ? freeRouteGuard(settings) : undefined;
   if (authorizeModel && !await authorizeModel(settings.model)) throw new Error("FREE_ROUTE_DENIED");
@@ -148,7 +163,7 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
     const held = proxy;
     const localRoots = grants.localFiles ? (grants.localRoots ?? []) : [];
     return {
-      command: "hermes",
+      command: hermesCommand,
       args: ["chat", "--provider", "custom", "--model", settings.model],
       cwd: resolve(root),
       env: {
