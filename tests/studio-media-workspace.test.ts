@@ -23,12 +23,20 @@ describe("Studio media workspace", () => {
     expect(html).toContain("VEED Fabric");
     expect(html).toContain("ElevenLabs");
     expect(html).toContain("OmniRoute model fabric");
+    expect(html).toContain('id="studioContextSession"');
+    expect(html).toContain('id="studioContextChoose"');
+    expect(html).toContain('id="studioContextDialog"');
+    expect(html).toContain("Wybierz elementy rozmowy");
 
     expect(js).toContain('fetch("/api/studio/providers"');
     expect(js).toContain('fetch("/api/studio/image/generate"');
     expect(js).toContain('fetch("/api/studio/voice/voices"');
     expect(js).toContain('fetch("/api/studio/voice/tts"');
     expect(js).toContain('fetch("/api/chat/models"');
+    expect(js).toContain('fetch("/api/chat/sessions?limit=100"');
+    expect(js).toContain("studioContextSelectedIds");
+    expect(js).toContain("promptWithContext");
+    expect(js).toContain("WYBRANE ELEMENTY ROZMOWY");
 
     expect(server).toContain('"/studio": { name: "studio.html"');
     expect(server).toContain('"/studio.css": { name: "studio.css"');
