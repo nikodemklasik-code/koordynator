@@ -130,18 +130,24 @@ describe("sessionToProject", () => {
     expect(project).not.toContain("Odpowiedź do pierwszej.");
   });
 
-  it("stageZeroScope raportuje ile wiadomości i załączników wejdzie (dla UI zakresu)", () => {
+  it("stageZeroScope rozróżnia załączniki rzeczywiście odczytane od tylko dołączonych", () => {
     const session = {
       sessionId: "s", createdAt: "", updatedAt: "", model: "m",
       messages: [
-        message("user", "A", { attachments: [{ id: "a", name: "f.txt", mimeType: "text/plain", size: 1, dataUrl: "data:text/plain;base64,YQ==", extractedText: "x" }] }),
+        message("user", "A", { attachments: [
+          { id: "a", name: "f.txt", mimeType: "text/plain", size: 1, dataUrl: "data:text/plain;base64,YQ==", extractedText: "x", extractionStatus: "EXTRACTED" },
+          { id: "b", name: "scan.png", mimeType: "image/png", size: 1, dataUrl: "data:image/png;base64,YQ==", extractionStatus: "VISION_REQUIRED" }
+        ] }),
         message("assistant", "B", { state: "streaming" }),
         message("assistant", "C")
       ]
     } as ChatSession;
     const scope = stageZeroScope(session);
     expect(scope.messageCount).toBe(2); // streaming excluded
-    expect(scope.attachmentCount).toBe(1);
+    expect(scope.attachmentCount).toBe(2);
+    expect(scope.readableAttachmentCount).toBe(1);
+    expect(scope.unreadableAttachmentCount).toBe(1);
+    expect(scope.unreadableAttachments).toEqual([{ name: "scan.png", status: "VISION_REQUIRED" }]);
     expect(scope.total).toBe(3);
   });
 });
@@ -201,6 +207,46 @@ describe("Etap 0 zasilany z chatu", () => {
       const again = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`);
       expect(again.status).toBe(200);
       expect((await again.json() as { reading: { understanding: string } }).reading.understanding).toContain("tryb ciemny");
+    } finally {
+      await close();
+    }
+  });
+
+  it("nie uruchamia poznania, gdy wybrany zakres zawiera załącznik bez odczytanej treści", async () => {
+    const root = await mkdtemp(join(tmpdir(), "stage-zero-unreadable-"));
+    roots.push(root);
+    const seeded = await seedSession(root, {
+      messages: [
+        { ...message("user", "Przeczytaj brief.", {
+          attachments: [{
+            id: "img",
+            name: "brief.png",
+            mimeType: "image/png",
+            size: 10,
+            dataUrl: "data:image/png;base64,YQ==",
+            extractionStatus: "VISION_REQUIRED"
+          }]
+        }), sessionId: "x" }
+      ]
+    });
+    const { fetchImpl, bodies } = gateway([CLEAN, MAP]);
+    const { base, close } = await listen({ stateDir: root, webRoot: resolve("web/control"), chatApiKey: "k", chatFetchImpl: fetchImpl });
+    try {
+      const scopeRes = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero?scope=1`);
+      expect(scopeRes.status).toBe(200);
+      const scope = await scopeRes.json() as {
+        attachmentCount: number;
+        readableAttachmentCount: number;
+        unreadableAttachmentCount: number;
+      };
+      expect(scope).toMatchObject({ attachmentCount: 1, readableAttachmentCount: 0, unreadableAttachmentCount: 1 });
+
+      const run = await fetch(`${base}/api/chat/sessions/${seeded.sessionId}/stage-zero`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: "{}"
+      });
+      expect(run.status).toBe(422);
+      expect(await run.json()).toEqual({ error: "STAGE_ZERO_ATTACHMENTS_UNREADABLE" });
+      expect(bodies).toHaveLength(0);
     } finally {
       await close();
     }
@@ -462,6 +508,9 @@ describe("Etap 0 zasilany z chatu", () => {
       expect(js).toContain("searchParams.set(\"scope\", \"1\")");
       expect(js).toContain("fromIndex");
       expect(js).toContain("toIndex");
+      expect(js).toContain("unreadableAttachmentCount");
+      expect(js).toContain("stageZeroRangeList.scrollTop = 0");
+      expect(js).toContain("NIE URUCHOMIĘ");
       expect(js).toContain("fontSize: 15");
       expect(js).toContain("colorizeHermesOutput");
       expect(js).toContain("▶");
@@ -469,6 +518,7 @@ describe("Etap 0 zasilany z chatu", () => {
       const css = await fetch(`${base}/chat.css`).then((item) => item.text());
       expect(css).toContain(".stage-zero-range-list");
       expect(css).toContain(".stage-zero-dialog");
+      expect(css).toContain(".stage-zero-range-item.attachment-unreadable");
       expect(css).toContain("font-size:15px");
     } finally {
       await close();
