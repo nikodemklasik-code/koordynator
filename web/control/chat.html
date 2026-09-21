@@ -150,6 +150,7 @@
                     <option value="INNOVATION_DEVELOPER">Innovation Developer</option>
                     <option value="SECURITY">Security</option>
                   </select>
+                  <button class="v5-agent-button" id="addAgentButton" type="button" aria-label="Add AI agent from another conversation" title="Create shared room with another AI agent">＋ AI</button>
                   <button class="attach-button v5-attach" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
                   <button class="stop-button v5-stop" id="stopButton" type="button" aria-label="Stop generation" disabled>■</button>
                   <button class="send-button v5-send" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
@@ -192,6 +193,46 @@
       </footer>
     </main>
   </div>
+
+  <dialog class="shared-room-dialog" id="sharedRoomDialog" aria-labelledby="sharedRoomTitle">
+    <form method="dialog" class="shared-room-form">
+      <header>
+        <div>
+          <div class="chat-kicker">MULTI-AGENT COLLABORATION</div>
+          <h2 id="sharedRoomTitle">Create shared room</h2>
+        </div>
+        <button value="cancel" type="submit" aria-label="Close shared room dialog">×</button>
+      </header>
+      <p>Join the current AI with an agent from another conversation. Each agent keeps its own source context and model; only the common topic is discussed here.</p>
+      <label>
+        <span>Common topic / shared element</span>
+        <input id="sharedRoomTopic" type="text" maxlength="160" placeholder="e.g. WWW / frontend" />
+      </label>
+      <div class="shared-room-current" id="sharedRoomCurrentAgent"></div>
+      <label>
+        <span>Second agent from conversation</span>
+        <select id="sharedRoomSourceSession"><option value="">Loading conversations…</option></select>
+      </label>
+      <label>
+        <span>Second agent role</span>
+        <select id="sharedRoomSecondRole">
+          <option value="FRONTEND_DEVELOPER">Frontend Developer</option>
+          <option value="FRONTEND_BUILDER">Frontend Builder</option>
+          <option value="DEVELOPER">Developer</option>
+          <option value="RESEARCHER">Researcher</option>
+          <option value="BUILDER">Builder</option>
+          <option value="INNOVATION_DEVELOPER">Innovation Developer</option>
+          <option value="SECURITY">Security</option>
+          <option value="GENERAL">General</option>
+        </select>
+      </label>
+      <div class="attachment-error hidden" id="sharedRoomError" role="alert"></div>
+      <footer>
+        <button value="cancel" type="submit">Cancel</button>
+        <button id="sharedRoomCreateButton" type="button" class="primary-button">Create shared room</button>
+      </footer>
+    </form>
+  </dialog>
 
   <div class="history-backdrop hidden" id="historyBackdrop"></div>
   <aside class="history-panel" id="historyPanel" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
@@ -252,11 +293,12 @@
   <script src="/chat-workspace.js?v=1" defer></script>
   <script src="/chat-router.js?v=2" defer></script>
   <script src="/chat-models.js?v=6" defer></script>
-  <script src="/chat.js?v=12" defer></script>
+  <script src="/chat.js?v=13" defer></script>
   <script src="/chat-history.js?v=6" defer></script>
   <script src="/chat-github.js?v=7" defer></script>
   <script src="/chat-usage.js?v=6" defer></script>
   <script src="/chat-v5.js?v=8" defer></script>
+  <script src="/chat-shared-room.js?v=1" defer></script>
   <script src="/chat-shell.js?v=7" defer></script>
   <script src="/chat-local-access.js?v=4" defer></script>
 </body>
