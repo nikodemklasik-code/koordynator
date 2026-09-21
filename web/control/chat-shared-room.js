@@ -154,9 +154,15 @@
     }
 
     await loadCandidates();
-    if (topicInput) topicInput.value = "";
+    if (topicInput) {
+      topicInput.value = "";
+      topicInput.classList.remove("invalid");
+    }
     dialog?.showModal?.();
-    requestAnimationFrame(() => topicInput?.focus());
+    requestAnimationFrame(() => {
+      topicInput?.scrollIntoView({ block: "center" });
+      topicInput?.focus();
+    });
   }
 
   async function createRoom() {
@@ -164,14 +170,19 @@
     if (!currentSession) return;
     const topic = String(topicInput?.value || "").trim();
     const secondSessionId = String(sourceSelect?.value || "").trim();
-    if (!topic) return showError("Enter the shared topic, for example WWW / frontend.");
+    if (!topic) {
+      topicInput?.focus();
+      topicInput?.classList.add("invalid");
+      return showError("Wpisz wspólny temat / element projektu, np. WWW / frontend.");
+    }
+    topicInput?.classList.remove("invalid");
     if (!secondSessionId) return showError("Choose the second source conversation.");
 
     const second = sessionSummaries.find((item) => item.sessionId === secondSessionId);
     if (!second) return showError("The selected conversation is no longer available.");
 
     createButton.disabled = true;
-    createButton.textContent = "Creating…";
+    createButton.textContent = "Tworzę wspólny czat…";
     try {
       const response = await fetch("/api/chat/shared-rooms", {
         method: "POST",
@@ -204,7 +215,7 @@
       showError(error instanceof Error ? error.message : "SHARED_ROOM_CREATE_FAILED");
     } finally {
       createButton.disabled = false;
-      createButton.textContent = "Create shared room";
+      createButton.textContent = "Utwórz wspólny czat";
     }
   }
 
