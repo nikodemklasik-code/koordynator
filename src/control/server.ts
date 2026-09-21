@@ -35,7 +35,7 @@ import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
 import { elevenLabsKey, studioProviderCatalog } from "./studio-provider-catalog.js";
 
-const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V2";
+const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V3";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -780,6 +780,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           version: options.version ?? VERSION,
           runtimeRevision: CONTROL_RUNTIME_REVISION,
           productWorkspaces: true,
+          sharedRooms: true,
           workspaceRoutes: ["/chat", "/corporation", "/harmonia-legal", "/studio"],
           modelCatalogMode: "WORKING_SET_ACTIVE_ONLY",
           hermesPtyModelParameter: true,

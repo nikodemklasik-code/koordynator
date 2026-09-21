@@ -11,8 +11,9 @@ export async function isKoordynatorControl(url: string, fetchImpl: typeof fetch 
     const routes = Array.isArray(body.workspaceRoutes) ? body.workspaceRoutes : [];
     return body.ok === true
       && typeof body.version === "string"
-      && body.runtimeRevision === "PRODUCT_WORKSPACES_V2"
+      && body.runtimeRevision === "PRODUCT_WORKSPACES_V3"
       && body.productWorkspaces === true
+      && body.sharedRooms === true
       && routes.includes("/corporation")
       && routes.includes("/harmonia-legal")
       && routes.includes("/studio")

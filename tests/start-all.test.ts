@@ -15,8 +15,9 @@ describe("one-click start all", () => {
     expect(pkg.scripts?.["start:all"]).toMatch(/scripts\/start-all\.mjs/);
     expect(pkg.scripts?.control).toContain("npm run build");
     expect(pkg.scripts?.["control:run"]).toBe("node dist/control/main.js");
-    expect(source).toContain('expectedRuntimeRevision = "PRODUCT_WORKSPACES_V2"');
+    expect(source).toContain('expectedRuntimeRevision = "PRODUCT_WORKSPACES_V3"');
     expect(source).toContain('health.productWorkspaces === true');
+    expect(source).toContain('health.sharedRooms === true');
     expect(source).toContain('routes.includes("/corporation")');
     expect(source).toContain('routes.includes("/harmonia-legal")');
     expect(source).toContain('routes.includes("/studio")');

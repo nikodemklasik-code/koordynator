@@ -26,7 +26,7 @@ const chatUrl = `http://${host}:${port}/chat`;
 const pidDir = resolve(root, ".orchestrator", "runtime");
 const pidFile = resolve(pidDir, "control.pid");
 const logFile = resolve(pidDir, "control.log");
-const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V2";
+const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V3";
 const runtimeEnv = {
   ...process.env,
   PATH: [process.env.HOME ? resolve(process.env.HOME, ".local", "bin") : "", process.env.PATH || ""]
@@ -75,6 +75,7 @@ function controlRuntimeState() {
   if (
     health.runtimeRevision === expectedRuntimeRevision &&
     health.productWorkspaces === true &&
+    health.sharedRooms === true &&
     routes.includes("/corporation") &&
     routes.includes("/harmonia-legal") &&
     routes.includes("/studio") &&
