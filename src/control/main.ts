@@ -56,7 +56,9 @@ const chatModelCatalog = new WorkingChatModelCatalogService({
   maxCandidates: 16,
   targetActive: 10,
   probeConcurrency: 4,
-  cacheTtlMs: 20_000
+  cacheTtlMs: 20_000,
+  snapshotPath: resolve(stateDir, "chat-model-working-set.json"),
+  snapshotMaxAgeMs: 24 * 60 * 60 * 1000
 });
 
 let startupWorkingSet: Awaited<ReturnType<WorkingChatModelCatalogService["list"]>> | null = null;
