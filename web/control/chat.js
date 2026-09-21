@@ -1258,6 +1258,8 @@ function ensureHermesTerminal() {
   if (hermesFit) hermesXterm.loadAddon(hermesFit);
   hermesXterm.open(hermesTerm);
   hermesXterm.onData((data) => { void sendHermesInput(data); });
+  // Expose only the terminal object needed by the UI copy/selection adapter.
+  window.koordynatorHermesTerminal = hermesXterm;
   try { hermesFit?.fit(); } catch { /* not yet measured */ }
   return hermesXterm;
 }
