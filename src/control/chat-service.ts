@@ -1093,6 +1093,7 @@ export class ChatService {
         return;
       }
       if (skillTask) {
+        if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
         const context: SkillContextMessage[] = session.messages
           .filter((message) => message.id !== assistant.id && message.state !== "error")
           .slice(-this.maxHistoryMessages)
