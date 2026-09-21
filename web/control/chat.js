@@ -1076,26 +1076,58 @@ function localStageZeroScope() {
   const to = state.stageZeroTo;
   let messageCount = 0;
   let attachmentCount = 0;
+  let readableAttachmentCount = 0;
+  let unreadableAttachmentCount = 0;
+  const unreadableAttachments = [];
   messages.forEach((message, index) => {
     if (index < from || index > to) return;
     if (!stageZeroEligible(message)) return;
     messageCount += 1;
-    attachmentCount += message.attachments?.length ?? 0;
+    const attachments = message.attachments || [];
+    attachmentCount += attachments.length;
+    for (const attachment of attachments) {
+      if (String(attachment.extractedText || "").trim()) readableAttachmentCount += 1;
+      else {
+        unreadableAttachmentCount += 1;
+        unreadableAttachments.push({
+          name: attachment.name || "attachment",
+          status: attachment.extractionStatus || "NO_EXTRACTED_TEXT"
+        });
+      }
+    }
   });
-  return { messageCount, attachmentCount, total: messages.length, fromIndex: from, toIndex: to };
+  return {
+    messageCount,
+    attachmentCount,
+    readableAttachmentCount,
+    unreadableAttachmentCount,
+    unreadableAttachments,
+    total: messages.length,
+    fromIndex: from,
+    toIndex: to
+  };
 }
 
 function describeStageZeroScope(scope) {
   if (!scope) return "Harmonia przeczyta tę rozmowę.";
-  const files = scope.attachmentCount ? `, ${scope.attachmentCount} zał.` : "";
-  return `Harmonia przeczyta ${scope.messageCount} wiad. (${scope.fromIndex}–${scope.toIndex} z ${scope.total})${files}`;
+  const start = Number.isInteger(scope.fromIndex) ? scope.fromIndex + 1 : 1;
+  const end = Number.isInteger(scope.toIndex) ? scope.toIndex + 1 : scope.total;
+  const readable = Number(scope.readableAttachmentCount || 0);
+  const unreadable = Number(scope.unreadableAttachmentCount || 0);
+  const files = scope.attachmentCount
+    ? `, zał.: ${scope.attachmentCount} (${readable} odczyt., ${unreadable} nieodczyt.)`
+    : "";
+  const warning = unreadable
+    ? " · NIE URUCHOMIĘ: wybrany zakres zawiera załącznik bez odczytanej treści."
+    : "";
+  return `Harmonia przeczyta ${scope.messageCount} wiad. (${start}–${end} z ${scope.total})${files}${warning}`;
 }
 
 async function refreshStageZeroScope() {
   paintStageZeroRange();
   const local = localStageZeroScope();
   if (stageZeroScopePreview) stageZeroScopePreview.textContent = describeStageZeroScope(local);
-  if (stageZeroRunButton) stageZeroRunButton.disabled = local.messageCount === 0 || state.stageZeroRunning;
+  if (stageZeroRunButton) stageZeroRunButton.disabled = local.messageCount === 0 || local.unreadableAttachmentCount > 0 || state.stageZeroRunning;
   if (!state.sessionId) return;
   try {
     const url = new URL(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/stage-zero`, window.location.origin);
@@ -1109,7 +1141,7 @@ async function refreshStageZeroScope() {
       stageZeroScopePreview.textContent = describeStageZeroScope(scope);
     }
     if (stageZeroRunButton && typeof scope.messageCount === "number") {
-      stageZeroRunButton.disabled = scope.messageCount === 0 || state.stageZeroRunning;
+      stageZeroRunButton.disabled = scope.messageCount === 0 || Number(scope.unreadableAttachmentCount || 0) > 0 || state.stageZeroRunning;
     }
   } catch {
     /* local preview already shown */
@@ -1160,8 +1192,14 @@ function renderStageZeroRangeList(messages) {
     if (stageZeroEligible(message)) {
       item.addEventListener("click", () => pickStageZeroIndex(index));
     }
+    const unreadable = (message.attachments || []).some((attachment) => !String(attachment.extractedText || "").trim());
+    item.classList.toggle("attachment-unreadable", unreadable);
+    if (unreadable) {
+      item.title = "Ta wiadomość ma załącznik bez odczytanej treści. Etap 0 nie uruchomi się, dopóki nie wybierzesz zakresu bez niego albo plik nie zostanie odczytany.";
+    }
     stageZeroRangeList.appendChild(item);
   });
+  stageZeroRangeList.scrollTop = 0;
 }
 
 async function openStageZeroDialog() {
@@ -1209,7 +1247,10 @@ async function runStageZero() {
     stageZeroDialog?.close();
     setStageZeroNotice(payload.reading?.decision?.status === "allow" ? "ok" : "warn", stageZeroSummary(payload));
   } catch (error) {
-    setStageZeroNotice("error", error instanceof Error ? error.message : "STAGE_ZERO_FAILED");
+    const code = error instanceof Error ? error.message : "STAGE_ZERO_FAILED";
+    setStageZeroNotice("error", code === "STAGE_ZERO_ATTACHMENTS_UNREADABLE"
+      ? "Etap 0 zatrzymany: wybrany zakres zawiera załącznik, którego treści Harmonia nie dostała."
+      : code);
   } finally {
     state.stageZeroRunning = false;
     updateControls();
