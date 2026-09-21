@@ -131,6 +131,7 @@ describe("Shared Room", () => {
     ]);
 
     expect(html).toContain('id="addAgentButton"');
+    expect(html).toContain("Zaproś 2. czat");
     expect(html).toContain('id="sharedRoomDialog"');
     expect(html).toContain('id="sharedRoomTopicLabel"');
     expect(html).toContain("WSPÓLNY TEMAT / ELEMENT PROJEKTU");
