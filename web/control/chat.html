@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/xterm.css" />
   <link rel="stylesheet" href="/chat-v5.css?v=5" />
   <link rel="stylesheet" href="/chat-router.css?v=1" />
-  <link rel="stylesheet" href="/chat-shell.css?v=3" />
+  <link rel="stylesheet" href="/chat-shell.css?v=4" />
 </head>
 <body class="workspace-v5">
   <div class="v5-shell">
@@ -107,14 +107,32 @@
               <input id="fileInput" class="visually-hidden-file" type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/plain,text/markdown,text/csv,application/json,application/xml,text/xml,text/*,.txt,.md,.markdown,.csv,.json,.xml,.yml,.yaml,.toml,.ini,.cfg,.env,.log,.ts,.tsx,.js,.jsx,.mjs,.cjs,.py,.rb,.go,.rs,.java,.kt,.swift,.php,.sql,.html,.css,.scss,.sh,.bash,.zsh,.ps1,.dockerfile,.gitignore,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip" aria-label="Attach files" />
               <div class="attachment-tray hidden" id="attachmentTray" aria-live="polite"></div>
               <textarea id="messageInput" rows="1" maxlength="32768" placeholder="Message Koordynator…" aria-label="Message" title="Attach files with +. ZIP, PDF, TXT, DOCX, XLSX and PPTX are recognised; images require a vision-capable model."></textarea>
-              <div class="composer-actions v5-composer-actions">
-                <label class="model-picker composer-model v5-model-picker">
-                  <span class="visually-hidden">AI model</span>
-                  <select id="modelSelect" aria-label="AI model"><option value="" selected>Loading…</option></select>
-                </label>
-                <button class="attach-button v5-attach" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
-                <button class="stop-button hidden v5-stop" id="stopButton" type="button" aria-label="Stop generation">■</button>
-                <button class="send-button v5-send" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
+              <div class="composer-actions v5-composer-actions v5-canonical-control-row">
+                <div class="v5-control-row" aria-label="Model, role and message controls">
+                  <div class="v5-unified-model-select" id="unifiedModelSelector" role="combobox" aria-haspopup="listbox" aria-expanded="false">
+                    <input id="modelSearchInput" class="v5-model-search" type="search" autocomplete="off" spellcheck="false"
+                      placeholder="SEARCH OR CHOOSE MODEL" aria-label="Search or choose AI model" />
+                    <button id="modelMenuButton" class="v5-model-menu-button" type="button" aria-label="Open model menu" aria-expanded="false">⌄</button>
+                    <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>
+                    <label class="model-picker composer-model v5-model-picker v5-native-model-picker" aria-hidden="true">
+                      <span class="visually-hidden">AI model</span>
+                      <select id="modelSelect" aria-label="AI model"><option value="" selected>Loading…</option></select>
+                    </label>
+                  </div>
+                  <select id="modelRoleFilter" class="v5-model-role" aria-label="Model role category">
+                    <option value="ALL">All roles</option>
+                    <option value="DEVELOPER">Developer</option>
+                    <option value="RESEARCHER">Researcher</option>
+                    <option value="FRONTEND_DEVELOPER">Frontend Developer</option>
+                    <option value="FRONTEND_BUILDER">Frontend Builder</option>
+                    <option value="BUILDER">Builder</option>
+                    <option value="INNOVATION_DEVELOPER">Innovation Developer</option>
+                    <option value="SECURITY">Security</option>
+                  </select>
+                  <button class="attach-button v5-attach" id="attachButton" type="button" aria-label="Attach files" title="Attach files">＋</button>
+                  <button class="stop-button v5-stop" id="stopButton" type="button" aria-label="Stop generation" disabled>■</button>
+                  <button class="send-button v5-send" id="sendButton" type="button" disabled aria-label="Send message">↑</button>
+                </div>
               </div>
             </div>
             <div class="attachment-error hidden" id="attachmentError" role="alert"></div>
@@ -212,11 +230,11 @@
   <script src="/xterm-addon-fit.js" defer></script>
   <script src="/chat-router.js?v=1" defer></script>
   <script src="/chat-models.js?v=5" defer></script>
-  <script src="/chat.js?v=5" defer></script>
+  <script src="/chat.js?v=7" defer></script>
   <script src="/chat-history.js?v=5" defer></script>
   <script src="/chat-github.js?v=5" defer></script>
   <script src="/chat-usage.js?v=5" defer></script>
-  <script src="/chat-v5.js?v=6" defer></script>
+  <script src="/chat-v5.js?v=7" defer></script>
   <script src="/chat-shell.js?v=2" defer></script>
   <script src="/chat-local-access.js?v=2" defer></script>
 </body>
