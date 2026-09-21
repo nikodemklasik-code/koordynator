@@ -33,8 +33,9 @@ import { assertWorkspaceRepository, explicitProtectedPushRequest, safeWorkspaceI
 import { prepareHermes } from "../runtime/hermes-launch.js";
 import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
+import { elevenLabsKey, studioProviderCatalog } from "./studio-provider-catalog.js";
 
-const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V1";
+const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V2";
 
 export type ControlServerOptions = {
   stateDir: string;
@@ -110,6 +111,16 @@ function sendText(response: ServerResponse, status: number, contentType: string,
   response.end(body);
 }
 
+function sendBinary(response: ServerResponse, status: number, contentType: string, body: Buffer): void {
+  response.writeHead(status, {
+    "content-type": contentType,
+    "content-length": body.length,
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff"
+  });
+  response.end(body);
+}
+
 function safeTaskId(value: string): TaskId | null { return /^TASK-[A-Za-z0-9._-]+$/.test(value) ? value as TaskId : null; }
 function safeProviderId(value: string): string | null { return /^[a-z0-9][a-z0-9._-]+$/i.test(value) ? value : null; }
 function safeDigest(value: string): Digest | null { return /^sha256:[a-f0-9]{64}$/i.test(value) ? value as Digest : null; }
@@ -130,6 +141,8 @@ function isControlPost(pathname: string): boolean {
     pathname === "/api/integrations/github/connect" ||
     pathname === "/api/integrations/hermes-grants" ||
     pathname === "/api/providers/connect-existing" ||
+    pathname === "/api/studio/image/generate" ||
+    pathname === "/api/studio/voice/tts" ||
     pathname === "/api/tasks/project-pack" ||
     pathname === "/api/repositories" ||
     pathname === "/api/repositories/remove" ||
@@ -312,6 +325,89 @@ export function createControlServer(options: ControlServerOptions): Server {
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/chat/models") {
         return sendJson(response, 200, await modelCatalog.list());
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/studio/providers") {
+        const catalog = await modelCatalog.list();
+        const models = Array.isArray((catalog as { models?: unknown }).models)
+          ? (catalog as { models: unknown[] }).models.filter((value): value is string => typeof value === "string")
+          : [];
+        return sendJson(response, 200, { providers: studioProviderCatalog(models) });
+      }
+
+      if (method === "POST" && url.pathname === "/api/studio/image/generate") {
+        const key = process.env.OPENAI_API_KEY?.trim() || "";
+        if (!key) return sendJson(response, 503, { error: "OPENAI_IMAGE_NOT_CONFIGURED" });
+        const payload = await readJsonBody(request, 32 * 1024);
+        assertExactKeys(payload, ["prompt", "model", "size", "quality"]);
+        const prompt = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
+        const model = typeof payload.model === "string" && payload.model.trim()
+          ? payload.model.trim()
+          : (process.env.KOORDYNATOR_IMAGE_MODEL?.trim() || "gpt-image-2.5-sunburst");
+        const size = typeof payload.size === "string" && payload.size.trim() ? payload.size.trim() : "1024x1024";
+        const quality = typeof payload.quality === "string" && payload.quality.trim() ? payload.quality.trim() : "medium";
+        if (!prompt || prompt.length > 8_000) return sendJson(response, 400, { error: "STUDIO_IMAGE_PROMPT_INVALID" });
+        if (!/^gpt-image-[A-Za-z0-9._-]+$/.test(model)) return sendJson(response, 400, { error: "STUDIO_IMAGE_MODEL_INVALID" });
+        if (!/^(?:auto|\d{3,4}x\d{3,4})$/.test(size)) return sendJson(response, 400, { error: "STUDIO_IMAGE_SIZE_INVALID" });
+        if (!/^(?:auto|low|medium|high|xhigh|max)$/.test(quality)) return sendJson(response, 400, { error: "STUDIO_IMAGE_QUALITY_INVALID" });
+
+        const upstream = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: { authorization: `Bearer ${key}`, "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ model, prompt, size, quality }),
+          signal: AbortSignal.timeout(120_000)
+        });
+        const result = await upstream.json().catch(() => ({})) as { data?: Array<{ b64_json?: string; url?: string }>; error?: unknown };
+        if (!upstream.ok) return sendJson(response, upstream.status === 429 ? 429 : 502, { error: `OPENAI_IMAGE_HTTP_${upstream.status}` });
+        const first = Array.isArray(result.data) ? result.data[0] : undefined;
+        if (first?.b64_json) return sendJson(response, 200, { mimeType: "image/png", dataUrl: `data:image/png;base64,${first.b64_json}` });
+        if (first?.url) return sendJson(response, 200, { mimeType: "image/png", url: first.url });
+        return sendJson(response, 502, { error: "OPENAI_IMAGE_EMPTY_RESULT" });
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/studio/voice/voices") {
+        const key = elevenLabsKey();
+        if (!key) return sendJson(response, 503, { error: "ELEVENLABS_NOT_CONFIGURED" });
+        const upstream = await fetch("https://api.elevenlabs.io/v2/voices?page_size=100", {
+          headers: { accept: "application/json", "xi-api-key": key },
+          signal: AbortSignal.timeout(15_000)
+        });
+        if (!upstream.ok) return sendJson(response, upstream.status === 429 ? 429 : 502, { error: `ELEVENLABS_VOICES_HTTP_${upstream.status}` });
+        const payload = await upstream.json() as { voices?: Array<Record<string, unknown>> };
+        const voices = Array.isArray(payload.voices)
+          ? payload.voices.map((voice) => ({
+              voiceId: typeof voice.voice_id === "string" ? voice.voice_id : "",
+              name: typeof voice.name === "string" ? voice.name : "Unnamed voice",
+              category: typeof voice.category === "string" ? voice.category : "",
+              previewUrl: typeof voice.preview_url === "string" ? voice.preview_url : ""
+            })).filter((voice) => voice.voiceId)
+          : [];
+        return sendJson(response, 200, { voices });
+      }
+
+      if (method === "POST" && url.pathname === "/api/studio/voice/tts") {
+        const key = elevenLabsKey();
+        if (!key) return sendJson(response, 503, { error: "ELEVENLABS_NOT_CONFIGURED" });
+        const payload = await readJsonBody(request, 24 * 1024);
+        assertExactKeys(payload, ["text", "voiceId", "modelId"]);
+        const text = typeof payload.text === "string" ? payload.text.trim() : "";
+        const voiceId = typeof payload.voiceId === "string" ? payload.voiceId.trim() : "";
+        const modelId = typeof payload.modelId === "string" && payload.modelId.trim() ? payload.modelId.trim() : "eleven_multilingual_v2";
+        if (!text || text.length > 5_000) return sendJson(response, 400, { error: "STUDIO_VOICE_TEXT_INVALID" });
+        if (!/^[A-Za-z0-9_-]{8,128}$/.test(voiceId)) return sendJson(response, 400, { error: "STUDIO_VOICE_ID_INVALID" });
+        if (!/^[A-Za-z0-9._-]{2,80}$/.test(modelId)) return sendJson(response, 400, { error: "STUDIO_VOICE_MODEL_INVALID" });
+
+        const upstream = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}?output_format=mp3_44100_128`, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "audio/mpeg", "xi-api-key": key },
+          body: JSON.stringify({ text, model_id: modelId }),
+          signal: AbortSignal.timeout(45_000)
+        });
+        if (!upstream.ok) {
+          return sendJson(response, upstream.status === 429 ? 429 : 502, { error: `ELEVENLABS_TTS_HTTP_${upstream.status}` });
+        }
+        const audio = Buffer.from(await upstream.arrayBuffer());
+        return sendBinary(response, 200, upstream.headers.get("content-type") || "audio/mpeg", audio);
       }
 
       if (method === "GET" && url.pathname === "/api/chat/usage") {
@@ -643,7 +739,7 @@ export function createControlServer(options: ControlServerOptions): Server {
           version: options.version ?? VERSION,
           runtimeRevision: CONTROL_RUNTIME_REVISION,
           productWorkspaces: true,
-          workspaceRoutes: ["/chat", "/corporation", "/harmonia-legal"],
+          workspaceRoutes: ["/chat", "/corporation", "/harmonia-legal", "/studio"],
           modelCatalogMode: "WORKING_SET_ACTIVE_ONLY",
           hermesPtyModelParameter: true,
           materialisationEnabled: materialisation !== null,
@@ -860,6 +956,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat": { name: "chat.html", type: "text/html; charset=utf-8" },
         "/corporation": { name: "chat.html", type: "text/html; charset=utf-8" },
         "/harmonia-legal": { name: "chat.html", type: "text/html; charset=utf-8" },
+        "/studio": { name: "studio.html", type: "text/html; charset=utf-8" },
         "/ustroj": { name: "ustroj.html", type: "text/html; charset=utf-8" },
         "/providers": { name: "providers.html", type: "text/html; charset=utf-8" },
         "/releases": { name: "releases.html", type: "text/html; charset=utf-8" },
@@ -873,6 +970,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat-router.css": { name: "chat-router.css", type: "text/css; charset=utf-8" },
         "/chat-shell.css": { name: "chat-shell.css", type: "text/css; charset=utf-8" },
         "/ustroj.css": { name: "ustroj.css", type: "text/css; charset=utf-8" },
+        "/studio.css": { name: "studio.css", type: "text/css; charset=utf-8" },
         "/chat-v5.css": { name: "chat-v5.css", type: "text/css; charset=utf-8" },
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
@@ -886,6 +984,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat-local-access.js": { name: "chat-local-access.js", type: "text/javascript; charset=utf-8" },
         "/chat-workspace.js": { name: "chat-workspace.js", type: "text/javascript; charset=utf-8" },
         "/ustroj.js": { name: "ustroj.js", type: "text/javascript; charset=utf-8" },
+        "/studio.js": { name: "studio.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
         "/return.css": { name: "return.css", type: "text/css; charset=utf-8" },

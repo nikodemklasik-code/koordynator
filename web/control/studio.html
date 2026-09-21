@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Koordynator · Studio</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/control-ui.css" />
+  <link rel="stylesheet" href="/studio.css?v=1" />
+</head>
+<body class="studio-body">
+  <header class="studio-shell">
+    <nav class="studio-global-nav" aria-label="Koordynator screens">
+      <div class="studio-nav-group" aria-label="Navigation">
+        <a href="/">Home</a>
+        <a href="/chat">Live Chat</a>
+      </div>
+      <div class="studio-nav-group projects" aria-label="Projects">
+        <a href="/corporation">Corporation</a>
+        <a href="/harmonia-legal">Harmonia Legal</a>
+        <button type="button" disabled>Job App</button>
+      </div>
+      <div class="studio-nav-group creative" aria-label="Creative">
+        <a class="active" href="/studio" aria-current="page">Studio</a>
+      </div>
+      <div class="studio-nav-group operations" aria-label="Operations">
+        <a href="/">Tasks</a>
+        <a href="/providers">Providers</a>
+        <a href="/releases">Releases</a>
+        <a href="/ustroj">Ustrój</a>
+      </div>
+    </nav>
+    <div class="studio-context">
+      <div>
+        <span class="studio-kicker">CREATIVE WORKSPACE</span>
+        <strong>Studio</strong>
+      </div>
+      <nav class="studio-tabs" aria-label="Studio tools">
+        <button type="button" class="active" data-studio-tab="image">Graphics</button>
+        <button type="button" data-studio-tab="video">Video</button>
+        <button type="button" data-studio-tab="voice">Voice / Audio</button>
+        <button type="button" data-studio-tab="frontend">Frontend</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="studio-main">
+    <aside class="studio-provider-rail" aria-label="Provider status">
+      <div class="studio-rail-head">
+        <span>PROVIDERS</span>
+        <button id="refreshStudioProviders" type="button">Refresh</button>
+      </div>
+      <div id="studioProviderList" class="studio-provider-list" aria-live="polite"></div>
+    </aside>
+
+    <section class="studio-workspace">
+      <article class="studio-panel active" data-studio-panel="image">
+        <header class="studio-panel-head">
+          <div><span>GRAPHICS</span><h1>Image generation & editing</h1></div>
+          <div class="studio-binding" data-provider-binding="image">Resolving provider…</div>
+        </header>
+        <div class="studio-grid">
+          <section class="studio-card editor">
+            <label>Prompt<textarea id="imagePrompt" rows="7" placeholder="Describe the image, composition, lighting, typography and required output."></textarea></label>
+            <div class="studio-row">
+              <label>Provider<select id="imageProvider"><option>OpenAI Image</option></select></label>
+              <label>Model<input id="imageModel" value="gpt-image-2" readonly /></label>
+            </div>
+            <label class="studio-upload">Reference / source image<input id="imageInput" type="file" accept="image/*" /></label>
+            <div class="studio-actions">
+              <button id="imageGenerate" type="button" class="primary">Generate</button>
+              <button id="imageEdit" type="button">Edit source</button>
+              <button id="imageExport" type="button">Export</button>
+            </div>
+            <p class="studio-truth" id="imageTruth">Provider execution is enabled only when the configured image adapter is available.</p>
+          </section>
+          <section class="studio-card preview">
+            <div class="studio-preview-head"><strong>Preview</strong><span id="imagePreviewState">No output</span></div>
+            <div class="studio-image-preview" id="imagePreview"><span>Image preview</span></div>
+          </section>
+        </div>
+      </article>
+
+      <article class="studio-panel" data-studio-panel="video">
+        <header class="studio-panel-head">
+          <div><span>VIDEO</span><h1>Video generation & processing</h1></div>
+          <div class="studio-binding" data-provider-binding="video">Resolving provider…</div>
+        </header>
+        <div class="studio-grid">
+          <section class="studio-card editor">
+            <label>Direction<textarea id="videoPrompt" rows="6" placeholder="Describe motion, shot, duration, pacing, subtitles or lip-sync."></textarea></label>
+            <div class="studio-row">
+              <label>Provider<select id="videoProvider"><option>VEED Fabric</option></select></label>
+              <label>Model<input id="videoModel" value="veed/fabric-1.0" readonly /></label>
+            </div>
+            <label class="studio-upload">Image / video / audio source<input id="videoInput" type="file" accept="image/*,video/*,audio/*" multiple /></label>
+            <div class="studio-actions">
+              <button id="videoGenerate" type="button" class="primary">Create video</button>
+              <button id="videoProcess" type="button">Process source</button>
+              <button id="videoExport" type="button">Export</button>
+            </div>
+            <p class="studio-truth" id="videoTruth">VEED execution is enabled only when its configured provider adapter is available.</p>
+          </section>
+          <section class="studio-card preview">
+            <div class="studio-preview-head"><strong>Video preview</strong><span id="videoPreviewState">No output</span></div>
+            <div class="studio-video-preview" id="videoPreview"><span>Video output / job status</span></div>
+          </section>
+        </div>
+      </article>
+
+      <article class="studio-panel" data-studio-panel="voice">
+        <header class="studio-panel-head">
+          <div><span>VOICE / AUDIO</span><h1>Speech, voices & audio</h1></div>
+          <div class="studio-binding" data-provider-binding="voice">Resolving provider…</div>
+        </header>
+        <div class="studio-grid">
+          <section class="studio-card editor">
+            <label>Text<textarea id="voiceText" rows="7" placeholder="Text to synthesize with ElevenLabs."></textarea></label>
+            <div class="studio-row">
+              <label>Provider<select id="voiceProvider"><option>ElevenLabs</option></select></label>
+              <label>Model<input id="voiceModel" value="eleven_multilingual_v2" readonly /></label>
+            </div>
+            <label>Voice<select id="voiceSelect"><option value="">Load voices…</option></select></label>
+            <label class="studio-upload">Audio source for future STT / voice conversion<input id="voiceInput" type="file" accept="audio/*" /></label>
+            <div class="studio-actions">
+              <button id="voiceGenerate" type="button" class="primary">Synthesize</button>
+              <button id="voiceRefresh" type="button">Refresh voices</button>
+              <button id="voiceExport" type="button">Export audio</button>
+            </div>
+            <p class="studio-truth" id="voiceTruth">ElevenLabs status is checked from the Control runtime. Secrets are never rendered into the page.</p>
+          </section>
+          <section class="studio-card preview">
+            <div class="studio-preview-head"><strong>Audio player</strong><span id="voicePreviewState">No output</span></div>
+            <div class="studio-audio-preview">
+              <audio id="voicePlayer" controls></audio>
+              <div id="voiceMeta" class="studio-empty">Choose a voice and synthesize text.</div>
+            </div>
+          </section>
+        </div>
+      </article>
+
+      <article class="studio-panel" data-studio-panel="frontend">
+        <header class="studio-panel-head">
+          <div><span>FRONTEND</span><h1>UI designer & live preview</h1></div>
+          <div class="studio-binding" data-provider-binding="frontend">Resolving provider…</div>
+        </header>
+        <div class="studio-grid frontend-grid">
+          <section class="studio-card editor">
+            <label>Design brief<textarea id="frontendPrompt" rows="5" placeholder="Describe screen, hierarchy, states, interactions and responsive behaviour."></textarea></label>
+            <div class="studio-row">
+              <label>Provider<select id="frontendProvider"><option>OmniRoute model fabric</option></select></label>
+              <label>Model<select id="frontendModel"><option value="">Loading executable models…</option></select></label>
+            </div>
+            <label>HTML / CSS prototype<textarea id="frontendCode" rows="12" class="code" placeholder="Paste or edit HTML/CSS here for instant preview."></textarea></label>
+            <div class="studio-actions">
+              <button id="frontendPreview" type="button" class="primary">Update preview</button>
+              <button id="frontendOpenChat" type="button">Open brief in Live Chat</button>
+              <button id="frontendExportHtml" type="button">Export HTML</button>
+            </div>
+          </section>
+          <section class="studio-card preview">
+            <div class="studio-preview-head"><strong>Live preview</strong><span id="frontendPreviewState">Ready</span></div>
+            <iframe id="frontendFrame" title="Frontend live preview" sandbox="allow-scripts"></iframe>
+          </section>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="studio-footer">
+    <span id="studioConnection">CONNECTING</span>
+    <span>Provider bindings are capability-specific. No silent fallback between image, video, voice and frontend.</span>
+  </footer>
+  <script src="/studio.js?v=1" defer></script>
+</body>
+</html>

@@ -9,10 +9,10 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=9');
-    expect(html).toContain('/chat-shell.js?v=5');
+    expect(html).toContain('/chat-shell.css?v=10');
+    expect(html).toContain('/chat-shell.js?v=6');
     expect(html).toContain('/chat-v5.js?v=8');
-    expect(html.indexOf('/chat-shell.js?v=5')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
+    expect(html.indexOf('/chat-shell.js?v=6')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
     expect(css).toContain(".importance-1");
@@ -20,6 +20,9 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain(".importance-3");
     expect(shell).toContain('["corporation", "Corporation", "/corporation"]');
     expect(shell).toContain('["harmonia-legal", "Harmonia Legal", "/harmonia-legal"]');
+    expect(shell).toContain('["studio", "Studio", "/studio"]');
+    expect(shell).toContain('["process", "Process", ["routing", "stage-zero"]]');
+    expect(shell).toContain('["legal-work", "Legal work", ["stage-zero", "create-document"]]');
     expect(shell).toContain('["tasks", "Tasks", "/"]');
     expect(shell).toContain('["providers", "Providers", "/providers"]');
     expect(shell).toContain('["releases", "Releases", "/releases"]');
@@ -66,6 +69,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(localAccess).toContain('id="localDiskAccess"');
     expect(localAccess).toContain('grant: "local-files"');
     expect(localAccess).toContain('wrap.id = "sessionFooter"');
+    expect(localAccess).toContain('data-tool-group="workspace"');
     expect(usage).toContain('document.querySelector(".runtime-terminal-toolbar")');
     expect(css).toContain("--workspace-control-height:var(--shell-button-height)");
     expect(css).toContain("--hermes-input-height:58px");

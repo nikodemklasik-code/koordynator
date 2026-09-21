@@ -6,9 +6,9 @@ describe("control instance startup", () => {
     const fakeFetch = async () => new Response(JSON.stringify({
       ok: true,
       version: "0.4.0",
-      runtimeRevision: "PRODUCT_WORKSPACES_V1",
+      runtimeRevision: "PRODUCT_WORKSPACES_V2",
       productWorkspaces: true,
-      workspaceRoutes: ["/chat", "/corporation", "/harmonia-legal"],
+      workspaceRoutes: ["/chat", "/corporation", "/harmonia-legal", "/studio"],
       liveChatBillingPolicy: "STRICT_PROVENANCE"
     }), { status: 200, headers: { "content-type": "application/json" } });
 
