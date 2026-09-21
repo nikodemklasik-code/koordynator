@@ -6,10 +6,24 @@ describe("control instance startup", () => {
     const fakeFetch = async () => new Response(JSON.stringify({
       ok: true,
       version: "0.4.0",
+      runtimeRevision: "PRODUCT_WORKSPACES_V1",
+      productWorkspaces: true,
+      workspaceRoutes: ["/chat", "/corporation", "/harmonia-legal"],
       liveChatBillingPolicy: "STRICT_PROVENANCE"
     }), { status: 200, headers: { "content-type": "application/json" } });
 
     expect(await isKoordynatorControl("http://127.0.0.1:8787", fakeFetch as typeof fetch)).toBe(true);
+  });
+
+  it("does not reuse a stale Koordynator that predates product workspace routes", async () => {
+    const fakeFetch = async () => new Response(JSON.stringify({
+      ok: true,
+      version: "0.4.0",
+      runtimeRevision: "CHAT_HERMES_V3",
+      liveChatBillingPolicy: "STRICT_PROVENANCE"
+    }), { status: 200, headers: { "content-type": "application/json" } });
+
+    expect(await isKoordynatorControl("http://127.0.0.1:8787", fakeFetch as typeof fetch)).toBe(false);
   });
 
   it("does not mistake an unrelated service for Koordynator", async () => {
