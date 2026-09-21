@@ -836,3 +836,56 @@ button { color: inherit; }
   .shared-room-participant{flex:0 0 auto}
   .v5-agent-button{min-width:48px!important;padding:0 8px!important}
 }
+
+
+/* Conversation management: titles, rename/delete and visible second-chat invitation. */
+.history-entry{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:6px;
+  align-items:stretch;
+}
+.history-entry .history-item{min-width:0}
+.history-item-actions{
+  display:flex;
+  align-items:center;
+  gap:4px;
+}
+.history-item-action{
+  min-height:32px;
+  padding:0 8px;
+  border:1px solid #2c4351;
+  border-radius:7px;
+  background:#0b171f;
+  color:#9fb1bd;
+  font-size:9px;
+  font-weight:800;
+  cursor:pointer;
+}
+.history-item-action:hover{
+  border-color:#4d6b7d;
+  color:#eef7fb;
+}
+.history-item-action.danger{
+  border-color:#5f343b;
+  background:#1a0d11;
+  color:#d99ca4;
+}
+.history-item-action.danger:hover{
+  border-color:#8a4a55;
+  color:#ffd8de;
+}
+.v5-agent-button{
+  min-width:118px!important;
+  padding:0 12px!important;
+}
+.session-id{
+  max-width:220px!important;
+  color:#c6d3dc!important;
+  font-weight:750!important;
+}
+@media(max-width:760px){
+  .history-entry{grid-template-columns:minmax(0,1fr)}
+  .history-item-actions{justify-content:flex-end}
+  .v5-agent-button{min-width:104px!important;padding:0 9px!important}
+}
