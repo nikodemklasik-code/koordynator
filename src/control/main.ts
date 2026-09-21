@@ -41,10 +41,16 @@ const configuredFallbackModels = (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "")
   .map((model) => model.trim())
   .filter(Boolean);
 
+const genericAutoRoute = /(?:^|\/)(?:auto|best-free)$/i.test(route.model);
+const preferredModels = [
+  ...(genericAutoRoute ? [] : [route.model]),
+  ...configuredFallbackModels
+];
+
 const chatModelCatalog = new WorkingChatModelCatalogService({
   endpoint: route.endpoint,
   apiKeyEnv: "OMNIROUTE_API_KEY",
-  preferredModels: [route.model, ...configuredFallbackModels],
+  preferredModels,
   maxCandidates: 16,
   targetActive: 10,
   probeConcurrency: 4,
@@ -65,9 +71,14 @@ try {
   );
 }
 
-const chatDefaultModel = startupWorkingSet?.models.includes(route.model)
-  ? route.model
-  : startupWorkingSet?.models[0] ?? route.model;
+const chatDefaultModel = startupWorkingSet
+  ? (
+      (!genericAutoRoute && startupWorkingSet.models.includes(route.model) ? route.model : undefined)
+      ?? startupWorkingSet.models.find((model) => !/(?:^|\/)(?:auto|best-free)$/i.test(model))
+      ?? startupWorkingSet.models[0]
+      ?? route.model
+    )
+  : route.model;
 const chatFallbackModels = startupWorkingSet
   ? startupWorkingSet.models.filter((model) => model !== chatDefaultModel).slice(0, 4)
   : configuredFallbackModels;
