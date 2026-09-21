@@ -108,7 +108,10 @@ function renderHistory(sessions, receipts = []) {
     meta.className = "history-item-meta";
     const model = document.createElement("span");
     model.className = "history-item-model";
-    model.textContent = historyModelLabel(session.model);
+    model.textContent = session.sharedRoom
+      ? `Shared Room · ${session.participantCount || 2} AI`
+      : historyModelLabel(session.model);
+    if (session.sharedRoom) model.classList.add("shared-room-history");
     const when = document.createElement("span");
     when.textContent = historyDate(session.updatedAt);
     meta.append(model, when);
