@@ -9,15 +9,17 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=7');
-    expect(html).toContain('/chat-shell.js?v=3');
+    expect(html).toContain('/chat-shell.css?v=8');
+    expect(html).toContain('/chat-shell.js?v=4');
     expect(html).toContain('/chat-v5.js?v=8');
-    expect(html.indexOf('/chat-shell.js?v=3')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
+    expect(html.indexOf('/chat-shell.js?v=4')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
     expect(css).toContain(".importance-1");
     expect(css).toContain(".importance-2");
     expect(css).toContain(".importance-3");
+    expect(shell).toContain('["corporation", "Corporation", "/corporation"]');
+    expect(shell).toContain('["harmonia-legal", "Harmonia Legal", "/harmonia-legal"]');
     expect(shell).toContain('["tasks", "Tasks", "/"]');
     expect(shell).toContain('["providers", "Providers", "/providers"]');
     expect(shell).toContain('["releases", "Releases", "/releases"]');
@@ -55,7 +57,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("background: #08131c !important");
     expect(css).toContain(".koord-local-access");
     expect(css).toContain("--chat-composer-height:176px");
-    expect(css).toContain("grid-template-columns:auto auto minmax(0,1fr) auto auto!important");
+    expect(css).toContain("grid-template-columns:72px 72px minmax(80px,1fr) 68px!important");
     expect(css).toContain("grid-template-rows:46px minmax(0,1fr) var(--chat-composer-height)!important");
     expect(css).toContain("position:relative!important");
     expect(css).toContain("grid-template-columns:minmax(0,1fr) 46px!important");
