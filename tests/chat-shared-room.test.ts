@@ -132,13 +132,20 @@ describe("Shared Room", () => {
 
     expect(html).toContain('id="addAgentButton"');
     expect(html).toContain('id="sharedRoomDialog"');
-    expect(html).toContain('/chat-shared-room.js?v=1');
+    expect(html).toContain('id="sharedRoomTopicLabel"');
+    expect(html).toContain("WSPÓLNY TEMAT / ELEMENT PROJEKTU");
+    expect(html).toContain('placeholder="np. WWW / frontend"');
+    expect(html).toContain('/chat-shared-room.js?v=2');
     expect(js).toContain('fetch("/api/chat/shared-rooms"');
+    expect(js).toContain('topicInput?.scrollIntoView');
+    expect(js).toContain('topicInput?.classList.add("invalid")');
     expect(js).toContain("Shared Room · per-agent models");
     expect(chatJs).toContain('message.agentLabel || "KOORDYNATOR"');
     expect(server).toContain('pathname === "/api/chat/shared-rooms"');
     expect(server).toContain('"/chat-shared-room.js"');
     expect(css).toContain(".shared-room-participant");
     expect(css).toContain(".v5-agent-button");
+    expect(css).toContain(".shared-room-topic-step");
+    expect(css).toContain("#sharedRoomTopic.invalid");
   });
 });
