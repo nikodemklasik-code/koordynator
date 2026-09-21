@@ -12,7 +12,14 @@ afterEach(async () => {
 
 function streamingFetch(bodies: Array<Record<string, unknown>>): typeof fetch {
   return (async (_input: string | URL | Request, init?: RequestInit) => {
-    bodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+    const request = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+    bodies.push(request);
+    if (request.stream === false) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "peer-ok" } }],
+        usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 }
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const encoder = new TextEncoder();
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -87,6 +94,14 @@ describe("persistent chat collaboration", () => {
     expect(systemText).toContain("COLLABORATING CHATS");
     expect(systemText).toContain("[CHAT: Frontend");
     expect(systemText).toContain("Keep the navigation inside Koordynator.");
+
+    const shared = await second.getSession(host.sessionId);
+    expect(shared?.messages.some((message) =>
+      message.sourceSessionId === guest.sessionId &&
+      message.agentTitle === "Frontend" &&
+      message.content === "peer-ok" &&
+      message.state === "complete"
+    )).toBe(true);
 
     const summaries = await second.listSessions(100);
     expect(summaries.find((item) => item.sessionId === host.sessionId)).toMatchObject({
