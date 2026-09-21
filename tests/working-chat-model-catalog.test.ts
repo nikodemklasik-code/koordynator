@@ -137,10 +137,11 @@ describe("WorkingChatModelCatalogService", () => {
     expect(freeCatalog.models).toEqual(expect.arrayContaining(["oc/free-a", "ddgw/free-a", "kiro/auto", "oc/free-quota"]));
 
     const noFree = fixtureCatalog();
-    if (noFree.billing) {
-      for (const model of Object.keys(noFree.billing.modelSources ?? {})) {
-        if (noFree.billing.modelSources?.[model] === "FREE_CONFIRMED" || noFree.billing.modelSources?.[model] === "FREE_OAUTH") {
-          noFree.billing.modelSources[model] = "SUBSCRIPTION_HARNESS";
+    const noFreeSources = noFree.billing?.modelSources;
+    if (noFreeSources) {
+      for (const model of Object.keys(noFreeSources)) {
+        if (noFreeSources[model] === "FREE_CONFIRMED" || noFreeSources[model] === "FREE_OAUTH") {
+          noFreeSources[model] = "SUBSCRIPTION_HARNESS";
         }
       }
     }
