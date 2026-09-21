@@ -85,7 +85,7 @@ export type ChatProcessUpdate = {
   /** Progress through observable lifecycle checkpoints, not a token/time estimate. */
   progress: number;
   activity: string;
-  model?: string;
+  model?: string | undefined;
 };
 
 export type ChatEvent =
