@@ -21,6 +21,7 @@
 
     if (id === "historybutton" || /^(history|conversations)$/.test(label)) return "conversations";
     if (id === "newchatbutton" || /new (chat|conversation)/.test(label)) return "new-conversation";
+    if (id === "endconversationbutton" || /koniec rozmowy|end conversation/.test(label)) return "end-conversation";
     if (id === "stagezerobutton" || label === "etap 0") return "stage-zero";
     if (id === "mutehermesbutton" || /(hide|show|wycisz|pokaż|zamknij).*terminal|hermes/.test(label)) return "terminal";
     if (id === "popoutchatbutton" || label === "pop out chat") return "popout";
@@ -205,7 +206,7 @@
   conversationGroup.setAttribute("aria-label", "Conversation");
   primary.appendChild(conversationGroup);
 
-  for (const key of ["conversations", "new-conversation"]) {
+  for (const key of ["conversations", "new-conversation", "end-conversation"]) {
     const el = preferred.get(key);
     if (!el) continue;
     el.hidden = false;
