@@ -7,6 +7,7 @@ import { ChatService } from "./chat-service.js";
 import { ChatExportService } from "./chat-export-service.js";
 import { installChatExportHttp } from "./chat-export-http.js";
 import { WorkingChatModelCatalogService } from "./working-chat-model-catalog.js";
+import { isGenericAutoRoute } from "./chat-route-selection.js";
 import { VERSION } from "../version.js";
 import { loadLocalConfig, omniRouteSettings } from "../runtime/local-config.js";
 
@@ -41,7 +42,7 @@ const configuredFallbackModels = (process.env.KOORDYNATOR_FALLBACK_MODELS ?? "")
   .map((model) => model.trim())
   .filter(Boolean);
 
-const genericAutoRoute = /(?:^|\/)(?:auto|best-free)$/i.test(route.model);
+const genericAutoRoute = isGenericAutoRoute(route.model);
 const preferredModels = [
   ...(genericAutoRoute ? [] : [route.model]),
   ...configuredFallbackModels
@@ -74,7 +75,7 @@ try {
 const chatDefaultModel = startupWorkingSet
   ? (
       (!genericAutoRoute && startupWorkingSet.models.includes(route.model) ? route.model : undefined)
-      ?? startupWorkingSet.models.find((model) => !/(?:^|\/)(?:auto|best-free)$/i.test(model))
+      ?? startupWorkingSet.models.find((model) => !isGenericAutoRoute(model))
       ?? startupWorkingSet.models[0]
       ?? route.model
     )
