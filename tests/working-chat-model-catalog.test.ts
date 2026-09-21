@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+
+const roots: string[] = [];
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
 import type {
   ChatModelBillingSource,
   ChatModelCatalog,
@@ -108,6 +116,76 @@ describe("WorkingChatModelCatalogService", () => {
     expect(probed.some((model) => model.startsWith("inventory/"))).toBe(false);
     expect(catalog.inventory.totalModels).toBeGreaterThan(1_000);
     expect(catalog.inventory.activeModels).toBe(catalog.models.length);
+  });
+
+  it("uses only an exact configured trusted fallback when every live probe is temporarily unavailable", async () => {
+    const fetchImpl = (async () => new Response(JSON.stringify({ error: { message: "temporary outage" } }), {
+      status: 503,
+      headers: { "content-type": "application/json" }
+    })) as typeof fetch;
+
+    const service = new WorkingChatModelCatalogService({
+      endpoint: "http://127.0.0.1:20128/v1",
+      apiKey: "test-key",
+      catalog: fixturePort(),
+      fetchImpl,
+      preferredModels: ["gh/claude-sonnet-5"],
+      maxCandidates: 8,
+      targetActive: 8,
+      probeConcurrency: 2
+    });
+
+    const catalog = await service.list();
+    expect(catalog.models).toEqual(["gh/claude-sonnet-5"]);
+    expect(catalog.workingSet.activeModels).toEqual([]);
+    expect(catalog.workingSet.recoveryMode).toBe("TRUSTED_CONFIG");
+    expect(catalog.workingSet.recoveryReason).toContain("exact configured route");
+  });
+
+  it("reuses the last known good verified set across a restart when probes later fail", async () => {
+    const root = await mkdtemp(join(tmpdir(), "working-model-snapshot-"));
+    roots.push(root);
+    const snapshotPath = join(root, "working-set.json");
+
+    const healthyFetch = (async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "PONG" } }]
+    }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+
+    const first = new WorkingChatModelCatalogService({
+      endpoint: "http://127.0.0.1:20128/v1",
+      apiKey: "test-key",
+      catalog: fixturePort(),
+      fetchImpl: healthyFetch,
+      preferredModels: ["gh/claude-sonnet-5"],
+      maxCandidates: 8,
+      targetActive: 8,
+      probeConcurrency: 2,
+      snapshotPath
+    });
+    const live = await first.list();
+    expect(live.workingSet.recoveryMode).toBe("LIVE");
+    expect(live.models.length).toBeGreaterThan(0);
+
+    const failingFetch = (async () => new Response(JSON.stringify({ error: { message: "offline" } }), {
+      status: 503,
+      headers: { "content-type": "application/json" }
+    })) as typeof fetch;
+    const second = new WorkingChatModelCatalogService({
+      endpoint: "http://127.0.0.1:20128/v1",
+      apiKey: "test-key",
+      catalog: fixturePort(),
+      fetchImpl: failingFetch,
+      preferredModels: ["gh/claude-sonnet-5"],
+      maxCandidates: 8,
+      targetActive: 8,
+      probeConcurrency: 2,
+      snapshotPath
+    });
+
+    const recovered = await second.list();
+    expect(recovered.models).toEqual(live.models);
+    expect(recovered.workingSet.recoveryMode).toBe("LAST_KNOWN_GOOD");
+    expect(recovered.workingSet.recoveryReason).toBe("CHAT_MODEL_WORKING_SET_EMPTY");
   });
 
   it("fails closed when catalogued routes exist but none passes a live probe", async () => {
