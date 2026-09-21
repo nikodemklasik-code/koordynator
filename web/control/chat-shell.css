@@ -1163,3 +1163,57 @@ body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill.on{
   body.koord-shell-active .koord-shell-tool-group-workspace{margin-left:0!important}
   body.koord-shell-active .koord-shell-tools{overflow-x:auto!important}
 }
+
+
+/* CHAT_COLLABORATION_V1 */
+.v5-feature-link{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-decoration:none;
+}
+.history-entry{
+  display:grid;
+  gap:6px;
+}
+.history-item-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  padding:0 8px 8px;
+}
+.history-mini-action{
+  appearance:none;
+  border:1px solid rgba(126,151,168,.28);
+  border-radius:7px;
+  background:rgba(18,29,36,.92);
+  color:#aebdc7;
+  min-height:26px;
+  padding:4px 8px;
+  font:inherit;
+  font-size:10px;
+  cursor:pointer;
+}
+.history-mini-action:hover,
+.history-mini-action.active{
+  border-color:#5d8aa5;
+  color:#dcebf4;
+}
+.history-mini-action.danger{
+  margin-left:auto;
+  border-color:rgba(191,84,91,.34);
+  color:#e69aa0;
+}
+.history-mini-action:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+.history-guest-count{
+  color:#7fd69a;
+  font-size:10px;
+}
+@media(max-width:960px){
+  .v5-toolbar-left{flex-wrap:wrap}
+  .v5-feature-link{min-height:32px}
+}

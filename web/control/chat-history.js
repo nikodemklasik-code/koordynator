@@ -14,6 +14,47 @@ let selectionSessionId = null;
 let selectorDialog = null;
 let selectorMode = "export";
 let responseSyncScheduled = false;
+let latestHistorySessions = [];
+
+async function postChatSessionAction(sessionId, action, body = {}) {
+  const response = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/${action}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || `CHAT_${action.toUpperCase()}_HTTP_${response.status}`);
+  return payload;
+}
+
+async function renameHistorySession(session) {
+  const title = window.prompt("Chat title", session.title || "New chat");
+  if (title === null) return;
+  const next = title.trim();
+  if (!next || next.length > 120) {
+    window.alert("Title must contain 1–120 characters.");
+    return;
+  }
+  await postChatSessionAction(session.sessionId, "title", { title: next });
+  await loadHistory();
+}
+
+async function toggleHistoryInvite(activeSessionId, targetSession, invited) {
+  if (!activeSessionId) return;
+  await postChatSessionAction(activeSessionId, "invite", { sessionId: targetSession.sessionId, invited });
+  await loadHistory();
+}
+
+async function deleteHistorySession(session) {
+  if (!window.confirm(`Delete chat “${session.title || "New chat"}”? This removes its persisted conversation file.`)) return;
+  await postChatSessionAction(session.sessionId, "delete");
+  if (localStorage.getItem(HISTORY_SESSION_KEY) === session.sessionId) {
+    localStorage.removeItem(HISTORY_SESSION_KEY);
+    location.reload();
+    return;
+  }
+  await loadHistory();
+}
 
 function historyDate(value) {
   const date = new Date(value);
@@ -91,13 +132,17 @@ function renderGeneratedFiles(receipts) {
 
 function renderHistory(sessions, receipts = []) {
   if (!historyList || !historyEmpty) return;
+  latestHistorySessions = sessions;
   historyList.textContent = "";
   const activeSession = localStorage.getItem(HISTORY_SESSION_KEY);
+  const activeRecord = sessions.find((item) => item.sessionId === activeSession);
+  const activeInvites = new Set(Array.isArray(activeRecord?.invitedSessionIds) ? activeRecord.invitedSessionIds : []);
   historyEmpty.classList.toggle("hidden", sessions.length !== 0);
   const generated = exportsBySession(receipts);
 
   for (const session of sessions) {
     const entry = document.createElement("div");
+    entry.className = "history-entry";
     const button = document.createElement("button");
     button.type = "button";
     button.className = `history-item${session.sessionId === activeSession ? " active" : ""}`;
@@ -128,6 +173,51 @@ function renderHistory(sessions, receipts = []) {
       location.reload();
     });
     entry.appendChild(button);
+
+    const actions = document.createElement("div");
+    actions.className = "history-item-actions";
+
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "history-mini-action";
+    rename.textContent = "Rename";
+    rename.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void renameHistorySession(session).catch((error) => window.alert(error instanceof Error ? error.message : "Rename failed"));
+    });
+    actions.appendChild(rename);
+
+    if (session.sessionId !== activeSession) {
+      const invited = activeInvites.has(session.sessionId);
+      const invite = document.createElement("button");
+      invite.type = "button";
+      invite.className = `history-mini-action${invited ? " active" : ""}`;
+      invite.textContent = invited ? "Remove guest" : "Invite to current";
+      invite.disabled = !activeSession || historyIsGenerating();
+      invite.addEventListener("click", (event) => {
+        event.stopPropagation();
+        void toggleHistoryInvite(activeSession, session, !invited).catch((error) => window.alert(error instanceof Error ? error.message : "Invite failed"));
+      });
+      actions.appendChild(invite);
+    } else if ((session.invitedSessionIds || []).length) {
+      const guests = document.createElement("span");
+      guests.className = "history-guest-count";
+      guests.textContent = `${session.invitedSessionIds.length} guest chat${session.invitedSessionIds.length === 1 ? "" : "s"}`;
+      actions.appendChild(guests);
+    }
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "history-mini-action danger";
+    remove.textContent = "Delete";
+    remove.disabled = historyIsGenerating() && session.sessionId === activeSession;
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void deleteHistorySession(session).catch((error) => window.alert(error instanceof Error ? error.message : "Delete failed"));
+    });
+    actions.appendChild(remove);
+    entry.appendChild(actions);
+
     const files = generated.get(session.sessionId) || [];
     if (files.length) entry.appendChild(renderGeneratedFiles(files));
     historyList.appendChild(entry);

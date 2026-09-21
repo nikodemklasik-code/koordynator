@@ -166,7 +166,11 @@ function chooseAliases(catalog: ChatModelCatalog, preferred: string[]): string[]
   const seen = new Set<string>();
   const out: string[] = [];
   for (const model of sorted) {
-    const key = routeKey(model);
+    const source = sourceOf(catalog, model);
+    // Verified-free routes can carry independent provider quotas even when they
+    // resolve to the same underlying model. Keep every exact free route.
+    // Subscription aliases remain compact to avoid duplicate picker entries.
+    const key = FREE_SOURCES.has(source) ? `free:${model}` : routeKey(model);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(model);
@@ -310,18 +314,28 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
     if (!force && this.cache && this.cache.expiresAt > now) return this.cache.value;
 
     const base = await this.upstream.list();
-    const candidates = chooseAliases(base, this.preferredModels).slice(0, this.maxCandidates);
-    if (!candidates.length) throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_NO_CANDIDATES", 503);
+    const orderedRoutes = chooseAliases(base, this.preferredModels);
+    const verifiedFreeModels = orderedRoutes.filter((model) => FREE_SOURCES.has(sourceOf(base, model)));
+    const candidates = orderedRoutes.slice(0, this.maxCandidates);
+    if (!candidates.length && !verifiedFreeModels.length) {
+      throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_NO_CANDIDATES", 503);
+    }
 
-    const probes = await this.probeCandidates(candidates, this.credential());
+    const probes = candidates.length ? await this.probeCandidates(candidates, this.credential()) : [];
     const activeModels = probes.filter((probe) => probe.health === "HEALTHY").map((probe) => probe.model);
-    if (!activeModels.length) throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_EMPTY", 503);
+    if (!activeModels.length && !verifiedFreeModels.length) {
+      throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_EMPTY", 503);
+    }
 
-    const activeSet = new Set(activeModels);
-    const entries = base.entries?.filter((entry) => activeSet.has(entry.id));
-    const modelSources = pickRecord(base.billing?.modelSources, activeSet) ?? {};
-    const modelRoutes = pickRecord<ChatModelRoute>(base.billing?.modelRoutes, activeSet);
-    const freeModels = activeModels.filter((model) => FREE_SOURCES.has(modelSources[model] ?? sourceOf(base, model)));
+    // Every provenance-verified free route stays selectable even when it is not
+    // among the small startup probe set or is temporarily rate-limited. Health
+    // probing chooses preferred routes; it must not erase a separate free quota.
+    const exposedModels = [...new Set([...verifiedFreeModels, ...activeModels])];
+    const exposedSet = new Set(exposedModels);
+    const entries = base.entries?.filter((entry) => exposedSet.has(entry.id));
+    const modelSources = pickRecord(base.billing?.modelSources, exposedSet) ?? {};
+    const modelRoutes = pickRecord<ChatModelRoute>(base.billing?.modelRoutes, exposedSet);
+    const freeModels = verifiedFreeModels;
     const subscriptionModels = activeModels.filter((model) => (modelSources[model] ?? sourceOf(base, model)) === "SUBSCRIPTION_HARNESS");
     const limitedModels = probes.filter((probe) => probe.health === "RATE_LIMITED").map((probe) => probe.model);
     const baseInventory = (base as Partial<LiveChatModelCatalog>).inventory;
@@ -329,7 +343,7 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
 
     const value: WorkingChatModelCatalog = {
       ...base,
-      models: activeModels,
+      models: exposedModels,
       ...(entries === undefined ? {} : { entries: entries as ChatModelEntry[] }),
       ...(base.billing === undefined ? {} : {
         billing: {

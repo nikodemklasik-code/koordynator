@@ -75,14 +75,19 @@ try {
 
 const chatDefaultModel = startupWorkingSet
   ? (
-      (!genericAutoRoute && startupWorkingSet.models.includes(route.model) ? route.model : undefined)
+      (!genericAutoRoute && startupWorkingSet.workingSet.activeModels.includes(route.model) ? route.model : undefined)
+      ?? startupWorkingSet.workingSet.activeModels.find((model) => !isGenericAutoRoute(model))
       ?? startupWorkingSet.models.find((model) => !isGenericAutoRoute(model))
       ?? startupWorkingSet.models[0]
       ?? route.model
     )
   : route.model;
 const chatFallbackModels = startupWorkingSet
-  ? startupWorkingSet.models.filter((model) => model !== chatDefaultModel).slice(0, 4)
+  ? [...new Set([
+      ...startupWorkingSet.workingSet.freeModels,
+      ...startupWorkingSet.workingSet.activeModels,
+      ...startupWorkingSet.models
+    ])].filter((model) => model !== chatDefaultModel).slice(0, 32)
   : configuredFallbackModels;
 
 const server = createControlServer({

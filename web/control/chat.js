@@ -598,13 +598,13 @@ function renderMessage(message) {
   let article = chatThread.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
   if (!article) {
     article = document.createElement("article");
-    article.className = `chat-message ${message.role}`;
+    article.className = `chat-message ${message.role}${message.agentTitle ? " peer-agent" : ""}`;
     article.dataset.messageId = message.id;
     const meta = document.createElement("div");
     meta.className = "message-meta";
     const author = document.createElement("span");
     author.className = "message-author";
-    author.textContent = message.role === "user" ? "YOU" : "KOORDYNATOR";
+    author.textContent = message.role === "user" ? "YOU" : (message.agentTitle || "KOORDYNATOR");
     meta.appendChild(author);
     if (message.model && message.role === "assistant") {
       const model = document.createElement("span");

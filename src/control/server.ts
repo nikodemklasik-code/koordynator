@@ -151,6 +151,7 @@ function isControlPost(pathname: string): boolean {
     /^\/api\/tasks\/TASK-[A-Za-z0-9._-]+\/run$/.test(pathname) ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/(?:title|invite|delete)$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stage-zero$/i.test(pathname) ||
     pathname === "/api/hermes/pty" ||
@@ -448,6 +449,37 @@ export function createControlServer(options: ControlServerOptions): Server {
           createdAt: session.createdAt,
           ...(selected.recoveredFrom === undefined ? {} : { recoveredFromModel: selected.recoveredFrom })
         });
+      }
+
+      const chatTitleMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/title$/i.exec(url.pathname);
+      if (method === "POST" && chatTitleMatch?.[1]) {
+        const sessionId = safeSessionId(chatTitleMatch[1]);
+        const payload = await readJsonBody(request, 4 * 1024);
+        assertExactKeys(payload, ["title"]);
+        if (typeof payload.title !== "string") throw new ChatServiceError("CHAT_TITLE_INVALID", 400);
+        const session = await chat.updateTitle(sessionId, payload.title);
+        return sendJson(response, 200, { sessionId, title: session.title });
+      }
+
+      const chatInviteMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/invite$/i.exec(url.pathname);
+      if (method === "POST" && chatInviteMatch?.[1]) {
+        const sessionId = safeSessionId(chatInviteMatch[1]);
+        const payload = await readJsonBody(request, 4 * 1024);
+        assertExactKeys(payload, ["sessionId", "invited"]);
+        if (typeof payload.sessionId !== "string" || typeof payload.invited !== "boolean") {
+          throw new ChatServiceError("CHAT_INVITE_INVALID", 400);
+        }
+        const session = await chat.setInvitation(sessionId, safeSessionId(payload.sessionId), payload.invited);
+        return sendJson(response, 200, { sessionId, invitedSessionIds: session.invitedSessionIds ?? [] });
+      }
+
+      const chatDeleteMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/delete$/i.exec(url.pathname);
+      if (method === "POST" && chatDeleteMatch?.[1]) {
+        const sessionId = safeSessionId(chatDeleteMatch[1]);
+        const payload = await readJsonBody(request, 1024);
+        assertExactKeys(payload, []);
+        await chat.deleteSession(sessionId);
+        return sendJson(response, 200, { deleted: true, sessionId });
       }
 
       const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
