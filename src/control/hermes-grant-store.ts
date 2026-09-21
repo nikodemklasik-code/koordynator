@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
-export type HermesGrantName = "terminal";
+export type HermesGrantName = "terminal" | "local-files";
 
 export type HermesGrantStatus = {
   terminal: boolean;
@@ -55,16 +55,30 @@ export class HermesGrantStore {
     }
   }
 
-  async grant(name: HermesGrantName, approved: boolean): Promise<HermesGrantStatus> {
-    if (name !== "terminal") throw new HermesGrantError("HERMES_GRANT_UNKNOWN", 400);
+  async grant(name: HermesGrantName, approved: boolean, roots: string[] = []): Promise<HermesGrantStatus> {
     if (approved !== true) throw new HermesGrantError("HERMES_GRANT_CONSENT_REQUIRED", 400);
     const current = await this.status();
-    const next: HermesGrantStatus = {
-      ...current,
-      terminal: true,
-      updatedAt: new Date().toISOString()
-    };
-    if (current.terminal) return next;
+
+    let next: HermesGrantStatus;
+    if (name === "terminal") {
+      next = {
+        ...current,
+        terminal: true,
+        updatedAt: new Date().toISOString()
+      };
+    } else if (name === "local-files") {
+      const localRoots = safeRoots(roots);
+      if (!localRoots.length) throw new HermesGrantError("HERMES_LOCAL_ROOT_REQUIRED", 400);
+      next = {
+        ...current,
+        localFiles: true,
+        localRoots,
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      throw new HermesGrantError("HERMES_GRANT_UNKNOWN", 400);
+    }
+
     await mkdir(resolve(this.root), { recursive: true, mode: 0o700 });
     await writeFile(grantsFile(this.root), `${JSON.stringify(next, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     return next;
