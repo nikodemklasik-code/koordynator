@@ -20,7 +20,7 @@ import { ProviderAutoconnectError, ProviderAutoconnectService } from "./provider
 import { buildMaterialisationReadiness } from "./materialisation-readiness.js";
 import { ProjectPackService } from "./project-pack-service.js";
 import { HermesGrantError, HermesGrantStore } from "./hermes-grant-store.js";
-import { RepositoryRegistry, RepositoryRegistryError } from "./repository-registry.js";
+import { RepositoryRegistry, RepositoryRegistryError, parseRepositoryReference } from "./repository-registry.js";
 import { MaterialisationError, MaterialisationService } from "./materialisation-service.js";
 import { TaskExecutionRunner, TaskExecutionError, type IndependentVerifier as TaskRunnerVerifier } from "./task-execution-runner.js";
 import { parseAgreedPlan } from "./chat-consensus.js";
@@ -47,6 +47,8 @@ export type ControlServerOptions = {
   controlToken?: string;
   chatAllowGithubContext?: boolean;
   chatAllowWorkspaceContext?: boolean;
+  /** Repository permanently attached to the local Control workspace. */
+  chatDefaultRepository?: string;
   chatAllowRepositoryExecution?: boolean;
   chatHermesSkillsEveryTurn?: boolean;
   chatEndpoint?: string;
@@ -349,10 +351,17 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (method === "POST" && chatMessageMatch?.[1]) {
         const sessionId = safeSessionId(chatMessageMatch[1]);
         const payload = await readJsonBody(request, CHAT_MESSAGE_MAX_BYTES);
-        assertExactKeys(payload, ["message", "model", "attachments"]);
+        assertExactKeys(payload, ["message", "model", "attachments", "repository"]);
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
         if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
+        if (payload.repository !== undefined && typeof payload.repository !== "string") throw new RepositoryRegistryError("REPOSITORY_INVALID", 400);
+
+        let selectedRepository: string | undefined;
+        if (typeof payload.repository === "string" && payload.repository.trim()) {
+          const parsedRepository = parseRepositoryReference(payload.repository);
+          selectedRepository = `${parsedRepository.owner}/${parsedRepository.name}`;
+        }
 
         const session = await chat.getSession(sessionId);
         if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
@@ -373,13 +382,26 @@ export function createControlServer(options: ControlServerOptions): Server {
 
         const clientAttachments = payload.attachments ?? [];
         const isRepoTask = /^\s*\/repo(?:\s|$)/.test(payload.message);
-        let repoContext = !isRepoTask && wantsGithubContext(options) ? await githubRepositories.fromMessage(payload.message) : null;
-        if (!repoContext && !isRepoTask && wantsWorkspaceContext(options)) {
+        const defaultRepository = options.chatDefaultRepository?.trim().toLowerCase();
+        const selectedIsLocalWorkspace = Boolean(selectedRepository && defaultRepository && selectedRepository.toLowerCase() === defaultRepository);
+
+        let repoContext = null;
+        if (!isRepoTask && selectedRepository && selectedIsLocalWorkspace && wantsWorkspaceContext(options)) {
+          // The selected Koordynator repository is already the running local workspace.
+          // Read it directly instead of cloning the same repository on every chat turn.
+          repoContext = await workspaceRepositories.fromMessage(`repo ${payload.message}`);
+        } else if (!isRepoTask && selectedRepository && wantsGithubContext(options)) {
+          repoContext = await githubRepositories.fromMessage(`${payload.message}\nhttps://github.com/${selectedRepository}`);
+        } else if (!isRepoTask && wantsGithubContext(options)) {
+          repoContext = await githubRepositories.fromMessage(payload.message);
+        }
+
+        if (!repoContext && !isRepoTask && !selectedRepository && wantsWorkspaceContext(options)) {
           repoContext = await workspaceRepositories.fromMessage(payload.message);
         }
         if (repoContext && clientAttachments.length >= 5) throw new ChatServiceError("CHAT_REPOSITORY_CONTEXT_ATTACHMENT_LIMIT", 413);
         const attachments = repoContext
-          ? [...clientAttachments, repositoryAttachment(repoContext.repository, repoContext.commit, repoContext.context)]
+          ? [...clientAttachments, repositoryAttachment(selectedRepository ?? repoContext.repository, repoContext.commit, repoContext.context)]
           : clientAttachments;
         return sendJson(response, 202, await chat.startMessage(
           sessionId,
@@ -465,6 +487,15 @@ export function createControlServer(options: ControlServerOptions): Server {
 
       if ((method === "GET" || method === "HEAD") && url.pathname === "/api/integrations/github") {
         return sendJson(response, 200, await github.status(url.searchParams.get("refresh") === "1"));
+      }
+
+      if ((method === "GET" || method === "HEAD") && url.pathname === "/api/integrations/github/repositories") {
+        const force = url.searchParams.get("refresh") === "1";
+        const repositories = github.repositories ? await github.repositories(force) : [];
+        return sendJson(response, 200, {
+          repositories,
+          defaultRepository: options.chatDefaultRepository ?? null
+        });
       }
 
       if (method === "POST" && url.pathname === "/api/integrations/github/connect") {
