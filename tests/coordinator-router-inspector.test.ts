@@ -46,7 +46,7 @@ describe("Coordinator Router inspector", () => {
     const html = await readFile(join(root, "web/control/chat.html"), "utf8");
     const server = await readFile(join(root, "src/control/server.ts"), "utf8");
     expect(html.match(/chat-router\.css\?v=1/g)?.length).toBe(1);
-    expect(html.match(/chat-router\.js\?v=1/g)?.length).toBe(1);
+    expect(html.match(/chat-router\.js\?v=2/g)?.length).toBe(1);
     expect(server.match(/"\/chat-router\.css"/g)?.length).toBe(1);
     expect(server.match(/"\/chat-router\.js"/g)?.length).toBe(1);
     expect(server).toContain('"/chat-v5.css"');

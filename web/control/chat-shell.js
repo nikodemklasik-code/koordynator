@@ -106,49 +106,95 @@
   }
 
   const currentPath = window.location.pathname;
-  const canonicalScreens = [
-    ["home", "Home", "/"],
-    ["live-chat", "Live Chat", "/chat"],
-    ["corporation", "Corporation", "/corporation"],
-    ["tasks", "Tasks", "/"],
-    ["providers", "Providers", "/providers"],
-    ["releases", "Releases", "/releases"],
-    ["harmonia-legal", "Harmonia Legal", "/harmonia-legal"],
-    ["job-app", "Job App", ""],
-    ["ustroj", "Ustrój", "/ustroj"]
+  const screenGroups = [
+    {
+      key: "navigation",
+      label: "Navigation",
+      className: "koord-shell-group koord-shell-group-navigation",
+      screens: [
+        ["home", "Home", "/"],
+        ["live-chat", "Live Chat", "/chat"]
+      ]
+    },
+    {
+      key: "projects",
+      label: "Projects",
+      className: "koord-shell-group koord-shell-group-projects",
+      screens: [
+        ["corporation", "Corporation", "/corporation"],
+        ["harmonia-legal", "Harmonia Legal", "/harmonia-legal"],
+        ["job-app", "Job App", ""]
+      ]
+    },
+    {
+      key: "operations",
+      label: "Operations",
+      className: "koord-shell-group koord-shell-group-operations",
+      screens: [
+        ["tasks", "Tasks", "/"],
+        ["providers", "Providers", "/providers"],
+        ["releases", "Releases", "/releases"],
+        ["ustroj", "Ustrój", "/ustroj"]
+      ]
+    }
   ];
 
-  for (const [key, label, href] of canonicalScreens) {
-    let el = preferred.get(key);
-    if (!el && href) el = makeLink(label, href, key, currentPath === href);
-    if (!el && key === "job-app") {
-      const placeholder = document.createElement("button");
-      placeholder.type = "button";
-      placeholder.textContent = label;
-      placeholder.disabled = true;
-      placeholder.title = `${label} launcher is not configured in this runtime`;
-      placeholder.className = "product-placeholder";
-      el = placeholder;
+  const groups = new Map();
+  for (const definition of screenGroups) {
+    const group = document.createElement("div");
+    group.className = definition.className;
+    group.dataset.shellGroup = definition.key;
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", definition.label);
+    groups.set(definition.key, group);
+    primary.appendChild(group);
+
+    for (const [key, label, href] of definition.screens) {
+      let el = preferred.get(key);
+      if (!el && href) el = makeLink(label, href, key, currentPath === href);
+      if (!el && key === "job-app") {
+        const placeholder = document.createElement("button");
+        placeholder.type = "button";
+        placeholder.textContent = label;
+        placeholder.disabled = true;
+        placeholder.title = `${label} launcher is not configured in this runtime`;
+        placeholder.className = "product-placeholder";
+        el = placeholder;
+      }
+      if (!el) continue;
+      el.hidden = false;
+      el.dataset.shellKey = key;
+      const project = definition.key === "projects";
+      el.classList.add("koord-shell-button", project ? "importance-1" : "importance-2");
+      el.classList.toggle("koord-project-button", project);
+      el.classList.remove(project ? "importance-2" : "importance-1", "importance-3", "primary");
+      if (href && currentPath === href) {
+        el.classList.add("active");
+        el.setAttribute("aria-current", "page");
+      } else {
+        el.classList.remove("active");
+        el.removeAttribute("aria-current");
+      }
+      group.appendChild(el);
     }
-    if (!el) continue;
-    el.hidden = false;
-    el.dataset.shellKey = key;
-    el.classList.add("koord-shell-button", "importance-2");
-    el.classList.remove("importance-1", "importance-3", "primary");
-    if (href && currentPath === href) {
-      el.classList.add("active");
-      el.setAttribute("aria-current", "page");
-    } else {
-      el.classList.remove("active");
-      el.removeAttribute("aria-current");
-    }
-    primary.appendChild(el);
   }
 
-  const separator = document.createElement("span");
-  separator.className = "koord-shell-divider";
-  separator.setAttribute("aria-hidden", "true");
-  primary.appendChild(separator);
+  const githubControl = document.getElementById("githubChatButton");
+  const projectGroup = groups.get("projects");
+  if (githubControl && projectGroup) {
+    githubControl.hidden = false;
+    githubControl.dataset.shellKey = "github";
+    githubControl.classList.add("koord-shell-button", "importance-repository");
+    githubControl.classList.remove("importance-1", "importance-2", "importance-3", "primary");
+    projectGroup.appendChild(githubControl);
+  }
+
+  const conversationGroup = document.createElement("div");
+  conversationGroup.className = "koord-shell-group koord-shell-group-conversation";
+  conversationGroup.dataset.shellGroup = "conversation";
+  conversationGroup.setAttribute("role", "group");
+  conversationGroup.setAttribute("aria-label", "Conversation");
+  primary.appendChild(conversationGroup);
 
   for (const key of ["conversations", "new-conversation"]) {
     const el = preferred.get(key);
@@ -157,7 +203,7 @@
     el.dataset.shellKey = key;
     el.classList.add("koord-shell-button", "importance-2");
     el.classList.remove("importance-1", "importance-3", "primary");
-    primary.appendChild(el);
+    conversationGroup.appendChild(el);
   }
 
   const toolOrder = [
@@ -168,7 +214,6 @@
     "create-document",
     "stage-zero",
     "settings",
-    "github",
     "terminal",
     "popout"
   ];
@@ -179,16 +224,6 @@
     el.dataset.shellKey = key;
     el.classList.add("koord-shell-button", key === "stage-zero" ? "importance-2" : "importance-3");
     tools.appendChild(el);
-  }
-
-  // GitHub starts inside the runtime strip, so it is not part of the pre-workspace
-  // clickable scan. Move the single canonical GitHub control into the tools row.
-  const githubControl = document.getElementById("githubChatButton");
-  if (githubControl && !tools.contains(githubControl)) {
-    githubControl.hidden = false;
-    githubControl.dataset.shellKey = "github";
-    githubControl.classList.add("koord-shell-button", "importance-3");
-    tools.appendChild(githubControl);
   }
 
   for (const key of ["export-md", "export-pdf", "export-zip"]) {

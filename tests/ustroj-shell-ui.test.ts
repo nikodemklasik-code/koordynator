@@ -9,10 +9,10 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=8');
-    expect(html).toContain('/chat-shell.js?v=4');
+    expect(html).toContain('/chat-shell.css?v=9');
+    expect(html).toContain('/chat-shell.js?v=5');
     expect(html).toContain('/chat-v5.js?v=8');
-    expect(html.indexOf('/chat-shell.js?v=4')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
+    expect(html.indexOf('/chat-shell.js?v=5')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
     expect(css).toContain(".importance-1");
@@ -71,7 +71,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("--hermes-input-height:58px");
     expect(css).toContain("--shell-button-height: 38px");
     expect(css).toContain("--shell-button-height: 36px");
-    expect(css).toContain("grid-template-rows:var(--shell-row-height) var(--shell-row-height) minmax(0,1fr) 72px auto!important");
+    expect(css).toContain("grid-template-rows:var(--shell-row-height) minmax(0,1fr) 72px auto!important");
     expect(css).toContain("height:var(--shell-button-height)!important");
     expect(css).toContain("height:58px!important");
     expect(css).toContain("font-size:14px!important");
@@ -96,7 +96,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("flex:1 1 auto!important");
     expect(css).toContain(".v5-native-model-picker");
     expect(manifest).toContain("WYSZUKIWARKA MODELU I MENU ROZWIJANE MODELI MUSZĄ BYĆ JEDNYM KOMPONENTEM");
-    expect(manifest).toContain("HERMES MOŻE MIEĆ MAKSYMALNIE DWA WIERSZE KONTROLEK");
+    expect(manifest).toContain("HERMES MA DOKŁADNIE JEDEN WIERSZ KONTROLEK");
     expect(await readFile(new URL("../web/control/chat.html", import.meta.url), "utf8")).toContain('id="unifiedModelSelector"');
   });
 });

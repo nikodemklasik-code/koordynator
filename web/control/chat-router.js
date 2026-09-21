@@ -470,19 +470,34 @@
       readableRoot.setAttribute("role", "log"); readableRoot.setAttribute("aria-live", "polite"); readableRoot.innerHTML = '<div class="runtime-readable-empty">Czekam na wyjście Hermesa…</div>'; raw.before(readableRoot);
     }
     if (!terminalToolbar) {
-      terminalToolbar = document.createElement("div"); terminalToolbar.className = "runtime-terminal-toolbar";
-      terminalToolbar.innerHTML = '<button class="runtime-terminal-button" data-runtime-mode="readable" type="button" aria-pressed="false">Readable</button><button class="runtime-terminal-button active" data-runtime-mode="raw" type="button" aria-pressed="true">Raw PTY</button><span class="runtime-terminal-spacer"></span><span class="runtime-terminal-summary dead" id="runtimeTerminalSummary"><i class="runtime-terminal-heartbeat"></i><strong>OFF</strong><span>RX 0 B · TX 0 B</span></span><button class="runtime-terminal-button" data-runtime-action="expand" type="button">Expand</button><button class="runtime-terminal-button" data-runtime-action="copy" type="button">Copy</button>';
-      readableRoot.before(terminalToolbar); terminalSummary = terminalToolbar.querySelector("#runtimeTerminalSummary");
-      terminalToolbar.addEventListener("click", async (event) => {
+      terminalToolbar = document.createElement("div");
+      terminalToolbar.className = "runtime-terminal-toolbar";
+      terminalToolbar.setAttribute("role", "toolbar");
+      terminalToolbar.setAttribute("aria-label", "Hermes terminal controls");
+      terminalToolbar.innerHTML = '<button class="runtime-terminal-button" data-runtime-mode="readable" type="button" aria-pressed="false">Readable</button><button class="runtime-terminal-button active" data-runtime-mode="raw" type="button" aria-pressed="true">Raw PTY</button><span class="runtime-terminal-summary dead" id="runtimeTerminalSummary"><i class="runtime-terminal-heartbeat"></i><strong>OFF</strong><span>RX 0 B · TX 0 B</span></span><button class="runtime-terminal-button" data-runtime-action="expand" type="button">Expand</button>';
+      terminalSummary = terminalToolbar.querySelector("#runtimeTerminalSummary");
+      terminalToolbar.addEventListener("click", (event) => {
         const button = event.target.closest("button"); if (!button) return;
         if (button.dataset.runtimeMode) setMode(button.dataset.runtimeMode);
-        if (button.dataset.runtimeAction === "expand") { pane.classList.toggle("runtime-expanded"); button.textContent = pane.classList.contains("runtime-expanded") ? "Collapse" : "Expand"; requestAnimationFrame(() => window.dispatchEvent(new Event("resize"))); }
-        if (button.dataset.runtimeAction === "copy") {
-          try { await navigator.clipboard.writeText(readableRoot?.innerText || ""); const old = button.textContent; button.textContent = "Copied"; setTimeout(() => { button.textContent = old; }, 1000); }
-          catch { button.textContent = "Copy failed"; }
+        if (button.dataset.runtimeAction === "expand") {
+          pane.classList.toggle("runtime-expanded");
+          button.textContent = pane.classList.contains("runtime-expanded") ? "Collapse" : "Expand";
+          requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
         }
       });
     }
+    const start = document.getElementById("startHermesButton");
+    const stop = document.getElementById("stopHermesButton");
+    const expand = terminalToolbar.querySelector('[data-runtime-action="expand"]');
+    if (start && start.parentElement !== terminalToolbar) {
+      start.classList.add("runtime-terminal-button", "runtime-terminal-start");
+      terminalToolbar.insertBefore(start, expand);
+    }
+    if (stop && stop.parentElement !== terminalToolbar) {
+      stop.classList.add("runtime-terminal-button", "runtime-terminal-stop");
+      terminalToolbar.insertBefore(stop, expand);
+    }
+    if (terminalToolbar.parentElement !== header) header.appendChild(terminalToolbar);
     return true;
   }
   function mountRouterMonitor() {
