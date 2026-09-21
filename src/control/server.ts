@@ -426,7 +426,7 @@ export function createControlServer(options: ControlServerOptions): Server {
 
       if (method === "POST" && url.pathname === "/api/chat/shared-rooms") {
         const payload = await readJsonBody(request, 32 * 1024);
-        assertExactKeys(payload, ["topic", "participants"]);
+        assertExactKeys(payload, ["topic", "participants", "rounds"]);
         if (!Array.isArray(payload.participants)) throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
         const participants: SharedAgentParticipantInput[] = payload.participants.map((item) => {
           if (typeof item !== "object" || item === null || Array.isArray(item)) throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
@@ -445,7 +445,8 @@ export function createControlServer(options: ControlServerOptions): Server {
             ...(typeof record.toIndex === "number" ? { toIndex: record.toIndex } : {})
           };
         });
-        const room = await chat.createSharedRoom(payload.topic, participants);
+        if (payload.rounds !== undefined && typeof payload.rounds !== "number") throw new ChatServiceError("CHAT_SHARED_ROUNDS_INVALID", 400);
+        const room = await chat.createSharedRoom(payload.topic, participants, payload.rounds ?? 3);
         return sendJson(response, 201, {
           sessionId: room.sessionId,
           model: room.model,
