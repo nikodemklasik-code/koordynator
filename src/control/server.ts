@@ -277,12 +277,12 @@ export function createControlServer(options: ControlServerOptions): Server {
   const hermesPty = new HermesPtySession({
     stateDir,
     ...(options.hermesPty?.spawn === undefined ? {} : { spawn: options.hermesPty.spawn }),
-    prepare: options.hermesPty?.prepare ?? (async (): Promise<HermesLaunchSpec> => {
+    prepare: options.hermesPty?.prepare ?? (async (requestedModel?: string): Promise<HermesLaunchSpec> => {
       const settings = omniRouteSettings();
       const launch = await prepareHermes({
         endpoint: options.chatEndpoint ?? settings.endpoint,
         apiKey: options.chatApiKey ?? settings.apiKey,
-        model: options.chatDefaultModel ?? settings.model
+        model: requestedModel ?? options.chatDefaultModel ?? settings.model
       }, projectRoot);
       return { command: launch.command, args: launch.args, cwd: launch.cwd, env: launch.env, close: launch.close };
     })
@@ -465,9 +465,13 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, hermesPty.status());
       }
       if (method === "POST" && url.pathname === "/api/hermes/pty") {
-        const payload = await readJsonBody(request, 1024);
-        assertExactKeys(payload, ["cols", "rows"]);
-        return sendJson(response, 201, await hermesPty.start(payload));
+        const payload = await readJsonBody(request, 2048);
+        assertExactKeys(payload, ["cols", "rows", "model"]);
+        if (payload.model !== undefined && typeof payload.model !== "string") {
+          throw new HermesPtyError("HERMES_MODEL_INVALID", 400);
+        }
+        const model = typeof payload.model === "string" ? safeChatModel(payload.model) : undefined;
+        return sendJson(response, 201, await hermesPty.start(payload, model));
       }
       const hermesPtyMatch = /^\/api\/hermes\/pty\/([0-9a-f-]+)\/(events|input|resize|stop)$/i.exec(url.pathname);
       if (hermesPtyMatch?.[1] && hermesPtyMatch[2]) {
