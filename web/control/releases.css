@@ -30,3 +30,19 @@
 .release-kpis{flex:0 0 auto;position:relative;z-index:1}
 @media(max-width:900px){.page-head.release-head{align-items:flex-start;flex-direction:column;flex-wrap:nowrap;min-height:0;padding-top:16px;padding-bottom:16px}}
 @media(max-height:760px){.page-head.release-head{flex:0 0 auto;min-height:0;padding-top:14px;padding-bottom:14px}}
+
+
+/* LIGHTER-SLATE-2026-09 */
+:root{--panel:#1a2b39;--panel2:#172632;--line:#3a5064;--muted:#9cabb9}
+.release-link-button,.empty-actions a,.empty-actions button{background:#1d3040;border-color:#3a5064}
+.release-link-button:hover,.empty-actions a:hover,.empty-actions button:hover{background:#294154;border-color:#58738d}
+.readiness-kpi,.release-kpis article{background:linear-gradient(180deg,rgba(31,50,65,.97),rgba(24,40,53,.98));border-color:#40576d}
+.creative-card,.readiness-section,.route-section{background:linear-gradient(180deg,#1c2e3d,#172632);border-color:#40576d}
+.agent-stage,.route-card{background:#1b2d3b;border-color:#354e64}
+.production-card,.release-table-wrap,.side-card{background:linear-gradient(180deg,rgba(30,49,64,.97),rgba(24,40,53,.98));border-color:#40576d}
+.release-field,.release-state,.activity-icon,.release-path li>span,.chain-node{background:#1d3040;border-color:#3b556c}
+.release-table th{background:#1a2b39;color:#9dadbb}
+.release-table th,.release-table td{border-bottom-color:#30475a}
+.release-table-wrap .empty-state,.release-table-wrap .loading-state{background:linear-gradient(180deg,rgba(27,45,59,.99),rgba(22,37,49,.99))}
+.page-head.release-head{background:linear-gradient(180deg,rgba(23,38,51,.98),rgba(23,38,51,.82) 72%,rgba(23,38,51,0))}
+
