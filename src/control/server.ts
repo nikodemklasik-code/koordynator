@@ -1013,6 +1013,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/app.js": { name: "app.js", type: "text/javascript; charset=utf-8" },
         "/chat.js": { name: "chat.js", type: "text/javascript; charset=utf-8" },
         "/chat-history.js": { name: "chat-history.js", type: "text/javascript; charset=utf-8" },
+        "/chat-shared-room.js": { name: "chat-shared-room.js", type: "text/javascript; charset=utf-8" },
         "/chat-github.js": { name: "chat-github.js", type: "text/javascript; charset=utf-8" },
         "/chat-models.js": { name: "chat-models.js", type: "text/javascript; charset=utf-8" },
         "/chat-usage.js": { name: "chat-usage.js", type: "text/javascript; charset=utf-8" },
