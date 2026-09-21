@@ -1392,6 +1392,21 @@ async function restoreHermesPty() {
       setHermesState("OFF");
       return false;
     }
+    const workspace = window.koordynatorWorkspace?.id || "general";
+    const repository = typeof window.koordynatorSelectedRepository === "function"
+      ? window.koordynatorSelectedRepository()
+      : window.koordynatorWorkspace?.repository || null;
+    const wrongWorkspace = current.workspace && current.workspace !== workspace;
+    const wrongRepository = repository && current.repository && current.repository.toLowerCase() !== String(repository).toLowerCase();
+    if (wrongWorkspace || wrongRepository) {
+      await fetch(`/api/hermes/pty/${encodeURIComponent(current.sessionId)}/stop`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}"
+      }).catch(() => {});
+      setHermesState("OFF");
+      return false;
+    }
     state.hermesSessionId = current.sessionId;
     ensureHermesTerminal();
     connectHermesEvents(current.sessionId);
