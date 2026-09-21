@@ -1257,7 +1257,37 @@ function ensureHermesTerminal() {
   hermesFit = hermesFitAddon();
   if (hermesFit) hermesXterm.loadAddon(hermesFit);
   hermesXterm.open(hermesTerm);
+
+  // xterm owns text selection internally, so normal browser selection/Cmd+C is not
+  // reliable in Raw PTY. Preserve every terminal key except Cmd/Ctrl+C when there
+  // is an actual selection; then copy locally instead of sending SIGINT.
+  if (typeof hermesXterm.attachCustomKeyEventHandler === "function") {
+    hermesXterm.attachCustomKeyEventHandler((event) => {
+      const copyChord = (event.metaKey || event.ctrlKey) && !event.altKey && String(event.key).toLowerCase() === "c";
+      if (!copyChord || event.type !== "keydown" || !hermesXterm?.hasSelection?.()) return true;
+      const selected = hermesXterm.getSelection?.() || "";
+      if (selected && navigator.clipboard?.writeText) {
+        void navigator.clipboard.writeText(selected).catch(() => undefined);
+      }
+      return false;
+    });
+  }
+
   hermesXterm.onData((data) => { void sendHermesInput(data); });
+  window.koordynatorHermesTerminal = {
+    getSelection: () => hermesXterm?.getSelection?.() || "",
+    hasSelection: () => Boolean(hermesXterm?.hasSelection?.()),
+    copySelection: async () => {
+      const selected = hermesXterm?.getSelection?.() || "";
+      if (!selected) return false;
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(selected);
+        return true;
+      }
+      return false;
+    },
+    focus: () => hermesXterm?.focus()
+  };
   try { hermesFit?.fit(); } catch { /* not yet measured */ }
   return hermesXterm;
 }
