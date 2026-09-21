@@ -122,8 +122,31 @@ describe("Live Chat model catalog", () => {
     expect(requested.filter((url) => url.endsWith("/models") && !url.includes("pricing"))).toContain("http://127.0.0.1:20128/api/v1/models");
   });
 
-  it("fails closed when no server-side OmniRoute credential is available", async () => {
-    const catalog = new ChatModelCatalogService({ apiKey: " " });
+  it("allows a loopback OmniRoute catalog to operate without a redundant bearer key", async () => {
+    let authorization = "unset";
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      authorization = String(headers?.authorization ?? "");
+      if (String(input).endsWith("/v1/models")) {
+        return new Response(JSON.stringify({ data: [{ id: "cx/gpt-5.6-sol" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response("", { status: 404 });
+    }) as typeof fetch;
+    const catalog = new ChatModelCatalogService({
+      endpoint: "http://127.0.0.1:20128/v1",
+      apiKey: " ",
+      fetchImpl
+    });
+    const result = await catalog.list();
+    expect(result.models).toEqual(["cx/gpt-5.6-sol"]);
+    expect(authorization).toBe("");
+  });
+
+  it("still fails closed without a credential for a non-loopback OmniRoute endpoint", async () => {
+    const catalog = new ChatModelCatalogService({ endpoint: "https://gateway.example/v1", apiKey: " " });
     await expect(catalog.list()).rejects.toThrow("CHAT_MODEL_CATALOG_AUTH_REQUIRED");
   });
 
