@@ -45,28 +45,33 @@ describe("chat GitHub repository workspace", () => {
     expect(repositories.find((item) => item.repository.endsWith("/koordynator"))?.defaultBranch).toBe("main");
   });
 
-  it("keeps a persistent selected repository in the chat and sends it separately from user text", async () => {
-    const [githubUi, chat, server, main] = await Promise.all([
+  it("keeps general chat selectable while product workspaces have fixed repositories", async () => {
+    const [githubUi, chat, server, main, workspace] = await Promise.all([
       readFile(new URL("../web/control/chat-github.js", import.meta.url), "utf8"),
       readFile(new URL("../web/control/chat.js", import.meta.url), "utf8"),
       readFile(new URL("../src/control/server.ts", import.meta.url), "utf8"),
-      readFile(new URL("../src/control/main.ts", import.meta.url), "utf8")
+      readFile(new URL("../src/control/main.ts", import.meta.url), "utf8"),
+      readFile(new URL("../web/control/chat-workspace.js", import.meta.url), "utf8")
     ]);
 
-    expect(githubUi).toContain('GITHUB_FALLBACK_REPOSITORY = "nikodemklasik-code/koordynator"');
+    expect(githubUi).toContain("FIXED_WORKSPACE_REPOSITORY");
     expect(githubUi).toContain('localStorage.setItem(GITHUB_REPOSITORY_STORAGE_KEY, value)');
     expect(githubUi).toContain('window.koordynatorSelectedRepository');
     expect(githubUi).toContain('/api/integrations/github/repositories');
     expect(githubUi).toContain('github-repository-menu');
 
-    expect(chat).toContain('window.koordynatorSelectedRepository');
+    expect(workspace).toContain('repository: "nikodemklasik-code/koordynator"');
+    expect(workspace).toContain('repository: "nikodemklasik-code/Harmonia-Legal-Platform"');
+    expect(workspace).toContain('fixedRepository: false');
+
+    expect(chat).toContain('window.koordynatorWorkspace?.id || "general"');
     expect(chat).toContain('...(repository ? { repository } : {})');
     expect(chat).toContain('restoreOrStartHermesPty()');
 
-    expect(server).toContain('assertExactKeys(payload, ["message", "model", "attachments", "repository"])');
+    expect(server).toContain('assertExactKeys(payload, ["message", "model", "attachments", "repository", "workspace"])');
     expect(server).toContain('url.pathname === "/api/integrations/github/repositories"');
-    expect(server).toContain('selectedIsLocalWorkspace');
+    expect(server).toContain('WORKSPACE_REPOSITORY_FIXED');
     expect(main).toContain('KOORDYNATOR_CHAT_DEFAULT_REPOSITORY');
-    expect(main).toContain('"nikodemklasik-code/koordynator"');
+    expect(main).not.toContain('|| "nikodemklasik-code/koordynator"');
   });
 });
