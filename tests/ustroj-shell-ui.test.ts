@@ -11,8 +11,8 @@ describe("Koordynator Ustrój shell", () => {
 
     expect(html).toContain('/chat-shell.css?v=11');
     expect(html).toContain('/chat-shell.js?v=7');
-    expect(html).toContain('/chat-v5.js?v=8');
-    expect(html.indexOf('/chat-shell.js?v=7')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
+    expect(html).toContain('/chat-v5.js?v=9');
+    expect(html.indexOf('/chat-shell.js?v=7')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=9'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
     expect(css).toContain(".importance-1");
