@@ -14,7 +14,7 @@
  * explicit one-time `npm run ai:auth-missing` wizard only when a route needs it.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -26,6 +26,13 @@ const chatUrl = `http://${host}:${port}/chat`;
 const pidDir = resolve(root, ".orchestrator", "runtime");
 const pidFile = resolve(pidDir, "control.pid");
 const logFile = resolve(pidDir, "control.log");
+const expectedRuntimeRevision = "CHAT_HERMES_V3";
+const runtimeEnv = {
+  ...process.env,
+  PATH: [process.env.HOME ? resolve(process.env.HOME, ".local", "bin") : "", process.env.PATH || ""]
+    .filter(Boolean)
+    .join(":")
+};
 
 function run(label, command, args, { allowFail = false, inherit = true } = {}) {
   console.log(`\n==> ${label}`);
@@ -52,6 +59,43 @@ function healthCode(url) {
   return (probe.stdout || "").trim();
 }
 
+function healthJson(url) {
+  const probe = spawnSync("curl", ["-fsS", url], {
+    encoding: "utf8",
+    stdio: "pipe"
+  });
+  if ((probe.status ?? 1) !== 0) return null;
+  try { return JSON.parse(probe.stdout || "null"); } catch { return null; }
+}
+
+function controlRuntimeState() {
+  const health = healthJson(`http://${host}:${port}/api/health`);
+  if (!health) return { state: "DOWN", health: null };
+  if (
+    health.runtimeRevision === expectedRuntimeRevision &&
+    health.modelCatalogMode === "WORKING_SET_ACTIVE_ONLY" &&
+    health.hermesPtyModelParameter === true
+  ) return { state: "CURRENT", health };
+  return { state: "STALE", health };
+}
+
+function stopManagedStaleControl() {
+  if (!existsSync(pidFile)) return false;
+  const pid = Number(readFileSync(pidFile, "utf8").trim());
+  if (!Number.isInteger(pid) || pid <= 1) return false;
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return false;
+  }
+  for (let i = 0; i < 40; i += 1) {
+    spawnSync("sleep", ["0.1"]);
+    if (controlRuntimeState().state === "DOWN") return true;
+  }
+  try { process.kill(pid, "SIGKILL"); } catch {}
+  return controlRuntimeState().state === "DOWN";
+}
+
 function ensureOmniRoute() {
   const code = healthCode("http://127.0.0.1:20128/api/health");
   if (code && Number(code) > 0 && Number(code) < 500) {
@@ -72,33 +116,46 @@ function ensureOmniRoute() {
 }
 
 function controlAlreadyUp() {
-  const code = healthCode(`http://${host}:${port}/api/health`);
-  return Boolean(code && Number(code) > 0 && Number(code) < 500);
+  return controlRuntimeState().state === "CURRENT";
 }
 
 function startControlWithLog() {
-  if (controlAlreadyUp()) {
-    console.log(`Control UI: already running at http://${host}:${port}`);
+  const before = controlRuntimeState();
+  if (before.state === "CURRENT") {
+    console.log(`Control UI: current runtime already running at http://${host}:${port}`);
     return;
   }
+  if (before.state === "STALE") {
+    console.log(`Control UI: stale runtime detected at http://${host}:${port}`);
+    if (!stopManagedStaleControl()) {
+      console.error("STALE_CONTROL_RUNTIME");
+      console.error(`Expected runtimeRevision=${expectedRuntimeRevision}, got=${before.health?.runtimeRevision ?? "legacy"}`);
+      console.error(`Stop the process listening on port ${port}, then rerun npm run start:all.`);
+      process.exit(1);
+    }
+    console.log("Control UI: stale managed runtime stopped");
+  }
+
   mkdirSync(pidDir, { recursive: true });
   run("Build", "npm", ["run", "build"]);
-  const child = spawn("bash", ["-lc", `npm run control >> ${JSON.stringify(logFile)} 2>&1`], {
+  const child = spawn("bash", ["-lc", `npm run control:run >> ${JSON.stringify(logFile)} 2>&1`], {
     cwd: root,
-    env: process.env,
+    env: runtimeEnv,
     detached: true,
     stdio: "ignore"
   });
   child.unref();
   writeFileSync(pidFile, String(child.pid ?? ""), "utf8");
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 80; i += 1) {
     spawnSync("sleep", ["0.25"]);
     if (controlAlreadyUp()) {
+      const live = controlRuntimeState().health;
       console.log(`Control UI: ready at http://${host}:${port}`);
+      console.log(`Control runtime: ${live?.runtimeRevision ?? "unknown"} · ${live?.modelCatalogMode ?? "unknown"}`);
       return;
     }
   }
-  console.error(`Control UI did not become ready at http://${host}:${port}`);
+  console.error(`Control UI did not become ready with runtime ${expectedRuntimeRevision} at http://${host}:${port}`);
   console.error(`See log: ${logFile}`);
   process.exit(1);
 }
