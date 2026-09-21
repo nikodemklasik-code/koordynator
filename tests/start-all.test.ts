@@ -13,6 +13,11 @@ describe("one-click start all", () => {
     expect(source).toMatch(/8787|control|npm start|npm run control/);
     expect(source).toContain("open");
     expect(pkg.scripts?.["start:all"]).toMatch(/scripts\/start-all\.mjs/);
+    expect(pkg.scripts?.control).toContain("npm run build");
+    expect(pkg.scripts?.["control:run"]).toBe("node dist/control/main.js");
+    expect(source).toContain('expectedRuntimeRevision = "CHAT_HERMES_V3"');
+    expect(source).toContain("STALE_CONTROL_RUNTIME");
+    expect(source).toContain("npm run control:run");
   });
 
   it("ships a Desktop .command launcher for double-click start", () => {
