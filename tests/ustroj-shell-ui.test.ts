@@ -27,7 +27,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(shell).toContain('["providers", "Providers", "/providers"]');
     expect(shell).toContain('["releases", "Releases", "/releases"]');
     expect(shell).toContain('["ustroj", "Ustrój", "/ustroj"]');
-    expect(shell).toContain('for (const key of ["conversations", "new-conversation"])');
+    expect(shell).toContain('["chat-important", "Chat", ["new-conversation", "stage-zero", "create-document"]]');
     expect(shell).toContain("shellDuplicate");
     expect(shell).toContain('for (const key of ["export-md", "export-pdf", "export-zip"])');
   });
