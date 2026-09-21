@@ -36,6 +36,7 @@
     if (/harmonia legal/.test(label) || href === "/harmonia-legal") return "harmonia-legal";
     if (/^corporation$/.test(label) || href === "/corporation") return "corporation";
     if (/job app/.test(label)) return "job-app";
+    if (/^studio$/.test(label) || href === "/studio") return "studio";
     if (/ustr[oó]j/.test(label) || href === "/ustroj") return "ustroj";
     if (/^contracts?$/.test(label)) return "contracts";
     if (/^routing$/.test(label)) return "routing";
@@ -127,6 +128,14 @@
       ]
     },
     {
+      key: "creative",
+      label: "Creative",
+      className: "koord-shell-group koord-shell-group-creative",
+      screens: [
+        ["studio", "Studio", "/studio"]
+      ]
+    },
+    {
       key: "operations",
       label: "Operations",
       className: "koord-shell-group koord-shell-group-operations",
@@ -206,24 +215,41 @@
     conversationGroup.appendChild(el);
   }
 
-  const toolOrder = [
-    "contracts",
-    "routing",
-    "billing",
-    "studio",
-    "create-document",
-    "stage-zero",
-    "settings",
-    "terminal",
-    "popout"
-  ];
-  for (const key of toolOrder) {
-    const el = preferred.get(key);
-    if (!el) continue;
-    el.hidden = false;
-    el.dataset.shellKey = key;
-    el.classList.add("koord-shell-button", key === "stage-zero" ? "importance-2" : "importance-3");
-    tools.appendChild(el);
+  const toolGroupsByScreen = {
+    "/chat": [
+      ["process", "Process", ["routing", "stage-zero"]],
+      ["content", "Content", ["create-document"]],
+      ["workspace", "Workspace", ["terminal", "popout", "settings"]]
+    ],
+    "/corporation": [
+      ["process", "Process", ["routing", "stage-zero"]],
+      ["governance", "Governance", ["contracts", "billing"]],
+      ["workspace", "Workspace", ["terminal", "popout", "settings"]]
+    ],
+    "/harmonia-legal": [
+      ["legal-work", "Legal work", ["stage-zero", "create-document"]],
+      ["process", "Process", ["routing"]],
+      ["workspace", "Workspace", ["terminal", "popout", "settings"]]
+    ]
+  };
+  const activeToolGroups = toolGroupsByScreen[currentPath] || toolGroupsByScreen["/chat"];
+
+  for (const [groupKey, label, keys] of activeToolGroups) {
+    const group = document.createElement("div");
+    group.className = `koord-shell-tool-group koord-shell-tool-group-${groupKey}`;
+    group.dataset.toolGroup = groupKey;
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", label);
+
+    for (const key of keys) {
+      const el = preferred.get(key);
+      if (!el) continue;
+      el.hidden = false;
+      el.dataset.shellKey = key;
+      el.classList.add("koord-shell-button", (key === "stage-zero" || key === "routing") ? "importance-2" : "importance-3");
+      group.appendChild(el);
+    }
+    if (group.childElementCount) tools.appendChild(group);
   }
 
   for (const key of ["export-md", "export-pdf", "export-zip"]) {
