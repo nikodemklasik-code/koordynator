@@ -15,7 +15,7 @@ describe("one-click start all", () => {
     expect(pkg.scripts?.["start:all"]).toMatch(/scripts\/start-all\.mjs/);
     expect(pkg.scripts?.control).toContain("npm run build");
     expect(pkg.scripts?.["control:run"]).toBe("node dist/control/main.js");
-    expect(source).toContain('expectedRuntimeRevision = "PRODUCT_WORKSPACES_V3"');
+    expect(source).toContain('expectedRuntimeRevision = "PRODUCT_WORKSPACES_V4"');
     expect(source).toContain('health.productWorkspaces === true');
     expect(source).toContain('health.sharedRooms === true');
     expect(source).toContain('routes.includes("/corporation")');
@@ -23,6 +23,10 @@ describe("one-click start all", () => {
     expect(source).toContain('routes.includes("/studio")');
     expect(source).toContain("STALE_CONTROL_RUNTIME");
     expect(source).toContain("npm run control:run");
+    expect(source).toContain("runtimePreflight");
+    expect(source).toContain("/api/studio/providers");
+    expect(source).toContain("/api/hermes/pty");
+    expect(source).toContain("/api/chat/models");
   });
 
   it("ships a Desktop .command launcher for double-click start", () => {
