@@ -303,7 +303,7 @@ export class ChatService {
     this.apiKey = options.apiKey;
     this.apiKeyEnv = options.apiKeyEnv ?? "OMNIROUTE_API_KEY";
     this.defaultModel = safeModel(options.defaultModel ?? "auto/best-free");
-    this.fallbackModels = [...new Set((options.fallbackModels ?? []).map((model) => model.trim()).filter(Boolean).filter((model) => model !== this.defaultModel))].slice(0, 6);
+    this.fallbackModels = [...new Set((options.fallbackModels ?? []).map((model) => model.trim()).filter(Boolean).filter((model) => model !== this.defaultModel))].slice(0, 32);
     this.authorizeModel = options.authorizeModel;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxMessageBytes = options.maxMessageBytes ?? 32 * 1024;
