@@ -1163,3 +1163,242 @@ body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill.on{
   body.koord-shell-active .koord-shell-tool-group-workspace{margin-left:0!important}
   body.koord-shell-active .koord-shell-tools{overflow-x:auto!important}
 }
+
+
+/* V1.6: persistent compact dock + explicit priority rows.
+   First shell row = important. Second shell row = auxiliary.
+   Chat and Terminal actions are visibly classified and never disappear when the viewport narrows. */
+body.koord-shell-active .koord-shell-row{
+  min-width:0!important;
+}
+body.koord-shell-active .koord-shell-row-primary,
+body.koord-shell-active .koord-shell-row-secondary{
+  display:flex!important;
+  align-items:center!important;
+  gap:6px!important;
+  overflow:hidden!important;
+}
+body.koord-shell-active .koord-shell-row-label{
+  flex:0 0 auto!important;
+  min-width:44px!important;
+  padding:0 4px!important;
+  color:#6f8ca0!important;
+  font-size:7px!important;
+  font-weight:900!important;
+  line-height:1!important;
+  letter-spacing:.12em!important;
+  text-align:center!important;
+  user-select:none!important;
+}
+body.koord-shell-active .koord-shell-row-label.auxiliary{
+  color:#657681!important;
+}
+body.koord-shell-active .koord-shell-primary,
+body.koord-shell-active .koord-shell-tools{
+  min-width:0!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  scrollbar-width:none!important;
+  overscroll-behavior-inline:contain!important;
+}
+body.koord-shell-active .koord-shell-primary::-webkit-scrollbar,
+body.koord-shell-active .koord-shell-tools::-webkit-scrollbar{
+  display:none!important;
+}
+body.koord-shell-active .koord-shell-action-group,
+body.koord-shell-active .koord-shell-tool-group{
+  position:relative!important;
+  display:flex!important;
+  align-items:center!important;
+  gap:4px!important;
+  flex:0 0 auto!important;
+  min-width:0!important;
+}
+body.koord-shell-active .koord-shell-action-group{
+  padding:3px 5px!important;
+  border:1px solid #28475a!important;
+  border-radius:10px!important;
+  background:#0a1821!important;
+}
+body.koord-shell-active .koord-shell-action-group-terminal-important{
+  border-color:#315443!important;
+  background:#0a1813!important;
+}
+body.koord-shell-active .koord-shell-group-label{
+  flex:0 0 auto!important;
+  padding:0 3px!important;
+  color:#698192!important;
+  font-size:7px!important;
+  font-weight:900!important;
+  letter-spacing:.10em!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+}
+body.koord-shell-active .koord-shell-action-group-terminal-important .koord-shell-group-label,
+body.koord-shell-active .koord-shell-tool-group-terminal-aux .koord-shell-group-label{
+  color:#72a58a!important;
+}
+body.koord-shell-active .koord-shell-action-group .koord-shell-button{
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 9px!important;
+  border-radius:8px!important;
+  font-size:10px!important;
+}
+body.koord-shell-active .koord-shell-action-group-chat-important .koord-shell-button{
+  border-color:#3c6e8c!important;
+  background:#103047!important;
+  color:#e4f5ff!important;
+}
+body.koord-shell-active .koord-shell-action-group-terminal-important .koord-shell-button{
+  border-color:#38634d!important;
+  background:#10261c!important;
+  color:#d9f5e5!important;
+}
+body.koord-shell-active .koord-shell-tool-group-chat-aux .koord-shell-button,
+body.koord-shell-active .koord-shell-tool-group-governance-aux .koord-shell-button,
+body.koord-shell-active .koord-shell-tool-group-terminal-aux .koord-shell-button{
+  height:30px!important;
+  min-height:30px!important;
+  padding:0 8px!important;
+  border-radius:8px!important;
+  font-size:9.5px!important;
+  color:#96a7b2!important;
+  background:#09141b!important;
+  border-color:#203541!important;
+}
+body.koord-shell-active .koord-shell-tool-group-terminal-aux .koord-access-pill{
+  height:30px!important;
+  min-height:30px!important;
+  padding:0 8px!important;
+  border-radius:8px!important;
+}
+body.koord-shell-active .koord-shell-group-navigation .koord-shell-button,
+body.koord-shell-active .koord-shell-group-projects .koord-shell-button,
+body.koord-shell-active .koord-shell-group-creative .koord-shell-button,
+body.koord-shell-active .koord-shell-group-operations .koord-shell-button{
+  height:32px!important;
+  min-height:32px!important;
+  padding:0 9px!important;
+  font-size:10px!important;
+}
+
+/* Replace the old disappearing welcome banner with a permanent strip of small action panels. */
+body.koord-shell-active .v5-thread{
+  position:relative!important;
+}
+body.koord-shell-active .v5-quick-dock{
+  position:sticky!important;
+  top:0!important;
+  z-index:35!important;
+  width:100%!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:6px!important;
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(86px,1fr))!important;
+  gap:5px!important;
+  align-items:stretch!important;
+  border:0!important;
+  border-bottom:1px solid #1b303d!important;
+  border-radius:0!important;
+  background:rgba(6,13,18,.96)!important;
+  box-shadow:0 8px 18px rgba(0,0,0,.24)!important;
+  backdrop-filter:blur(8px)!important;
+  text-align:left!important;
+}
+body.koord-shell-active .v5-quick-dock.hidden{
+  display:grid!important;
+}
+body.koord-shell-active .v5-quick-tile{
+  min-width:0!important;
+  min-height:54px!important;
+  display:grid!important;
+  grid-template-rows:auto auto auto!important;
+  align-content:center!important;
+  gap:2px!important;
+  padding:7px 9px!important;
+  border:1px solid #253a47!important;
+  border-radius:9px!important;
+  background:#09151d!important;
+  color:#c7d3da!important;
+  text-align:left!important;
+  cursor:pointer!important;
+}
+body.koord-shell-active .v5-quick-tile.important{
+  border-color:#315b75!important;
+  background:#0c1f2c!important;
+}
+body.koord-shell-active .v5-quick-tile.auxiliary{
+  border-color:#24343e!important;
+  background:#081219!important;
+  color:#a1b0ba!important;
+}
+body.koord-shell-active .v5-quick-tile:hover{
+  border-color:#4c7f9f!important;
+  background:#102b3c!important;
+}
+body.koord-shell-active .v5-quick-kicker{
+  color:#6f91a5!important;
+  font-size:7px!important;
+  font-weight:900!important;
+  letter-spacing:.11em!important;
+}
+body.koord-shell-active .v5-quick-tile strong{
+  font-size:11px!important;
+  line-height:1.15!important;
+}
+body.koord-shell-active .v5-quick-tile small{
+  min-width:0!important;
+  overflow:hidden!important;
+  color:#708591!important;
+  font-size:8px!important;
+  line-height:1.2!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+
+/* Split-screen mode: keep both Chat and Terminal visible instead of deleting Terminal at <=760px. */
+@media(max-width:980px){
+  body.koord-shell-active .v5-quick-dock{
+    grid-template-columns:repeat(3,minmax(90px,1fr))!important;
+  }
+}
+@media(max-width:760px){
+  body.koord-shell-active .v5-workspace{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:minmax(360px,58vh) minmax(300px,48vh)!important;
+    overflow-y:auto!important;
+  }
+  body.koord-shell-active .v5-splitter{
+    display:none!important;
+  }
+  body.koord-shell-active .v5-terminal-pane{
+    display:grid!important;
+    min-height:300px!important;
+    border-left:0!important;
+    border-top:1px solid #243846!important;
+  }
+  body.koord-shell-active .koord-shell-row-label{
+    min-width:34px!important;
+    font-size:6.5px!important;
+  }
+  body.koord-shell-active .koord-shell-primary,
+  body.koord-shell-active .koord-shell-tools{
+    overflow-x:auto!important;
+  }
+  body.koord-shell-active .koord-shell-button,
+  body.koord-shell-active .koord-shell .v5-action,
+  body.koord-shell-active .koord-shell button,
+  body.koord-shell-active .koord-shell a,
+  body.koord-shell-active .koord-shell summary{
+    padding-left:8px!important;
+    padding-right:8px!important;
+  }
+}
+@media(max-width:520px){
+  body.koord-shell-active .v5-quick-dock{
+    grid-template-columns:repeat(2,minmax(90px,1fr))!important;
+  }
+}

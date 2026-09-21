@@ -52,9 +52,11 @@
   shell.className = "koord-shell";
   shell.innerHTML = [
     '<div class="koord-shell-row koord-shell-row-primary">',
-    '  <nav class="koord-shell-primary" id="koordShellPrimary" aria-label="Screens and conversation actions"></nav>',
+    '  <span class="koord-shell-row-label">IMPORTANT</span>',
+    '  <nav class="koord-shell-primary" id="koordShellPrimary" aria-label="Important screens and actions"></nav>',
     '</div>',
     '<div class="koord-shell-row koord-shell-row-secondary">',
+    '  <span class="koord-shell-row-label auxiliary">AUX</span>',
     '  <div class="koord-shell-tools" id="koordShellTools"></div>',
     '  <details class="koord-shell-export" id="koordShellExport">',
     '    <summary class="koord-shell-button importance-3" aria-label="Export options">Export</summary>',
@@ -198,59 +200,70 @@
     projectGroup.appendChild(githubControl);
   }
 
-  const conversationGroup = document.createElement("div");
-  conversationGroup.className = "koord-shell-group koord-shell-group-conversation";
-  conversationGroup.dataset.shellGroup = "conversation";
-  conversationGroup.setAttribute("role", "group");
-  conversationGroup.setAttribute("aria-label", "Conversation");
-  primary.appendChild(conversationGroup);
-
-  for (const key of ["conversations", "new-conversation"]) {
-    const el = preferred.get(key);
-    if (!el) continue;
-    el.hidden = false;
-    el.dataset.shellKey = key;
-    el.classList.add("koord-shell-button", "importance-2");
-    el.classList.remove("importance-1", "importance-3", "primary");
-    conversationGroup.appendChild(el);
-  }
-
-  const toolGroupsByScreen = {
+  const importantGroupsByScreen = {
     "/chat": [
-      ["process", "Process", ["routing", "stage-zero"]],
-      ["content", "Content", ["create-document"]],
-      ["workspace", "Workspace", ["terminal", "popout", "settings"]]
+      ["chat-important", "Chat", ["new-conversation", "stage-zero", "create-document"]],
+      ["terminal-important", "Terminal", ["terminal"]]
     ],
     "/corporation": [
-      ["process", "Process", ["routing", "stage-zero"]],
-      ["governance", "Governance", ["contracts", "billing"]],
-      ["workspace", "Workspace", ["terminal", "popout", "settings"]]
+      ["chat-important", "Corporation", ["new-conversation", "routing", "stage-zero"]],
+      ["terminal-important", "Terminal", ["terminal"]]
     ],
     "/harmonia-legal": [
-      ["legal-work", "Legal work", ["stage-zero", "create-document"]],
-      ["process", "Process", ["routing"]],
-      ["workspace", "Workspace", ["terminal", "popout", "settings"]]
+      ["chat-important", "Legal", ["new-conversation", "stage-zero", "create-document"]],
+      ["terminal-important", "Terminal", ["terminal"]]
     ]
   };
-  const activeToolGroups = toolGroupsByScreen[currentPath] || toolGroupsByScreen["/chat"];
 
-  for (const [groupKey, label, keys] of activeToolGroups) {
+  const auxiliaryGroupsByScreen = {
+    "/chat": [
+      ["chat-aux", "Chat", ["conversations", "routing"]],
+      ["terminal-aux", "Terminal", ["popout", "settings"]]
+    ],
+    "/corporation": [
+      ["chat-aux", "Chat", ["conversations"]],
+      ["governance-aux", "Governance", ["contracts", "billing"]],
+      ["terminal-aux", "Terminal", ["popout", "settings"]]
+    ],
+    "/harmonia-legal": [
+      ["chat-aux", "Chat", ["conversations", "routing"]],
+      ["terminal-aux", "Terminal", ["popout", "settings"]]
+    ]
+  };
+
+  const appendActionGroup = (parent, [groupKey, label, keys], priority) => {
     const group = document.createElement("div");
-    group.className = `koord-shell-tool-group koord-shell-tool-group-${groupKey}`;
+    group.className = priority === "important"
+      ? `koord-shell-group koord-shell-action-group koord-shell-action-group-${groupKey}`
+      : `koord-shell-tool-group koord-shell-tool-group-${groupKey}`;
     group.dataset.toolGroup = groupKey;
+    group.dataset.priority = priority;
     group.setAttribute("role", "group");
-    group.setAttribute("aria-label", label);
+    group.setAttribute("aria-label", `${label} ${priority} actions`);
+
+    const caption = document.createElement("span");
+    caption.className = "koord-shell-group-label";
+    caption.textContent = label.toUpperCase();
+    group.appendChild(caption);
 
     for (const key of keys) {
       const el = preferred.get(key);
       if (!el) continue;
       el.hidden = false;
       el.dataset.shellKey = key;
-      el.classList.add("koord-shell-button", (key === "stage-zero" || key === "routing") ? "importance-2" : "importance-3");
+      el.classList.add("koord-shell-button", priority === "important" ? "importance-1" : "importance-3");
+      el.classList.remove(priority === "important" ? "importance-3" : "importance-1", "primary");
       group.appendChild(el);
     }
-    if (group.childElementCount) tools.appendChild(group);
-  }
+
+    if (group.querySelector("a,button,summary")) parent.appendChild(group);
+  };
+
+  const importantGroups = importantGroupsByScreen[currentPath] || importantGroupsByScreen["/chat"];
+  for (const definition of importantGroups) appendActionGroup(primary, definition, "important");
+
+  const auxiliaryGroups = auxiliaryGroupsByScreen[currentPath] || auxiliaryGroupsByScreen["/chat"];
+  for (const definition of auxiliaryGroups) appendActionGroup(tools, definition, "auxiliary");
 
   for (const key of ["export-md", "export-pdf", "export-zip"]) {
     const el = preferred.get(key);

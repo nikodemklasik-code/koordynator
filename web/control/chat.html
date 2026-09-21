@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/xterm.css" />
   <link rel="stylesheet" href="/chat-v5.css?v=5" />
   <link rel="stylesheet" href="/chat-router.css?v=1" />
-  <link rel="stylesheet" href="/chat-shell.css?v=10" />
+  <link rel="stylesheet" href="/chat-shell.css?v=11" />
 </head>
 <body class="workspace-v5">
   <div class="v5-shell">
@@ -89,16 +89,37 @@
           </div>
 
           <div class="chat-thread v5-thread" id="chatThread" aria-live="polite" aria-relevant="additions text">
-            <div class="chat-welcome v5-welcome" id="chatWelcome">
-              <div class="v5-welcome-mark">◇</div>
-              <h2>Start working</h2>
-              <p>Chat, files, repository access and execution share one workspace. The active route is shown above and the terminal stays visible beside the conversation.</p>
-              <div class="v5-welcome-grid">
-                <span>Drop files anywhere in chat</span>
-                <span>Paste a GitHub repository link</span>
-                <span>Use Etap 0 for Harmonia reading</span>
-                <span>Hermes PTY remains independent</span>
-              </div>
+            <div class="chat-welcome v5-welcome v5-quick-dock" id="chatWelcome" aria-label="Persistent workspace shortcuts">
+              <button class="v5-quick-tile important" type="button" data-chat-quick="message">
+                <span class="v5-quick-kicker">CHAT</span>
+                <strong>Message</strong>
+                <small>Focus composer</small>
+              </button>
+              <button class="v5-quick-tile important" type="button" data-chat-quick="attach">
+                <span class="v5-quick-kicker">CHAT</span>
+                <strong>Files</strong>
+                <small>Attach evidence or documents</small>
+              </button>
+              <button class="v5-quick-tile important" type="button" data-chat-quick="stage-zero">
+                <span class="v5-quick-kicker">PROCESS</span>
+                <strong>Etap 0</strong>
+                <small>Harmonia reading</small>
+              </button>
+              <button class="v5-quick-tile important" type="button" data-chat-quick="terminal">
+                <span class="v5-quick-kicker">TERMINAL</span>
+                <strong>Hermes PTY</strong>
+                <small>Show or focus terminal</small>
+              </button>
+              <button class="v5-quick-tile auxiliary" type="button" data-chat-quick="github">
+                <span class="v5-quick-kicker">REPO</span>
+                <strong>GitHub</strong>
+                <small>Choose repository</small>
+              </button>
+              <button class="v5-quick-tile auxiliary" type="button" data-chat-quick="history">
+                <span class="v5-quick-kicker">AUX</span>
+                <strong>History</strong>
+                <small>Previous conversations</small>
+              </button>
             </div>
           </div>
 
@@ -231,12 +252,12 @@
   <script src="/chat-workspace.js?v=1" defer></script>
   <script src="/chat-router.js?v=2" defer></script>
   <script src="/chat-models.js?v=6" defer></script>
-  <script src="/chat.js?v=10" defer></script>
+  <script src="/chat.js?v=11" defer></script>
   <script src="/chat-history.js?v=5" defer></script>
   <script src="/chat-github.js?v=7" defer></script>
   <script src="/chat-usage.js?v=6" defer></script>
   <script src="/chat-v5.js?v=8" defer></script>
-  <script src="/chat-shell.js?v=6" defer></script>
+  <script src="/chat-shell.js?v=7" defer></script>
   <script src="/chat-local-access.js?v=4" defer></script>
 </body>
 </html>
