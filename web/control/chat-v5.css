@@ -717,3 +717,15 @@ button { color: inherit; }
 .v5-statusbar { min-height: 32px !important; height: 32px !important; font-size: 9px !important; }
 .ci-status,.v5-runtime-meta,.status-badge { font-size: 9px !important; }
 .v5-rail-foot { font-size: 10px !important; }
+
+
+/* Multi-chat: background generations stay visible and selectable. */
+.history-item.generating {
+  border-color: #2f6d52 !important;
+  box-shadow: inset 3px 0 0 #63d89b;
+}
+.history-item-running {
+  color: #79d9a4 !important;
+  font-weight: 800;
+  letter-spacing: .02em;
+}

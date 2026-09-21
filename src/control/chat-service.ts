@@ -62,6 +62,7 @@ export type ChatSessionSummary = {
   model: string;
   title: string;
   messageCount: number;
+  generating: boolean;
 };
 
 export type ChatProcessStage =
@@ -379,7 +380,8 @@ export class ChatService {
           updatedAt: session.updatedAt,
           model: session.model,
           title: sessionTitle(session),
-          messageCount: session.messages.length
+          messageCount: session.messages.length,
+          generating: this.active.has(session.sessionId) || session.messages.some((message) => message.role === "assistant" && message.state === "streaming")
         } satisfies ChatSessionSummary;
       } catch {
         return null;

@@ -385,7 +385,7 @@ function updateControls() {
   sendButton.disabled = !hasPayload || state.generating || state.preparingAttachments || !state.sessionId;
   stopButton.classList.remove("hidden");
   stopButton.disabled = !state.generating;
-  newChatButton.disabled = state.generating || state.preparingAttachments;
+  newChatButton.disabled = state.preparingAttachments;
   modelSelect.disabled = state.generating;
   attachButton.disabled = state.generating || state.preparingAttachments;
   if (stageZeroButton) stageZeroButton.disabled = state.generating || state.preparingAttachments || !state.sessionId || state.stageZeroRunning;
@@ -779,9 +779,11 @@ function connectEvents() {
   if (state.source) state.source.close();
   state.connected = false;
   setStatus("", "Connecting");
-  const source = new EventSource(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/events`);
+  const sessionId = state.sessionId;
+  const source = new EventSource(`/api/chat/sessions/${encodeURIComponent(sessionId)}/events`);
   state.source = source;
   source.onopen = () => {
+    if (state.sessionId !== sessionId) return;
     const reconnect = state.chatStreamOpened;
     state.chatStreamOpened = true;
     state.connected = true;
@@ -789,9 +791,11 @@ function connectEvents() {
     else if (!state.generating) setStatus("connected", "Connected");
   };
   source.onmessage = (event) => {
+    if (state.sessionId !== sessionId) return;
     try { applyEvent(JSON.parse(event.data)); } catch { setStatus("error", "Invalid stream event"); }
   };
   source.onerror = () => {
+    if (state.sessionId !== sessionId) return;
     state.connected = false;
     if (!state.generating) setStatus("error", "Reconnecting");
   };
@@ -806,6 +810,7 @@ async function createSession({ persist = !isPopoutWindow } = {}) {
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
   state.sessionId = session.sessionId;
+  state.generating = false;
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   renderTranscript([]);
@@ -823,7 +828,10 @@ async function loadSessionById(sessionId, { persist = false } = {}) {
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   if ([...modelSelect.options].some((option) => option.value === session.model)) modelSelect.value = session.model;
-  renderTranscript(session.messages || []);
+  const messages = Array.isArray(session.messages) ? session.messages : [];
+  state.generating = messages.some((message) => message?.role === "assistant" && message?.state === "streaming");
+  renderTranscript(messages);
+  setStatus(state.generating ? "generating" : "connected", state.generating ? "Generating" : "Connected");
   connectEvents();
   updateControls();
   return session;
@@ -1635,7 +1643,7 @@ async function stopGeneration() {
 }
 
 async function newConversation() {
-  if (state.generating || state.preparingAttachments) return;
+  if (state.preparingAttachments) return;
   if (state.source) state.source.close();
   state.sessionId = null;
   state.pendingAttachments = [];
@@ -1647,6 +1655,14 @@ async function newConversation() {
   await createSession({ persist: !isPopoutWindow });
   input.focus();
 }
+
+window.koordynatorLoadChatSession = async (sessionId) => {
+  if (!sessionId || sessionId === state.sessionId) return true;
+  const loaded = await loadSessionById(sessionId, { persist: !isPopoutWindow });
+  if (!loaded) return false;
+  input.focus();
+  return true;
+};
 
 function resizeInput() {
   input.style.height = "auto";

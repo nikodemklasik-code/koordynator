@@ -35,11 +35,6 @@ function historyModelLabel(value) {
   return labels[value] || value || "model";
 }
 
-function historyIsGenerating() {
-  const stop = document.getElementById("stopButton");
-  return Boolean(stop && !stop.classList.contains("hidden"));
-}
-
 function closeHistory() {
   historyPanel?.classList.remove("open");
   historyPanel?.setAttribute("aria-hidden", "true");
@@ -100,9 +95,10 @@ function renderHistory(sessions, receipts = []) {
     const entry = document.createElement("div");
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `history-item${session.sessionId === activeSession ? " active" : ""}`;
-    button.disabled = historyIsGenerating() && session.sessionId !== activeSession;
-    button.title = session.title || "New chat";
+    button.className = `history-item${session.sessionId === activeSession ? " active" : ""}${session.generating ? " generating" : ""}`;
+    button.title = session.generating
+      ? `${session.title || "New chat"} · generating in background`
+      : session.title || "New chat";
 
     const title = document.createElement("span");
     title.className = "history-item-title";
@@ -116,15 +112,27 @@ function renderHistory(sessions, receipts = []) {
     const when = document.createElement("span");
     when.textContent = historyDate(session.updatedAt);
     meta.append(model, when);
+    if (session.generating) {
+      const running = document.createElement("span");
+      running.className = "history-item-running";
+      running.textContent = "● Generating";
+      meta.appendChild(running);
+    }
 
     button.append(title, meta);
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
       if (session.sessionId === localStorage.getItem(HISTORY_SESSION_KEY)) {
         closeHistory();
         return;
       }
-      if (historyIsGenerating()) return;
       localStorage.setItem(HISTORY_SESSION_KEY, session.sessionId);
+      if (typeof window.koordynatorLoadChatSession === "function") {
+        const loaded = await window.koordynatorLoadChatSession(session.sessionId);
+        if (loaded) {
+          closeHistory();
+          return;
+        }
+      }
       location.reload();
     });
     entry.appendChild(button);
@@ -545,7 +553,6 @@ historyCloseButton?.addEventListener("click", closeHistory);
 historyBackdrop?.addEventListener("click", closeHistory);
 historyRefreshButton?.addEventListener("click", () => void loadHistory());
 historyNewChatButton?.addEventListener("click", () => {
-  if (historyIsGenerating()) return;
   closeHistory();
   document.getElementById("newChatButton")?.click();
 });
