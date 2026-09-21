@@ -191,6 +191,7 @@
     if (!row || !unified || !input || !menuButton || !results || !role) {
       const picker = modelSelect.closest(".v5-model-picker") || modelSelect.parentElement;
       if (!picker) return;
+      const addAgent = document.getElementById("addAgentButton");
       const attach = document.getElementById("attachButton");
       const stop = document.getElementById("stopButton");
       const send = document.getElementById("sendButton");
@@ -225,6 +226,7 @@
       actions.textContent = "";
       unified.appendChild(picker);
       row.append(unified, role);
+      if (addAgent) row.appendChild(addAgent);
       if (attach) row.appendChild(attach);
       if (stop) row.appendChild(stop);
       if (send) row.appendChild(send);
