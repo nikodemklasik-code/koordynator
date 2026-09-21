@@ -26,7 +26,9 @@
     '<button id="localTerminalAccess" class="koord-access-pill checking" type="button"><i></i><span>Terminal</span><strong>…</strong></button>',
     '<button id="localDiskAccess" class="koord-access-pill checking" type="button"><i></i><span>Dyski</span><strong>…</strong></button>'
   ].join("");
-  if (github) github.before(access);
+  const workspaceGroup = document.querySelector('.koord-shell-tool-group[data-tool-group="workspace"]');
+  if (workspaceGroup) workspaceGroup.prepend(access);
+  else if (github && routebar.contains(github)) github.before(access);
   else routebar.appendChild(access);
 
   const terminalButton = document.getElementById("localTerminalAccess");
