@@ -560,9 +560,9 @@ export class ChatService {
   private async modelConclusionCandidates(
     session: ChatSession,
     messages: ConclusionSourceMessage[]
-  ): Promise<DeterminedConversationTask[]> {
+  ): Promise<{ tasks: DeterminedConversationTask[]; usedModel: boolean }> {
     const key = this.credential();
-    if (!key || !messages.length) return [];
+    if (!key || !messages.length) return { tasks: [], usedModel: false };
 
     const prompt = conclusionExtractionPrompt(messages);
     const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
@@ -571,6 +571,7 @@ export class ChatService {
       const billing = await this.authorizeModel?.(model);
       if (billing && !billing.allowed) continue;
 
+      const startedAt = now();
       let response: Response;
       try {
         response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
@@ -592,20 +593,44 @@ export class ChatService {
         continue;
       }
 
-      if ([401, 403].includes(response.status)) return [];
+      if ([401, 403].includes(response.status)) return { tasks: [], usedModel: false };
       if ([429, 502, 503, 504].includes(response.status)) continue;
       if (!response.ok) continue;
 
       const payload = await response.json().catch(() => null);
+      const completedAt = now();
+      const usage = extractProviderReportedUsage(payload);
+      try {
+        await this.usageLedger.append({
+          sessionId: session.sessionId,
+          messageId: `CONCLUSION-${randomUUID()}`,
+          model,
+          source: billing?.source ?? "UNKNOWN",
+          transport: "OMNIROUTE_API",
+          subscriptionHarnessUsed: false,
+          billingDecision: billing?.decision ?? "CONCLUSION_EXTRACTION_NO_BILLING_DECISION",
+          startedAt,
+          completedAt,
+          state: "complete",
+          ...(response.headers.get("x-request-id")
+            ? { providerRequestId: response.headers.get("x-request-id")! }
+            : {}),
+          ...(usage === undefined ? {} : { usage })
+        });
+      } catch {
+        throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+      }
+
       const text = extractCompletionText(payload).trim();
-      if (!text) continue;
+      if (!text) return { tasks: [], usedModel: true };
       const parsed = parseJsonObject(text);
-      const candidates = parseGroundedConclusionPayload(parsed, messages);
-      if (candidates.length) return candidates;
-      return [];
+      return {
+        tasks: parseGroundedConclusionPayload(parsed, messages),
+        usedModel: true
+      };
     }
 
-    return [];
+    return { tasks: [], usedModel: false };
   }
 
   async endConversation(sessionId: string): Promise<ConversationConclusionReceipt> {
@@ -622,13 +647,13 @@ export class ChatService {
       return session.conclusion;
     }
 
-    const modelCandidates = await this.modelConclusionCandidates(session, messages);
-    const detected = concludeConversation({ messages, modelCandidates });
+    const modelResult = await this.modelConclusionCandidates(session, messages);
+    const detected = concludeConversation({ messages, modelCandidates: modelResult.tasks });
     const tasks: ConversationConclusionTaskReceipt[] = [];
 
     for (const task of detected.tasks) {
       const previous = session.messages.find((message) =>
-        message.materialisationFingerprint === task.fingerprint && message.materialisedTaskId
+        message.materialisationFingerprint === materialisationFingerprint(task) && message.materialisedTaskId
       );
       if (previous?.materialisedTaskId) {
         tasks.push({ ...task, state: "MATERIALISED", taskId: previous.materialisedTaskId });
@@ -662,7 +687,7 @@ export class ChatService {
     const receipt: ConversationConclusionReceipt = {
       concludedAt,
       sourceFingerprint: detected.sourceFingerprint,
-      modelAssisted: modelCandidates.length > 0,
+      modelAssisted: modelResult.usedModel,
       tasks
     };
 
