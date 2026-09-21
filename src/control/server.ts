@@ -35,7 +35,7 @@ import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
 import { elevenLabsKey, studioProviderCatalog } from "./studio-provider-catalog.js";
 
-const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V3";
+const CONTROL_RUNTIME_REVISION = "PRODUCT_WORKSPACES_V4";
 
 export type ControlServerOptions = {
   stateDir: string;
