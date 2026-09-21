@@ -451,3 +451,164 @@ body.koord-shell-active .v5-route-note{display:none!important}
   .koord-access-pill span{display:none}
   body.koord-shell-active .runtime-terminal-summary span{display:none}
 }
+
+
+/* V1.2: chat and Hermes are independent vertical systems.
+   The chat composer owns a fixed grid row; Hermes has a compact terminal dock.
+   Nothing is absolutely floated over the global footer. */
+:root{
+  --chat-composer-height:124px;
+  --hermes-composer-height:52px;
+}
+
+body.koord-shell-active .v5-chat-pane{
+  display:grid!important;
+  grid-template-rows:46px minmax(0,1fr) var(--chat-composer-height)!important;
+  overflow:hidden!important;
+}
+
+body.koord-shell-active .v5-thread{
+  min-height:0!important;
+  padding:28px 0 24px!important;
+  overflow-y:auto!important;
+}
+
+body.koord-shell-active .v5-composer-zone{
+  position:relative!important;
+  inset:auto!important;
+  left:auto!important;
+  right:auto!important;
+  bottom:auto!important;
+  z-index:20!important;
+  width:100%!important;
+  height:var(--chat-composer-height)!important;
+  min-height:var(--chat-composer-height)!important;
+  max-height:var(--chat-composer-height)!important;
+  padding:7px 10px 8px!important;
+  display:flex!important;
+  align-items:stretch!important;
+  overflow:hidden!important;
+  pointer-events:auto!important;
+  border-top:1px solid #18232c!important;
+  background:#080c10!important;
+}
+
+body.koord-shell-active .v5-composer{
+  width:100%!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  margin:0!important;
+  display:grid!important;
+  grid-template-rows:minmax(44px,1fr) auto!important;
+  overflow:hidden!important;
+  border-radius:13px!important;
+}
+
+body.koord-shell-active .v5-composer textarea{
+  min-height:0!important;
+  height:100%!important;
+  max-height:none!important;
+  resize:none!important;
+  padding:11px 12px 6px!important;
+  overflow-y:auto!important;
+}
+
+body.koord-shell-active .v5-composer-actions{
+  min-height:0!important;
+  grid-template-rows:28px 30px!important;
+  padding:3px 7px 7px!important;
+}
+
+body.koord-shell-active .v5-send,
+body.koord-shell-active .v5-attach,
+body.koord-shell-active .v5-stop{
+  min-width:30px!important;
+  width:30px!important;
+  min-height:30px!important;
+  height:30px!important;
+  max-height:30px!important;
+  padding:0!important;
+  display:grid!important;
+  place-items:center!important;
+  line-height:1!important;
+  overflow:hidden!important;
+  align-self:center!important;
+}
+
+body.koord-shell-active .v5-send{
+  font-size:15px!important;
+}
+
+/* Hermes deliberately does not mirror chat's two-row composer.
+   It gets a compact single-row command dock. */
+body.koord-shell-active .v5-terminal-pane.runtime-monitor-installed{
+  display:grid!important;
+  grid-template-rows:44px 38px minmax(0,1fr) var(--hermes-composer-height) auto!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+
+body.koord-shell-active .v5-terminal-pane:not(.runtime-monitor-installed){
+  display:grid!important;
+  grid-template-rows:44px minmax(0,1fr) var(--hermes-composer-height) auto!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+
+body.koord-shell-active .v5-terminal,
+body.koord-shell-active .runtime-readable{
+  min-height:0!important;
+  overflow:auto!important;
+}
+
+body.koord-shell-active .v5-terminal-composer{
+  min-height:var(--hermes-composer-height)!important;
+  height:var(--hermes-composer-height)!important;
+  max-height:var(--hermes-composer-height)!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) 34px!important;
+  align-items:center!important;
+  gap:6px!important;
+  padding:6px 7px!important;
+  margin:0!important;
+  border-top:1px solid #1b242c!important;
+  background:#090d11!important;
+  overflow:hidden!important;
+}
+
+body.koord-shell-active .v5-terminal-composer textarea{
+  min-height:38px!important;
+  height:38px!important;
+  max-height:38px!important;
+  resize:none!important;
+  padding:9px 10px!important;
+  line-height:18px!important;
+  overflow-y:auto!important;
+}
+
+body.koord-shell-active .v5-terminal-send{
+  min-width:34px!important;
+  width:34px!important;
+  min-height:38px!important;
+  height:38px!important;
+  max-height:38px!important;
+  padding:0!important;
+  margin:0!important;
+  align-self:center!important;
+  display:grid!important;
+  place-items:center!important;
+  line-height:1!important;
+  font-size:15px!important;
+  overflow:hidden!important;
+  border-radius:8px!important;
+}
+
+/* Global footer is a separate application row, never a host for either composer. */
+body.koord-shell-active .v5-statusbar{
+  position:relative!important;
+  z-index:70!important;
+  min-height:26px!important;
+  height:26px!important;
+  flex:0 0 26px!important;
+}
