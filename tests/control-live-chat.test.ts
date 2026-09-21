@@ -65,6 +65,34 @@ function confirmedFreeCatalog(model = "openai/gpt-5.6-sol"): ChatModelCatalogPor
 }
 
 describe("Live Chat service", () => {
+  it("can use a loopback OmniRoute completion route without a redundant bearer key", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-noauth-"));
+    roots.push(root);
+    let authorization = "unset";
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      authorization = String(headers?.authorization ?? "");
+      return streamingFetch(["local-ok"])(input, init);
+    }) as typeof fetch;
+    const service = new ChatService({
+      stateDir: root,
+      endpoint: "http://127.0.0.1:20128/v1",
+      apiKey: " ",
+      fetchImpl
+    });
+    const session = await service.createSession("cx/gpt-5.6-sol");
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done" || event.type === "error") resolvePromise();
+      });
+    });
+    await service.startMessage(session.sessionId, "hello");
+    await done;
+    expect(authorization).toBe("");
+    expect((await service.getSession(session.sessionId))?.messages.at(-1)?.content).toBe("local-ok");
+    service.close();
+  });
+
   it("emits incremental assistant deltas, persists the transcript and never stores the API key", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-"));
     roots.push(root);
