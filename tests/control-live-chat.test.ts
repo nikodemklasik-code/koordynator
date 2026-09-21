@@ -65,6 +65,32 @@ function confirmedFreeCatalog(model = "openai/gpt-5.6-sol"): ChatModelCatalogPor
 }
 
 describe("Live Chat service", () => {
+  it("requests a long single-response output budget and allows configuration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-long-output-"));
+    roots.push(root);
+    const seen: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      seen.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return streamingFetch(["long-answer"])(_input, init);
+    }) as typeof fetch;
+    const service = new ChatService({
+      stateDir: root,
+      apiKey: "secret",
+      fetchImpl,
+      maxOutputTokens: 48_000
+    });
+    const session = await service.createSession("openai/gpt-5.6-sol");
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done" || event.type === "error") resolvePromise();
+      });
+    });
+    await service.startMessage(session.sessionId, "Give me the full detailed answer");
+    await done;
+    expect(seen[0]?.max_tokens).toBe(48_000);
+    service.close();
+  });
+
   it("persists chat titles, auto-titles the first message, allows rename and safe delete", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-title-"));
     roots.push(root);
