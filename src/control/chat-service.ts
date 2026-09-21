@@ -62,6 +62,14 @@ export type SharedAgentParticipant = {
   toIndex: number;
 };
 
+export type SharedAgentParticipantInput = {
+  sourceSessionId: string;
+  label?: string;
+  role?: string;
+  fromIndex?: number;
+  toIndex?: number;
+};
+
 export type SharedRoomMeta = {
   topic: string;
   participants: SharedAgentParticipant[];
