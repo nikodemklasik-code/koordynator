@@ -219,6 +219,7 @@ function parseAttachmentDataUrl(value: unknown, mimeType: string): { dataUrl: st
 }
 
 function sessionTitle(session: ChatSession): string {
+  if (session.sharedRoom?.topic) return `Shared · ${session.sharedRoom.topic}`;
   const firstUser = session.messages.find((message) => message.role === "user");
   const fromText = firstUser?.content.trim().replace(/\s+/g, " ");
   if (fromText) return fromText.length > 80 ? `${fromText.slice(0, 77)}…` : fromText;
@@ -419,7 +420,10 @@ export class ChatService {
           model: session.model,
           title: sessionTitle(session),
           messageCount: session.messages.length,
-          generating: this.active.has(session.sessionId) || session.messages.some((message) => message.role === "assistant" && message.state === "streaming")
+          generating: this.active.has(session.sessionId) || session.messages.some((message) => message.role === "assistant" && message.state === "streaming"),
+          sharedRoom: Boolean(session.sharedRoom),
+          participantCount: session.sharedRoom?.participants.length ?? 0,
+          ...(session.sharedRoom?.topic ? { topic: session.sharedRoom.topic } : {})
         } satisfies ChatSessionSummary;
       } catch {
         return null;
@@ -645,7 +649,7 @@ export class ChatService {
     await this.persist(session);
     this.checkpointAt.delete(session.sessionId);
     const audited = await this.recordUsage(assistant);
-    if (state === "complete") await this.maybeMaterialise(session, assistant);
+    if (state === "complete" && !session.sharedRoom) await this.maybeMaterialise(session, assistant);
     await this.persist(session);
     return audited;
   }
