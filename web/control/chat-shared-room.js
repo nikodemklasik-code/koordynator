@@ -7,6 +7,8 @@
   const topicInput = document.getElementById("sharedRoomTopic");
   const sourceSelect = document.getElementById("sharedRoomSourceSession");
   const secondRole = document.getElementById("sharedRoomSecondRole");
+  const starterSelect = document.getElementById("sharedRoomStarter");
+  const roundsSelect = document.getElementById("sharedRoomRounds");
   const currentAgent = document.getElementById("sharedRoomCurrentAgent");
   const createButton = document.getElementById("sharedRoomCreateButton");
   const errorBox = document.getElementById("sharedRoomError");
@@ -37,14 +39,16 @@
 
   function ensureRoomBar() {
     let bar = document.getElementById("sharedRoomBar");
-    if (bar) return bar;
-    const chatPane = document.getElementById("chatFrame");
     const thread = document.getElementById("chatThread");
-    if (!chatPane || !thread) return null;
+    if (!thread) return null;
+    if (bar) {
+      if (bar.parentElement !== thread) thread.prepend(bar);
+      return bar;
+    }
     bar = document.createElement("div");
     bar.id = "sharedRoomBar";
     bar.className = "shared-room-bar hidden";
-    thread.before(bar);
+    thread.prepend(bar);
     return bar;
   }
 
@@ -75,8 +79,9 @@
     bar.replaceChildren();
     const title = document.createElement("div");
     title.className = "shared-room-bar-title";
-    title.innerHTML = '<span>SHARED ROOM</span><strong></strong>';
+    title.innerHTML = '<span>SHARED ROOM · AUTONOMOUS DEBATE</span><strong></strong><small></small>';
     title.querySelector("strong").textContent = room.topic || "Shared project";
+    title.querySelector("small").textContent = `${room.rounds || 3} round${(room.rounds || 3) === 1 ? "" : "s"} · order set by user`;
 
     const participants = document.createElement("div");
     participants.className = "shared-room-participants";
@@ -180,6 +185,19 @@
 
     const second = sessionSummaries.find((item) => item.sessionId === secondSessionId);
     if (!second) return showError("The selected conversation is no longer available.");
+    const rounds = Number(roundsSelect?.value || "3");
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5) return showError("Wybierz od 1 do 5 rund dyskusji.");
+    const currentParticipant = {
+      sourceSessionId: currentSession.sessionId,
+      role: roleValue()
+    };
+    const secondParticipant = {
+      sourceSessionId: secondSessionId,
+      role: String(secondRole?.value || "GENERAL")
+    };
+    const participants = starterSelect?.value === "second"
+      ? [secondParticipant, currentParticipant]
+      : [currentParticipant, secondParticipant];
 
     createButton.disabled = true;
     createButton.textContent = "Tworzę wspólny czat…";
@@ -189,16 +207,8 @@
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({
           topic,
-          participants: [
-            {
-              sourceSessionId: currentSession.sessionId,
-              role: roleValue()
-            },
-            {
-              sourceSessionId: secondSessionId,
-              role: String(secondRole?.value || "GENERAL")
-            }
-          ]
+          rounds,
+          participants
         })
       });
       const payload = await response.json().catch(() => ({}));
