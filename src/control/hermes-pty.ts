@@ -155,7 +155,7 @@ export class HermesPtySession {
         this.handle = null;
         this.sessionId = null;
         this.launch = null;
-        void close?.().catch(() => undefined);
+        if (close) void close().catch(() => undefined);
       }
       this.subscribers.delete(sessionId);
     });
@@ -195,7 +195,7 @@ export class HermesPtySession {
     this.sessionId = null;
     this.launch = null;
     if (activeSessionId) this.subscribers.delete(activeSessionId);
-    void close?.().catch(() => undefined);
+    if (close) void close().catch(() => undefined);
     return { stopped: true };
   }
 
