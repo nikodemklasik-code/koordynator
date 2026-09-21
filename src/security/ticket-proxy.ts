@@ -9,7 +9,7 @@ export type TicketProxy = {
 
 export type TicketProxyOptions = {
   upstream: string;
-  apiKey: string;
+  apiKey?: string;
   secret: string;
   audience?: TicketAudience;
   fetchImpl?: typeof fetch;
@@ -41,8 +41,18 @@ function send(response: ServerResponse, status: number, code: string): void {
   response.end(JSON.stringify({ error: code }));
 }
 
+function isLoopbackEndpoint(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 export async function startTicketProxy(options: TicketProxyOptions): Promise<TicketProxy> {
-  if (!options.apiKey.trim()) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
+  const apiKey = options.apiKey?.trim() || "";
+  if (!apiKey && !isLoopbackEndpoint(options.upstream)) throw new Error("OMNIROUTE_API_KEY_REQUIRED");
   if (!options.secret.trim()) throw new Error("TICKET_SECRET_REQUIRED");
   const upstream = options.upstream.replace(/\/+$/, "");
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -74,7 +84,7 @@ export async function startTicketProxy(options: TicketProxyOptions): Promise<Tic
         const incoming = new URL(request.url ?? "/", "http://127.0.0.1");
         const rest = incoming.pathname.startsWith("/v1") ? incoming.pathname.slice(3) : incoming.pathname;
         const target = `${upstream}${rest}${incoming.search}`;
-        const headers: Record<string, string> = { authorization: `Bearer ${options.apiKey}` };
+        const headers: Record<string, string> = apiKey ? { authorization: `Bearer ${apiKey}` } : {};
         for (const [key, value] of Object.entries(request.headers)) {
           if (typeof value !== "string" || HOP.has(key)) continue;
           headers[key] = value;
