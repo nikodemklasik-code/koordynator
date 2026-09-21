@@ -784,13 +784,29 @@ button { color: inherit; }
 .shared-room-current span{font-size:9px;color:#7f93a2;text-align:right}
 .shared-room-form #sharedRoomError{position:static!important;margin:0 16px!important;width:auto!important}
 .shared-room-bar{
-  min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;
-  border-bottom:1px solid #2b3353;background:linear-gradient(90deg,#121427,#0b121b)
+  position:sticky!important;
+  top:0!important;
+  z-index:32!important;
+  min-height:48px!important;
+  max-height:64px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:space-between!important;
+  gap:10px!important;
+  margin:-28px 0 18px!important;
+  padding:6px 10px!important;
+  border:1px solid #2b3353!important;
+  border-left:0!important;
+  border-right:0!important;
+  background:rgba(12,16,28,.96)!important;
+  backdrop-filter:blur(10px)!important;
+  box-shadow:0 8px 20px rgba(0,0,0,.22)!important;
 }
 .shared-room-bar.hidden{display:none!important}
-.shared-room-bar-title{display:grid;gap:2px;flex:0 0 auto}
-.shared-room-bar-title span{color:#777bb4;font-size:7px;font-weight:900;letter-spacing:.12em}
-.shared-room-bar-title strong{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#f0efff}
+.shared-room-bar-title{display:grid;gap:1px;flex:0 1 300px;min-width:0}
+.shared-room-bar-title span{color:#777bb4;font-size:6.5px;font-weight:900;letter-spacing:.12em}
+.shared-room-bar-title strong{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10.5px;color:#f0efff}
+.shared-room-bar-title small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#70779c;font-size:7px}
 .shared-room-participants{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;overflow-x:auto;scrollbar-width:none}
 .shared-room-participants::-webkit-scrollbar{display:none}
 .shared-room-participant{
@@ -831,7 +847,14 @@ button { color: inherit; }
 #sharedRoomTopic:focus{border-color:#8588d2!important;box-shadow:0 0 0 3px rgba(133,136,210,.16)!important}
 #sharedRoomTopic.invalid{border-color:#9b4c59!important;box-shadow:0 0 0 3px rgba(155,76,89,.14)!important}
 @media(max-width:760px){
-  .shared-room-bar{align-items:flex-start;flex-direction:column}
+  .shared-room-bar{
+    position:sticky!important;
+    top:0!important;
+    max-height:none!important;
+    margin:-28px -8px 14px!important;
+    align-items:flex-start!important;
+    flex-direction:column!important
+  }
   .shared-room-participants{width:100%;justify-content:flex-start}
   .shared-room-participant{flex:0 0 auto}
   .v5-agent-button{min-width:48px!important;padding:0 8px!important}
