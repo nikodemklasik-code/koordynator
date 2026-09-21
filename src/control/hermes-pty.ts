@@ -26,7 +26,7 @@ export type HermesLaunchSpec = {
 
 export type HermesPtyHooks = {
   spawn?: (spec: HermesLaunchSpec & { cols: number; rows: number }) => PtyHandle;
-  prepare?: (model?: string) => Promise<HermesLaunchSpec>;
+  prepare?: (model?: string, context?: HermesWorkspaceContext) => Promise<HermesLaunchSpec>;
 };
 
 export type HermesPtyEvent =
