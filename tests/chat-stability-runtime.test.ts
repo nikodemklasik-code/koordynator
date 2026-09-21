@@ -40,7 +40,7 @@ describe("chat runtime stability", () => {
       );
       await writeFile(path, `${JSON.stringify(stored, null, 2)}\n`, "utf8");
 
-      const recovered = await chat.getSession(session.sessionId);
+      const recovered = await chat.recoverSession(session.sessionId);
       expect(recovered?.messages.at(-1)).toMatchObject({
         role: "assistant",
         content: "partial answer",
