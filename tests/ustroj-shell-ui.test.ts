@@ -9,9 +9,9 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=1');
-    expect(html).toContain('/chat-shell.js?v=1');
-    expect(html.indexOf('/chat-shell.js?v=1')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=5'));
+    expect(html).toContain('/chat-shell.css?v=2');
+    expect(html).toContain('/chat-shell.js?v=2');
+    expect(html.indexOf('/chat-shell.js?v=2')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=5'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
     expect(css).toContain(".importance-1");
@@ -55,6 +55,10 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain(".koord-local-access");
     expect(css).toContain("max-height:176px!important");
     expect(css).toContain("grid-template-columns:auto auto minmax(0,1fr) auto auto!important");
+    expect(css).toContain("grid-template-rows:46px minmax(0,1fr) var(--chat-composer-height)!important");
+    expect(css).toContain("position:relative!important");
+    expect(css).toContain("grid-template-columns:minmax(0,1fr) 34px!important");
+    expect(css).toContain("height:var(--hermes-composer-height)!important");
     expect(localAccess).toContain('id="localTerminalAccess"');
     expect(localAccess).toContain('id="localDiskAccess"');
     expect(localAccess).toContain('grant: "local-files"');
