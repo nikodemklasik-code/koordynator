@@ -52,6 +52,15 @@
     const bar = ensureRoomBar();
     if (!bar) return;
     const room = session?.sharedRoom;
+    const modelSearch = document.getElementById("modelSearchInput");
+    const modelMenu = document.getElementById("modelMenuButton");
+    if (modelSearch) {
+      modelSearch.disabled = Boolean(room);
+      if (room) modelSearch.value = "Shared Room · per-agent models";
+    }
+    if (modelMenu) modelMenu.disabled = Boolean(room);
+    if (modelRoleFilter) modelRoleFilter.disabled = Boolean(room);
+
     if (!room) {
       bar.classList.add("hidden");
       bar.replaceChildren();
