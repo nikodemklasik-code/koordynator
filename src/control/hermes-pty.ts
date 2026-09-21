@@ -26,7 +26,7 @@ export type HermesLaunchSpec = {
 
 export type HermesPtyHooks = {
   spawn?: (spec: HermesLaunchSpec & { cols: number; rows: number }) => PtyHandle;
-  prepare?: () => Promise<HermesLaunchSpec>;
+  prepare?: (model?: string) => Promise<HermesLaunchSpec>;
 };
 
 export type HermesPtyEvent =
@@ -127,20 +127,20 @@ export class HermesPtySession {
     private readonly options: {
       stateDir: string;
       spawn?: HermesPtyHooks["spawn"];
-      prepare: () => Promise<HermesLaunchSpec>;
+      prepare: (model?: string) => Promise<HermesLaunchSpec>;
     }
   ) {
     this.grants = new HermesGrantStore(options.stateDir);
   }
 
-  async start(size: { cols?: unknown; rows?: unknown } = {}): Promise<{ sessionId: string; cols: number; rows: number; pid: number | null }> {
+  async start(size: { cols?: unknown; rows?: unknown } = {}, model?: string): Promise<{ sessionId: string; cols: number; rows: number; pid: number | null; model: string | null }> {
     const grant = await this.grants.status();
     if (!grant.terminal) throw new HermesPtyError("HERMES_TERMINAL_REQUIRED", 403);
     this.stop();
     const bounded = hermesSize(size);
     this.cols = bounded.cols;
     this.rows = bounded.rows;
-    const spec = await this.options.prepare();
+    const spec = await this.options.prepare(model);
     const spawnPty = this.options.spawn ?? ((launch: HermesLaunchSpec & { cols: number; rows: number }) => spawnScriptPty(launch));
     const handle = spawnPty({ ...spec, cols: this.cols, rows: this.rows });
     const sessionId = randomUUID();
@@ -151,12 +151,16 @@ export class HermesPtySession {
     handle.onExit((code) => {
       this.emit(sessionId, { type: "exit", code });
       if (this.sessionId === sessionId) {
+        const close = this.launch?.close;
         this.handle = null;
         this.sessionId = null;
+        this.launch = null;
+        void close?.().catch(() => undefined);
       }
+      this.subscribers.delete(sessionId);
     });
     try { handle.resize(this.cols, this.rows); } catch { /* optional */ }
-    return { sessionId, cols: this.cols, rows: this.rows, pid: handle.pid ?? null };
+    return { sessionId, cols: this.cols, rows: this.rows, pid: handle.pid ?? null, model: model ?? null };
   }
 
   status(): { running: boolean; sessionId: string | null; cols: number; rows: number; pid: number | null } {
@@ -185,11 +189,13 @@ export class HermesPtySession {
     }
     if (!this.handle) return { stopped: false };
     try { this.handle.kill(); } catch { /* gone */ }
+    const activeSessionId = this.sessionId;
     const close = this.launch?.close;
     this.handle = null;
     this.sessionId = null;
     this.launch = null;
-    void close?.();
+    if (activeSessionId) this.subscribers.delete(activeSessionId);
+    void close?.().catch(() => undefined);
     return { stopped: true };
   }
 
