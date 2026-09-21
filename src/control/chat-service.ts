@@ -407,6 +407,325 @@ export class ChatService {
     return session;
   }
 
+  async createSharedRoom(topicValue: unknown, inputs: SharedAgentParticipantInput[]): Promise<ChatSession> {
+    const topic = safeSharedText(topicValue, "CHAT_SHARED_TOPIC_INVALID", 160);
+    if (!Array.isArray(inputs) || inputs.length < 2 || inputs.length > 4) {
+      throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
+    }
+
+    const participants: SharedAgentParticipant[] = [];
+    const seen = new Set<string>();
+    for (const input of inputs) {
+      if (typeof input !== "object" || input === null || Array.isArray(input)) {
+        throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
+      }
+      const sourceSessionId = String(input.sourceSessionId ?? "").trim();
+      if (!SESSION_RE.test(sourceSessionId) || seen.has(sourceSessionId)) {
+        throw new ChatServiceError("CHAT_SHARED_SOURCE_INVALID", 400);
+      }
+      seen.add(sourceSessionId);
+
+      const source = await this.getSession(sourceSessionId);
+      if (!source) throw new ChatServiceError("CHAT_SHARED_SOURCE_NOT_FOUND", 404);
+      if (source.sharedRoom) throw new ChatServiceError("CHAT_SHARED_NESTED_ROOM_FORBIDDEN", 400);
+      if (source.messages.length === 0) throw new ChatServiceError("CHAT_SHARED_SOURCE_EMPTY", 400);
+
+      const fromIndex = input.fromIndex === undefined ? 0 : Number(input.fromIndex);
+      const toIndex = input.toIndex === undefined ? source.messages.length - 1 : Number(input.toIndex);
+      if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex < 0 || toIndex < fromIndex || toIndex >= source.messages.length) {
+        throw new ChatServiceError("CHAT_SHARED_RANGE_INVALID", 400);
+      }
+
+      const defaultLabel = sessionTitle(source).replace(/^Shared · /, "").slice(0, 60) || `Agent ${participants.length + 1}`;
+      const label = input.label === undefined ? defaultLabel : safeSharedText(input.label, "CHAT_SHARED_LABEL_INVALID", 60);
+      const role = safeSharedRole(input.role ?? "GENERAL");
+      participants.push({
+        agentId: randomUUID(),
+        label,
+        role,
+        model: source.model,
+        sourceSessionId,
+        fromIndex,
+        toIndex
+      });
+    }
+
+    const timestamp = now();
+    const session: ChatSession = {
+      sessionId: randomUUID(),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      model: participants[0]!.model,
+      messages: [],
+      sharedRoom: { topic, participants }
+    };
+    await this.persist(session);
+    return session;
+  }
+
+  private async sharedParticipantContext(participant: SharedAgentParticipant): Promise<string> {
+    const source = await this.getSession(participant.sourceSessionId);
+    if (!source) throw new ChatServiceError("CHAT_SHARED_SOURCE_NOT_FOUND", 404);
+    const rows: string[] = [];
+    for (let index = participant.fromIndex; index <= participant.toIndex; index += 1) {
+      const message = source.messages[index];
+      if (!message || message.state === "error" || message.state === "streaming") continue;
+      const author = message.role === "user" ? "USER" : "SOURCE AGENT";
+      const attachmentText = (message.attachments ?? []).map((attachment) => {
+        const extracted = attachment.extractedText?.trim();
+        return extracted
+          ? `[Attachment: ${attachment.name}; ${attachment.extractionStatus ?? "EXTRACTED"}]\n${extracted}`
+          : `[Attachment: ${attachment.name}; ${attachment.extractionStatus ?? "NO_TEXT"}; content not available as text]`;
+      }).join("\n");
+      const body = [message.content.trim(), attachmentText].filter(Boolean).join("\n");
+      if (body) rows.push(`${author}: ${body}`);
+    }
+    return rows.join("\n\n").slice(0, 48_000);
+  }
+
+  private sharedTranscript(session: ChatSession, excludingMessageId?: string): string {
+    const rows = session.messages
+      .filter((message) => message.id !== excludingMessageId && message.state !== "error")
+      .slice(-40)
+      .map((message) => {
+        const author = message.role === "user"
+          ? "USER"
+          : message.agentLabel
+            ? `AGENT ${message.agentLabel}`
+            : "AGENT";
+        return `${author}: ${message.content.trim()}`;
+      })
+      .filter((row) => !row.endsWith(": "));
+    return rows.join("\n\n").slice(-48_000);
+  }
+
+  private async generateSharedAgent(
+    session: ChatSession,
+    assistant: ChatMessage,
+    participant: SharedAgentParticipant,
+    controller: AbortController,
+    key: string
+  ): Promise<void> {
+    const billing = await this.authorizeModel?.(participant.model);
+    if (billing && !billing.allowed) throw new ChatServiceError("CHAT_SHARED_AGENT_BILLING_DENIED", 403);
+    if (billing) assistant.billing = billing;
+
+    const sourceContext = await this.sharedParticipantContext(participant);
+    const transcript = this.sharedTranscript(session, assistant.id);
+    const system = [
+      `You are ${participant.label}, an AI agent in a shared project room.`,
+      `ROLE: ${participant.role}`,
+      `SHARED TOPIC: ${session.sharedRoom?.topic ?? "shared project"}`,
+      "Keep your source-project identity and expertise. Use only the source context below plus the shared-room transcript.",
+      "Treat other named agents as peers. Respond to their concrete points, identify dependencies or contradictions, and move the shared topic toward an implementable agreement.",
+      "Do not invent facts from the other project. If a dependency is missing, state exactly what the other agent or user must supply.",
+      `SOURCE CONVERSATION CONTEXT:\n${sourceContext || "(no readable source context)"}`
+    ].join("\n\n");
+
+    const userContent = [
+      "SHARED ROOM TRANSCRIPT:",
+      transcript || "(room just created)",
+      "",
+      "Continue the discussion as your named agent. Focus only on the shared topic."
+    ].join("\n");
+
+    this.emit(session.sessionId, {
+      type: "process_update",
+      update: {
+        sessionId: session.sessionId,
+        stage: "EXECUTION",
+        agent: participant.label,
+        process: `Shared Room · ${session.sharedRoom?.topic ?? "collaboration"}`,
+        progress: 45,
+        activity: `Agent ${participant.label} is reading shared context`,
+        model: participant.model
+      }
+    });
+
+    const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: participant.model,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: userContent }
+        ],
+        stream: true,
+        stream_options: { include_usage: true }
+      }),
+      signal: controller.signal
+    });
+
+    if (response.status === 401 || response.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+    if (response.status === 429) throw new ChatServiceError("CHAT_RATE_LIMITED", 429);
+    if (!response.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${response.status}`, 502);
+    if (!response.body) throw new ChatServiceError("CHAT_STREAM_MISSING", 502);
+    const providerRequestId = response.headers.get("x-request-id") ?? undefined;
+    if (providerRequestId) assistant.providerRequestId = providerRequestId;
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let pending = "";
+    let done = false;
+    let announced = false;
+    while (!done) {
+      const part = await reader.read();
+      done = part.done;
+      pending += decoder.decode(part.value ?? new Uint8Array(), { stream: !done });
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        let parsed: unknown;
+        try { parsed = JSON.parse(data); } catch { continue; }
+        const usage = extractProviderReportedUsage(parsed);
+        if (usage) assistant.usage = mergeUsage(assistant.usage, usage);
+        const delta = extractDelta(parsed);
+        if (!delta) continue;
+        if (!announced) {
+          announced = true;
+          this.emit(session.sessionId, {
+            type: "process_update",
+            update: {
+              sessionId: session.sessionId,
+              stage: "STREAMING",
+              agent: participant.label,
+              process: `Shared Room · ${session.sharedRoom?.topic ?? "collaboration"}`,
+              progress: 70,
+              activity: `Receiving ${participant.label} output`,
+              model: participant.model
+            }
+          });
+        }
+        assistant.content += delta;
+        session.updatedAt = now();
+        this.checkpoint(session);
+        this.emit(session.sessionId, { type: "assistant_delta", sessionId: session.sessionId, messageId: assistant.id, delta });
+      }
+    }
+
+    if (!assistant.content.trim()) throw new ChatServiceError("CHAT_RESPONSE_EMPTY", 502);
+    const audited = await this.finalize(session, assistant, "complete");
+    if (!audited) throw new ChatServiceError("CHAT_USAGE_LEDGER_WRITE_FAILED", 503);
+    this.emit(session.sessionId, { type: "assistant_done", message: assistant });
+  }
+
+  private async runSharedTurn(session: ChatSession, controller: AbortController, key: string): Promise<void> {
+    const participants = session.sharedRoom?.participants ?? [];
+    for (const participant of participants) {
+      if (controller.signal.aborted) break;
+      const assistant: ChatMessage = {
+        id: randomUUID(),
+        sessionId: session.sessionId,
+        role: "assistant",
+        content: "",
+        createdAt: now(),
+        state: "streaming",
+        model: participant.model,
+        agentId: participant.agentId,
+        agentLabel: participant.label,
+        agentRole: participant.role,
+        sourceSessionId: participant.sourceSessionId
+      };
+      session.messages.push(assistant);
+      session.updatedAt = now();
+      await this.persist(session);
+      this.emit(session.sessionId, { type: "assistant_start", message: assistant });
+
+      try {
+        await this.generateSharedAgent(session, assistant, participant, controller, key);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          await this.finalize(session, assistant, "stopped");
+          this.emit(session.sessionId, { type: "stopped", message: assistant });
+          break;
+        }
+        const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_SHARED_AGENT_FAILED";
+        if (!assistant.content.trim()) assistant.content = `Agent unavailable: ${code}`;
+        await this.finalize(session, assistant, "error");
+        this.emit(session.sessionId, { type: "assistant_done", message: assistant });
+      }
+    }
+
+    if (!controller.signal.aborted) {
+      this.emit(session.sessionId, {
+        type: "process_update",
+        update: {
+          sessionId: session.sessionId,
+          stage: "DONE",
+          agent: "Shared Room",
+          process: `Shared Room · ${session.sharedRoom?.topic ?? "collaboration"}`,
+          progress: 100,
+          activity: "All room agents completed this turn"
+        }
+      });
+    }
+  }
+
+  async startSharedMessage(sessionId: string, messageText: string, rawAttachments?: unknown) {
+    if (this.starting.has(sessionId) || this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
+    this.starting.add(sessionId);
+    try {
+      const text = messageText.trim();
+      const attachments = this.normalizeAttachments(rawAttachments);
+      if (!text && attachments.length === 0) throw new ChatServiceError("CHAT_MESSAGE_EMPTY", 400);
+      if (Buffer.byteLength(text, "utf8") > this.maxMessageBytes) throw new ChatServiceError("CHAT_MESSAGE_TOO_LARGE", 413);
+
+      const session = await this.getSession(sessionId);
+      if (!session?.sharedRoom) throw new ChatServiceError("CHAT_SHARED_ROOM_NOT_FOUND", 404);
+      const key = this.credential();
+      if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+      try { await this.usageLedger.ensureWritable(); }
+      catch { throw new ChatServiceError("CHAT_USAGE_LEDGER_UNAVAILABLE", 503); }
+
+      for (const attachment of attachments) {
+        try {
+          const bytes = Buffer.from(attachment.dataUrl.split(",")[1]!, "base64");
+          const read = await readAttachment(bytes, attachment.name, attachment.mimeType);
+          attachment.extractionStatus = read.status;
+          attachment.mimeType = read.detected;
+          attachment.dataUrl = `data:${read.detected};base64,${bytes.toString("base64")}`;
+          if (read.text !== undefined) attachment.extractedText = read.text;
+        } catch (error) {
+          throw new ChatServiceError(error instanceof Error && /^CHAT_[A-Z_]+$/.test(error.message) ? error.message : "CHAT_ATTACHMENT_PARSE_FAILED", 422);
+        }
+      }
+
+      const user: ChatMessage = {
+        id: randomUUID(),
+        sessionId,
+        role: "user",
+        content: text,
+        createdAt: now(),
+        state: "complete",
+        ...(attachments.length ? { attachments } : {})
+      };
+      session.messages.push(user);
+      session.updatedAt = now();
+      await this.persist(session);
+      this.emit(sessionId, { type: "user_message", message: user });
+
+      const controller = new AbortController();
+      const turnId = randomUUID();
+      this.active.set(sessionId, { controller, messageId: turnId });
+      void this.runSharedTurn(session, controller, key).finally(() => {
+        const current = this.active.get(sessionId);
+        if (current?.messageId === turnId) this.active.delete(sessionId);
+      });
+      return {
+        accepted: true,
+        sharedRoom: true,
+        participantCount: session.sharedRoom.participants.length,
+        topic: session.sharedRoom.topic
+      };
+    } finally {
+      this.starting.delete(sessionId);
+    }
+  }
+
   async listSessions(limit = 50): Promise<ChatSessionSummary[]> {
     const boundedLimit = Number.isInteger(limit) ? Math.min(Math.max(limit, 1), 100) : 50;
     let names: string[];
