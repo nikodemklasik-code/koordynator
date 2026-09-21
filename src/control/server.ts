@@ -477,6 +477,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 201, {
           sessionId: session.sessionId,
           model: session.model,
+          title: session.title ?? "New chat",
           createdAt: session.createdAt,
           ...(selected.recoveredFrom === undefined ? {} : { recoveredFromModel: selected.recoveredFrom })
         });
