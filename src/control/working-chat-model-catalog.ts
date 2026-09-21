@@ -1,3 +1,5 @@
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
 import {
   ChatModelCatalogError,
   type ChatModelBillingSource,
@@ -40,6 +42,8 @@ export type WorkingChatModelCatalog = ChatModelCatalog & {
     limitedModels: string[];
     candidatesTested: number;
     checkedAt: string;
+    recoveryMode?: "LIVE" | "LAST_KNOWN_GOOD" | "TRUSTED_CONFIG";
+    recoveryReason?: string;
   };
 };
 
@@ -50,6 +54,8 @@ export type WorkingChatModelCatalogOptions = ChatModelCatalogOptions & {
   targetActive?: number;
   probeConcurrency?: number;
   cacheTtlMs?: number;
+  snapshotPath?: string;
+  snapshotMaxAgeMs?: number;
 };
 
 const ACTIVE_SOURCES = new Set<ChatModelBillingSource>([
@@ -217,6 +223,8 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
   private readonly targetActive: number;
   private readonly probeConcurrency: number;
   private readonly cacheTtlMs: number;
+  private readonly snapshotPath: string | undefined;
+  private readonly snapshotMaxAgeMs: number;
   private cache: { value: WorkingChatModelCatalog; expiresAt: number } | null = null;
 
   constructor(options: WorkingChatModelCatalogOptions = {}) {
@@ -230,6 +238,8 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
     this.targetActive = Math.max(1, Math.min(16, options.targetActive ?? 10));
     this.probeConcurrency = Math.max(1, Math.min(6, options.probeConcurrency ?? 4));
     this.cacheTtlMs = Math.max(5_000, options.cacheTtlMs ?? 20_000);
+    this.snapshotPath = options.snapshotPath?.trim() ? resolve(options.snapshotPath) : undefined;
+    this.snapshotMaxAgeMs = Math.max(60_000, options.snapshotMaxAgeMs ?? 24 * 60 * 60 * 1000);
     this.upstream = options.catalog ?? new LiveChatModelCatalogService({
       endpoint: this.endpoint,
       ...(options.apiKey === undefined ? {} : { apiKey: options.apiKey }),
@@ -305,31 +315,26 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
     return probes.filter(Boolean);
   }
 
-  async list(force = false): Promise<WorkingChatModelCatalog> {
-    const now = Date.now();
-    if (!force && this.cache && this.cache.expiresAt > now) return this.cache.value;
-
-    const base = await this.upstream.list();
-    const candidates = chooseAliases(base, this.preferredModels).slice(0, this.maxCandidates);
-    if (!candidates.length) throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_NO_CANDIDATES", 503);
-
-    const probes = await this.probeCandidates(candidates, this.credential());
-    const activeModels = probes.filter((probe) => probe.health === "HEALTHY").map((probe) => probe.model);
-    if (!activeModels.length) throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_EMPTY", 503);
-
-    const activeSet = new Set(activeModels);
-    const entries = base.entries?.filter((entry) => activeSet.has(entry.id));
-    const modelSources = pickRecord(base.billing?.modelSources, activeSet) ?? {};
-    const modelRoutes = pickRecord<ChatModelRoute>(base.billing?.modelRoutes, activeSet);
-    const freeModels = activeModels.filter((model) => FREE_SOURCES.has(modelSources[model] ?? sourceOf(base, model)));
-    const subscriptionModels = activeModels.filter((model) => (modelSources[model] ?? sourceOf(base, model)) === "SUBSCRIPTION_HARNESS");
+  private buildCatalog(
+    base: ChatModelCatalog,
+    models: string[],
+    probes: WorkingRouteProbe[],
+    recoveryMode: "LIVE" | "TRUSTED_CONFIG" = "LIVE",
+    recoveryReason?: string
+  ): WorkingChatModelCatalog {
+    const modelSet = new Set(models);
+    const entries = base.entries?.filter((entry) => modelSet.has(entry.id));
+    const modelSources = pickRecord(base.billing?.modelSources, modelSet) ?? {};
+    const modelRoutes = pickRecord<ChatModelRoute>(base.billing?.modelRoutes, modelSet);
+    const freeModels = models.filter((model) => FREE_SOURCES.has(modelSources[model] ?? sourceOf(base, model)));
+    const subscriptionModels = models.filter((model) => (modelSources[model] ?? sourceOf(base, model)) === "SUBSCRIPTION_HARNESS");
     const limitedModels = probes.filter((probe) => probe.health === "RATE_LIMITED").map((probe) => probe.model);
     const baseInventory = (base as Partial<LiveChatModelCatalog>).inventory;
     const checkedAt = new Date().toISOString();
 
-    const value: WorkingChatModelCatalog = {
+    return {
       ...base,
-      models: activeModels,
+      models,
       ...(entries === undefined ? {} : { entries: entries as ChatModelEntry[] }),
       ...(base.billing === undefined ? {} : {
         billing: {
@@ -343,19 +348,110 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
         verifiedFreeModels: baseInventory?.verifiedFreeModels ?? freeModels.length,
         freeCandidates: baseInventory?.freeCandidates ?? freeModels.length,
         executableModels: baseInventory?.executableModels ?? base.models.length,
-        activeModels: activeModels.length
+        activeModels: recoveryMode === "LIVE" ? models.length : 0
       },
       workingSet: {
-        activeModels,
+        activeModels: recoveryMode === "LIVE" ? models : [],
         freeModels,
         subscriptionModels,
         limitedModels,
         candidatesTested: probes.length,
-        checkedAt
+        checkedAt,
+        recoveryMode,
+        ...(recoveryReason === undefined ? {} : { recoveryReason })
       }
     };
+  }
 
-    this.cache = { value, expiresAt: now + this.cacheTtlMs };
-    return value;
+  private async saveSnapshot(value: WorkingChatModelCatalog): Promise<void> {
+    if (!this.snapshotPath) return;
+    try {
+      await mkdir(dirname(this.snapshotPath), { recursive: true, mode: 0o700 });
+      const tmp = `${this.snapshotPath}.${process.pid}.tmp`;
+      await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+      await rename(tmp, this.snapshotPath);
+    } catch {
+      // A snapshot is resilience only; inability to persist it must not break live routing.
+    }
+  }
+
+  private async loadSnapshot(reason: string): Promise<WorkingChatModelCatalog | null> {
+    if (!this.snapshotPath) return null;
+    try {
+      const parsed = JSON.parse(await readFile(this.snapshotPath, "utf8")) as WorkingChatModelCatalog;
+      if (!Array.isArray(parsed.models) || parsed.models.length === 0) return null;
+      const checkedAt = Date.parse(parsed.workingSet?.checkedAt ?? parsed.checkedAt);
+      if (!Number.isFinite(checkedAt) || Date.now() - checkedAt > this.snapshotMaxAgeMs) return null;
+      return {
+        ...parsed,
+        workingSet: {
+          ...parsed.workingSet,
+          recoveryMode: "LAST_KNOWN_GOOD",
+          recoveryReason: reason
+        }
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private trustedConfiguredFallback(base: ChatModelCatalog, candidates: string[]): string[] {
+    const candidateSet = new Set(candidates);
+    return this.preferredModels
+      .map(safeModel)
+      .filter((model): model is string => Boolean(model))
+      .filter((model) => candidateSet.has(model))
+      .filter((model, index, all) => all.indexOf(model) === index);
+  }
+
+  async list(force = false): Promise<WorkingChatModelCatalog> {
+    const now = Date.now();
+    if (!force && this.cache && this.cache.expiresAt > now) return this.cache.value;
+
+    let base: ChatModelCatalog;
+    try {
+      base = await this.upstream.list();
+    } catch (error) {
+      const snapshot = await this.loadSnapshot(error instanceof Error ? error.message : "CATALOG_REFRESH_FAILED");
+      if (snapshot) {
+        this.cache = { value: snapshot, expiresAt: now + this.cacheTtlMs };
+        return snapshot;
+      }
+      throw error;
+    }
+
+    const candidates = chooseAliases(base, this.preferredModels).slice(0, this.maxCandidates);
+    if (!candidates.length) {
+      const snapshot = await this.loadSnapshot("CHAT_MODEL_WORKING_SET_NO_CANDIDATES");
+      if (snapshot) {
+        this.cache = { value: snapshot, expiresAt: now + this.cacheTtlMs };
+        return snapshot;
+      }
+      throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_NO_CANDIDATES", 503);
+    }
+
+    const probes = await this.probeCandidates(candidates, this.credential());
+    const activeModels = probes.filter((probe) => probe.health === "HEALTHY").map((probe) => probe.model);
+    if (activeModels.length) {
+      const value = this.buildCatalog(base, activeModels, probes, "LIVE");
+      this.cache = { value, expiresAt: now + this.cacheTtlMs };
+      await this.saveSnapshot(value);
+      return value;
+    }
+
+    const snapshot = await this.loadSnapshot("CHAT_MODEL_WORKING_SET_EMPTY");
+    if (snapshot) {
+      this.cache = { value: snapshot, expiresAt: now + this.cacheTtlMs };
+      return snapshot;
+    }
+
+    const trusted = this.trustedConfiguredFallback(base, candidates);
+    if (trusted.length) {
+      const value = this.buildCatalog(base, trusted, probes, "TRUSTED_CONFIG", "All live probes failed; using exact configured route only");
+      this.cache = { value, expiresAt: now + this.cacheTtlMs };
+      return value;
+    }
+
+    throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_EMPTY", 503);
   }
 }
