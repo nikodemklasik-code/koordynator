@@ -13,7 +13,10 @@
 
   const semanticKey = (el) => {
     const id = String(el.id || "").toLowerCase();
-    const label = normalise(el.textContent || el.getAttribute("aria-label") || el.getAttribute("title"));
+    const text = normalise(el.textContent);
+    const aria = normalise(el.getAttribute("aria-label"));
+    const title = normalise(el.getAttribute("title"));
+    const label = text && !/^[^a-z0-9ąćęłńóśźż]+$/i.test(text) ? text : (aria || title || text);
     const href = el instanceof HTMLAnchorElement ? (el.getAttribute("href") || "") : "";
 
     if (id === "historybutton" || /^(history|conversations)$/.test(label)) return "conversations";
@@ -25,18 +28,18 @@
     if (id === "exportmdbutton" || /export (markdown|md)/.test(label)) return "export-md";
     if (id === "exportpdfbutton" || /export pdf/.test(label)) return "export-pdf";
     if (id === "exportzipbutton" || /export zip/.test(label)) return "export-zip";
-    if (/^home$/.test(label) || href === "/") return "home";
+    if (/^home$/.test(label)) return "home";
     if (/live chat/.test(label) || href === "/chat") return "live-chat";
+    if (/^tasks?$/.test(label)) return "tasks";
+    if (/^providers?$/.test(label) || href === "/providers") return "providers";
+    if (/^(releases?|readiness)$/.test(label) || href === "/releases") return "releases";
     if (/harmonia legal/.test(label)) return "harmonia-legal";
     if (/job app/.test(label)) return "job-app";
     if (/ustr[oó]j/.test(label) || href === "/ustroj") return "ustroj";
     if (/^contracts?$/.test(label)) return "contracts";
-    if (/^tasks?$/.test(label)) return "tasks";
-    if (/^providers?$/.test(label)) return "providers";
     if (/^routing$/.test(label)) return "routing";
     if (/^billing$/.test(label)) return "billing";
     if (/^studio$/.test(label)) return "studio";
-    if (/^releases?$/.test(label)) return "releases";
     if (/^settings$/.test(label)) return "settings";
     return id ? `id:${id}` : label ? `label:${label}` : "";
   };
@@ -46,8 +49,7 @@
   shell.className = "koord-shell";
   shell.innerHTML = [
     '<div class="koord-shell-row koord-shell-row-primary">',
-    '  <nav class="koord-shell-products" id="koordShellProducts" aria-label="Products"></nav>',
-    '  <div class="koord-shell-conversation" id="koordShellConversation"></div>',
+    '  <nav class="koord-shell-primary" id="koordShellPrimary" aria-label="Screens and conversation actions"></nav>',
     '</div>',
     '<div class="koord-shell-row koord-shell-row-secondary">',
     '  <div class="koord-shell-tools" id="koordShellTools"></div>',
@@ -60,8 +62,7 @@
 
   main.insertBefore(shell, workspace);
 
-  const products = document.getElementById("koordShellProducts");
-  const conversation = document.getElementById("koordShellConversation");
+  const primary = document.getElementById("koordShellPrimary");
   const tools = document.getElementById("koordShellTools");
   const exportMenu = document.getElementById("koordShellExportMenu");
   const exportDetails = document.getElementById("koordShellExport");
@@ -71,7 +72,7 @@
     link.href = href;
     link.textContent = label;
     link.dataset.shellKey = key;
-    link.className = `koord-shell-button importance-${current ? "1" : "2"}${current ? " active" : ""}`;
+    link.className = `koord-shell-button importance-2${current ? " active" : ""}`;
     if (current) link.setAttribute("aria-current", "page");
     return link;
   };
@@ -102,15 +103,18 @@
     el.dataset.shellDuplicate = key;
   }
 
-  const canonicalProducts = [
+  const canonicalScreens = [
     ["home", "Home", "/"],
     ["live-chat", "Live Chat", "/chat"],
+    ["tasks", "Tasks", "/"],
+    ["providers", "Providers", "/providers"],
+    ["releases", "Releases", "/releases"],
     ["harmonia-legal", "Harmonia Legal", ""],
     ["job-app", "Job App", ""],
     ["ustroj", "Ustrój", "/ustroj"]
   ];
 
-  for (const [key, label, href] of canonicalProducts) {
+  for (const [key, label, href] of canonicalScreens) {
     let el = preferred.get(key);
     if (!el && href) el = makeLink(label, href, key, key === "live-chat");
     if (!el && (key === "harmonia-legal" || key === "job-app")) {
@@ -125,30 +129,32 @@
     if (!el) continue;
     el.hidden = false;
     el.dataset.shellKey = key;
-    el.classList.add("koord-shell-button");
-    el.classList.add(key === "live-chat" ? "importance-1" : "importance-2");
+    el.classList.add("koord-shell-button", "importance-2");
+    el.classList.remove("importance-1", "importance-3", "primary");
     if (key === "live-chat") el.classList.add("active");
-    products.appendChild(el);
+    primary.appendChild(el);
   }
 
-  const conversationKeys = ["conversations", "new-conversation"];
-  for (const key of conversationKeys) {
+  const separator = document.createElement("span");
+  separator.className = "koord-shell-divider";
+  separator.setAttribute("aria-hidden", "true");
+  primary.appendChild(separator);
+
+  for (const key of ["conversations", "new-conversation"]) {
     const el = preferred.get(key);
     if (!el) continue;
     el.hidden = false;
     el.dataset.shellKey = key;
-    el.classList.add("koord-shell-button", key === "new-conversation" ? "importance-1" : "importance-2");
-    conversation.appendChild(el);
+    el.classList.add("koord-shell-button", "importance-2");
+    el.classList.remove("importance-1", "importance-3", "primary");
+    primary.appendChild(el);
   }
 
   const toolOrder = [
     "contracts",
-    "tasks",
-    "providers",
     "routing",
     "billing",
     "studio",
-    "releases",
     "create-document",
     "stage-zero",
     "settings",
@@ -174,9 +180,6 @@
   }
   if (!exportMenu.childElementCount) exportDetails.hidden = true;
 
-  // Retire every pre-workspace shell container after its live controls have
-  // been moved. This also handles newer/local header implementations without
-  // letting an old third row survive underneath the canonical two-row shell.
   for (const child of [...main.children]) {
     if (child === shell || child === workspace) continue;
     const relation = child.compareDocumentPosition(workspace);
@@ -188,7 +191,6 @@
 
   document.body.classList.add("koord-shell-active");
 
-  // A final defensive pass: no two visible header controls may represent the same action.
   const seen = new Set();
   for (const el of shell.querySelectorAll("a, button, summary")) {
     const key = semanticKey(el);
