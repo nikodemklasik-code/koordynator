@@ -111,7 +111,7 @@ body.koord-shell-active .v5-main {
   background: #0b1821 !important;
   color: var(--shell-text) !important;
   text-decoration: none !important;
-  font: 750 11px/1 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font: 750 13px/1 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   letter-spacing: 0 !important;
   white-space: nowrap;
   cursor: pointer;
@@ -239,7 +239,7 @@ body.koord-shell-active .github-chat-button {
     height: 36px !important;
     padding-left: 10px !important;
     padding-right: 10px !important;
-    font-size: 10px !important;
+    font-size: 12px !important;
   }
 }
 
@@ -277,7 +277,7 @@ body.koord-shell-active .github-chat-button {
   min-height:var(--shell-button-height)!important;
   height:var(--shell-button-height)!important;
   padding:0 11px!important;
-  font-size:10px!important;
+  font-size:12px!important;
 }
 .koord-shell-primary .koord-shell-button.active{
   border-color:#467da3!important;
@@ -304,14 +304,14 @@ body.koord-shell-active .github-chat-button {
   border-radius:8px;
   background:#0a1720;
   color:#8fa2af;
-  font:700 8px/1 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font:700 10px/1 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   cursor:pointer;
   white-space:nowrap;
 }
 .koord-access-pill i{
   width:7px;height:7px;border-radius:50%;background:#5a6872;
 }
-.koord-access-pill strong{font-size:7px;letter-spacing:.08em;color:#758996}
+.koord-access-pill strong{font-size:9px;letter-spacing:.08em;color:#758996}
 .koord-access-pill.on{border-color:#2d6647;background:#0b1b13;color:#b9e8ca}
 .koord-access-pill.on i{background:#62d895;box-shadow:0 0 0 3px rgba(98,216,149,.09)}
 .koord-access-pill.on strong{color:#7cdaa0}
@@ -327,7 +327,7 @@ body.koord-shell-active .v5-routebar .session-id{display:none!important}
   align-items:center;
   gap:5px;
   color:#4e606d;
-  font:700 7px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+  font:700 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;
   letter-spacing:.06em;
 }
 .koord-session-footer>span{color:#40505b}
@@ -337,7 +337,7 @@ body.koord-shell-active .v5-routebar .session-id{display:none!important}
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
-  font-size:7px!important;
+  font-size:9px!important;
 }
 
 /* Local access dialog: explicit paths, no native prompt boxes. */
@@ -354,22 +354,22 @@ body.koord-shell-active .v5-routebar .session-id{display:none!important}
 .koord-access-card{display:grid;gap:14px;padding:16px}
 .koord-access-card header,.koord-access-card footer{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .koord-access-card header>div{display:grid;gap:3px}
-.koord-access-kicker{font-size:7px;letter-spacing:.16em;color:#64859a;font-weight:800}
-.koord-access-card header strong{font-size:14px}
+.koord-access-kicker{font-size:9px;letter-spacing:.16em;color:#64859a;font-weight:800}
+.koord-access-card header strong{font-size:16px}
 .koord-access-card header button{
   width:32px;height:32px;border:1px solid #263a48;border-radius:8px;background:#0b1821;color:#9eafba;cursor:pointer
 }
-.koord-access-card p{margin:0;color:#8fa0ac;font-size:11px;line-height:1.55}
-.koord-roots-field{display:grid;gap:7px;color:#7f919e;font-size:9px}
+.koord-access-card p{margin:0;color:#8fa0ac;font-size:13px;line-height:1.55}
+.koord-roots-field{display:grid;gap:7px;color:#7f919e;font-size:11px}
 .koord-roots-field textarea{
   width:100%;min-height:110px;resize:vertical;padding:10px;border:1px solid #293e4d;border-radius:9px;
-  background:#061018;color:#dce7ed;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;outline:none
+  background:#061018;color:#dce7ed;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;outline:none
 }
 .koord-roots-field textarea:focus{border-color:#46799c;box-shadow:0 0 0 3px rgba(70,121,156,.1)}
-.koord-access-error{padding:8px 10px;border:1px solid #6b3438;border-radius:8px;background:#211014;color:#ef9ca3;font-size:10px}
+.koord-access-error{padding:8px 10px;border:1px solid #6b3438;border-radius:8px;background:#211014;color:#ef9ca3;font-size:12px}
 .koord-access-card footer{justify-content:flex-end}
 .koord-access-card footer button{
-  min-height:34px;padding:0 12px;border:1px solid #2b4050;border-radius:8px;background:#0b1821;color:#c0ced7;font-weight:700;font-size:10px;cursor:pointer
+  min-height:34px;padding:0 12px;border:1px solid #2b4050;border-radius:8px;background:#0b1821;color:#c0ced7;font-weight:700;font-size:12px;cursor:pointer
 }
 .koord-access-card footer .primary{border-color:#3e78a1;background:#123752;color:#eef8ff}
 .koord-access-card footer button:disabled{opacity:.55;cursor:default}
@@ -437,7 +437,7 @@ body.koord-shell-active .v5-composer>textarea{
   resize:none!important;
   padding:14px 14px 10px!important;
   overflow-y:auto!important;
-  font-size:17px!important;
+  font-size:19px!important;
   line-height:1.45!important;
   box-sizing:border-box!important;
 }
@@ -493,7 +493,7 @@ body.koord-shell-active .v5-model-search{
   outline:0!important;
   background:transparent!important;
   color:#dce7ed!important;
-  font-size:13px!important;
+  font-size:15px!important;
   text-overflow:ellipsis!important;
 }
 
@@ -508,7 +508,7 @@ body.koord-shell-active .v5-model-menu-button{
   border-radius:0 var(--workspace-control-radius) var(--workspace-control-radius) 0!important;
   background:#0b141b!important;
   color:#9fb2bd!important;
-  font-size:17px!important;
+  font-size:19px!important;
   cursor:pointer!important;
 }
 
@@ -523,7 +523,7 @@ body.koord-shell-active .v5-model-role{
   border-radius:var(--workspace-control-radius)!important;
   background:#091016!important;
   color:#d0dce3!important;
-  font-size:13px!important;
+  font-size:15px!important;
   outline:0!important;
 }
 
@@ -555,7 +555,7 @@ body.koord-shell-active .v5-control-row .v5-send{
   place-items:center!important;
   align-self:center!important;
   border-radius:var(--workspace-control-radius)!important;
-  font-size:18px!important;
+  font-size:20px!important;
   line-height:1!important;
   overflow:hidden!important;
 }
@@ -575,10 +575,10 @@ body.koord-shell-active .v5-model-results{
   box-shadow:0 24px 80px rgba(0,0,0,.68)!important;
 }
 
-body.koord-shell-active .v5-model-result{font-size:11px!important}
-body.koord-shell-active .v5-model-result strong{font-size:14px!important}
-body.koord-shell-active .v5-model-result small{font-size:12px!important}
-body.koord-shell-active .v5-model-tag{font-size:10px!important}
+body.koord-shell-active .v5-model-result{font-size:13px!important}
+body.koord-shell-active .v5-model-result strong{font-size:16px!important}
+body.koord-shell-active .v5-model-result small{font-size:14px!important}
+body.koord-shell-active .v5-model-tag{font-size:12px!important}
 body.koord-shell-active .v5-route-note{display:none!important}
 
 /* HERMES. Maximum two control rows above terminal surface. */
@@ -608,9 +608,9 @@ body.koord-shell-active .v5-terminal-head{
   overflow:hidden!important;
 }
 
-body.koord-shell-active .v5-terminal-title strong{font-size:14px!important}
-body.koord-shell-active .v5-terminal-title small{font-size:11px!important}
-body.koord-shell-active .hermes-state{font-size:11px!important}
+body.koord-shell-active .v5-terminal-title strong{font-size:16px!important}
+body.koord-shell-active .v5-terminal-title small{font-size:13px!important}
+body.koord-shell-active .hermes-state{font-size:13px!important}
 
 body.koord-shell-active .v5-terminal-actions{
   display:flex!important;
@@ -626,7 +626,7 @@ body.koord-shell-active .runtime-terminal-button{
   max-height:var(--shell-button-height)!important;
   padding:0 10px!important;
   border-radius:var(--workspace-control-radius)!important;
-  font-size:11px!important;
+  font-size:13px!important;
   white-space:nowrap!important;
 }
 
@@ -648,7 +648,7 @@ body.koord-shell-active .runtime-terminal-summary{
   text-overflow:ellipsis!important;
   white-space:nowrap!important;
   padding:0 4px!important;
-  font-size:12px!important;
+  font-size:14px!important;
 }
 
 body.koord-shell-active .v5-terminal,
@@ -657,7 +657,7 @@ body.koord-shell-active .runtime-readable{
   overflow:auto!important;
 }
 
-body.koord-shell-active .runtime-readable{font-size:16px!important}
+body.koord-shell-active .runtime-readable{font-size:18px!important}
 
 body.koord-shell-active .v5-terminal-composer{
   width:100%!important;
@@ -684,7 +684,7 @@ body.koord-shell-active .v5-terminal-composer textarea{
   padding:15px 13px!important;
   resize:none!important;
   overflow-y:auto!important;
-  font-size:14px!important;
+  font-size:16px!important;
   line-height:26px!important;
   box-sizing:border-box!important;
 }
@@ -701,7 +701,7 @@ body.koord-shell-active .v5-terminal-send{
   display:grid!important;
   place-items:center!important;
   border-radius:var(--workspace-control-radius)!important;
-  font-size:19px!important;
+  font-size:21px!important;
   line-height:1!important;
   overflow:hidden!important;
 }
@@ -719,25 +719,25 @@ body.koord-shell-active .v5-statusbar{
 body.koord-shell-active .koord-shell-button,
 body.koord-shell-active .koord-shell button,
 body.koord-shell-active .koord-shell a,
-body.koord-shell-active .koord-shell summary{font-size:13px!important}
-body.koord-shell-active .v5-connection strong{font-size:13px!important}
+body.koord-shell-active .koord-shell summary{font-size:15px!important}
+body.koord-shell-active .v5-connection strong{font-size:15px!important}
 body.koord-shell-active .billing-badge,
 body.koord-shell-active .usage-24h,
-body.koord-shell-active .runtime-route-badge{font-size:11px!important}
-body.koord-shell-active .v5-github{font-size:12px!important}
-body.koord-shell-active .v5-welcome h2{font-size:26px!important}
-body.koord-shell-active .v5-welcome p{font-size:16px!important}
-body.koord-shell-active .v5-welcome-grid{font-size:13px!important}
-body.koord-shell-active .message-meta{font-size:12.5px!important}
-body.koord-shell-active .message-bubble{font-size:17px!important}
+body.koord-shell-active .runtime-route-badge{font-size:13px!important}
+body.koord-shell-active .v5-github{font-size:14px!important}
+body.koord-shell-active .v5-welcome h2{font-size:28px!important}
+body.koord-shell-active .v5-welcome p{font-size:18px!important}
+body.koord-shell-active .v5-welcome-grid{font-size:15px!important}
+body.koord-shell-active .message-meta{font-size:14.5px!important}
+body.koord-shell-active .message-bubble{font-size:19px!important}
 body.koord-shell-active .v5-statusbar,
 body.koord-shell-active .ci-status,
 body.koord-shell-active .v5-runtime-meta,
-body.koord-shell-active .status-badge{font-size:11px!important}
-body.koord-shell-active .koord-access-pill{font-size:10px!important}
-body.koord-shell-active .koord-access-pill strong{font-size:9px!important}
+body.koord-shell-active .status-badge{font-size:13px!important}
+body.koord-shell-active .koord-access-pill{font-size:12px!important}
+body.koord-shell-active .koord-access-pill strong{font-size:11px!important}
 body.koord-shell-active .koord-session-footer,
-body.koord-shell-active .koord-session-value{font-size:9px!important}
+body.koord-shell-active .koord-session-value{font-size:11px!important}
 
 @media(max-width:1050px){
   body.koord-shell-active .v5-control-row{gap:5px!important}
@@ -782,9 +782,9 @@ body.koord-shell-active .koord-session-value{font-size:9px!important}
   padding:8px 10px 10px;
   border-bottom:1px solid #1d3444;
 }
-.github-repository-menu-head strong{font-size:13px;color:#e7f0f6}
-.github-repository-menu-head span{font-size:11px;color:#8195a5}
-.github-repository-menu-empty{padding:16px 10px;color:#8ea0ad;font-size:12px}
+.github-repository-menu-head strong{font-size:15px;color:#e7f0f6}
+.github-repository-menu-head span{font-size:13px;color:#8195a5}
+.github-repository-menu-empty{padding:16px 10px;color:#8ea0ad;font-size:14px}
 .github-repository-item{
   width:100%;
   display:flex;
@@ -801,8 +801,8 @@ body.koord-shell-active .koord-session-value{font-size:9px!important}
 }
 .github-repository-item:hover{background:#0d2230}
 .github-repository-item.active{background:#123042;box-shadow:inset 3px 0 0 #69e3a3}
-.github-repository-item strong{font-size:12px}
-.github-repository-item span{font-size:10px;color:#8398a8;text-transform:uppercase;letter-spacing:.04em}
+.github-repository-item strong{font-size:14px}
+.github-repository-item span{font-size:12px;color:#8398a8;text-transform:uppercase;letter-spacing:.04em}
 
 
 /* V1.2: canonical runtime strip + terminal toolbar geometry.
@@ -844,7 +844,7 @@ body.koord-shell-active .v5-routebar .github-chat-button,
 body.koord-shell-active .v5-routebar .v5-github{
   padding-left:10px!important;
   padding-right:10px!important;
-  font-size:11px!important;
+  font-size:13px!important;
 }
 
 body.koord-shell-active .runtime-terminal-toolbar{
@@ -860,7 +860,7 @@ body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-button{
   min-height:34px!important;
   max-height:34px!important;
   padding:0 7px!important;
-  font-size:10px!important;
+  font-size:12px!important;
 }
 body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-spacer{display:none!important}
 body.koord-shell-active .runtime-terminal-toolbar [data-runtime-action="copy"]{display:none!important}
@@ -1034,7 +1034,7 @@ body.koord-shell-active .runtime-terminal-toolbar .v5-mini-button{
   max-height:32px!important;
   padding:0 8px!important;
   border-radius:8px!important;
-  font-size:9.5px!important;
+  font-size:11.5px!important;
 }
 body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-summary{
   flex:0 0 auto!important;
@@ -1042,7 +1042,7 @@ body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-summary{
   min-width:42px!important;
   padding:0 5px!important;
   gap:5px!important;
-  font-size:9px!important;
+  font-size:11px!important;
 }
 body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-summary>span{
   display:none!important;
@@ -1151,7 +1151,7 @@ body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill{
   height:var(--shell-button-height)!important;
   padding:0 10px!important;
   border-radius:10px!important;
-  font-size:9px!important;
+  font-size:11px!important;
 }
 body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill.on{
   border-color:#2d6647!important;
@@ -1183,7 +1183,7 @@ body.koord-shell-active .koord-shell-row-label{
   min-width:44px!important;
   padding:0 4px!important;
   color:#6f8ca0!important;
-  font-size:7px!important;
+  font-size:9px!important;
   font-weight:900!important;
   line-height:1!important;
   letter-spacing:.12em!important;
@@ -1228,7 +1228,7 @@ body.koord-shell-active .koord-shell-group-label{
   flex:0 0 auto!important;
   padding:0 3px!important;
   color:#698192!important;
-  font-size:7px!important;
+  font-size:9px!important;
   font-weight:900!important;
   letter-spacing:.10em!important;
   line-height:1!important;
@@ -1243,7 +1243,7 @@ body.koord-shell-active .koord-shell-action-group .koord-shell-button{
   min-height:32px!important;
   padding:0 9px!important;
   border-radius:8px!important;
-  font-size:10px!important;
+  font-size:12px!important;
 }
 body.koord-shell-active .koord-shell-action-group-chat-important .koord-shell-button{
   border-color:#3c6e8c!important;
@@ -1262,7 +1262,7 @@ body.koord-shell-active .koord-shell-tool-group-terminal-aux .koord-shell-button
   min-height:30px!important;
   padding:0 8px!important;
   border-radius:8px!important;
-  font-size:9.5px!important;
+  font-size:11.5px!important;
   color:#96a7b2!important;
   background:#09141b!important;
   border-color:#203541!important;
@@ -1280,7 +1280,7 @@ body.koord-shell-active .koord-shell-group-operations .koord-shell-button{
   height:32px!important;
   min-height:32px!important;
   padding:0 9px!important;
-  font-size:10px!important;
+  font-size:12px!important;
 }
 
 /* Replace the old disappearing welcome banner with a permanent strip of small action panels. */
@@ -1340,19 +1340,19 @@ body.koord-shell-active .v5-quick-tile:hover{
 }
 body.koord-shell-active .v5-quick-kicker{
   color:#6f91a5!important;
-  font-size:7px!important;
+  font-size:9px!important;
   font-weight:900!important;
   letter-spacing:.11em!important;
 }
 body.koord-shell-active .v5-quick-tile strong{
-  font-size:11px!important;
+  font-size:13px!important;
   line-height:1.15!important;
 }
 body.koord-shell-active .v5-quick-tile small{
   min-width:0!important;
   overflow:hidden!important;
   color:#708591!important;
-  font-size:8px!important;
+  font-size:10px!important;
   line-height:1.2!important;
   text-overflow:ellipsis!important;
   white-space:nowrap!important;
@@ -1382,7 +1382,7 @@ body.koord-shell-active .v5-quick-tile small{
   }
   body.koord-shell-active .koord-shell-row-label{
     min-width:34px!important;
-    font-size:6.5px!important;
+    font-size:8.5px!important;
   }
   body.koord-shell-active .koord-shell-primary,
   body.koord-shell-active .koord-shell-tools{
