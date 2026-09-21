@@ -96,7 +96,7 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("flex:1 1 auto!important");
     expect(css).toContain(".v5-native-model-picker");
     expect(manifest).toContain("WYSZUKIWARKA MODELU I MENU ROZWIJANE MODELI MUSZĄ BYĆ JEDNYM KOMPONENTEM");
-    expect(manifest).toContain("HERMES MOŻE MIEĆ MAKSYMALNIE DWA WIERSZE KONTROLEK");
+    expect(manifest).toContain("HERMES MA DOKŁADNIE JEDEN WIERSZ KONTROLEK");
     expect(await readFile(new URL("../web/control/chat.html", import.meta.url), "utf8")).toContain('id="unifiedModelSelector"');
   });
 });
