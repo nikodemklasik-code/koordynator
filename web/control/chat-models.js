@@ -223,8 +223,16 @@ function shortName(entry) {
   return slash >= 0 ? entry.id.slice(slash + 1) : entry.id;
 }
 
+function executionLabel(entry) {
+  const recoveryMode = catalogWorkingSet?.recoveryMode;
+  if (recoveryMode === "TRUSTED_CONFIG") return "TRUSTED FALLBACK";
+  if (recoveryMode === "LAST_KNOWN_GOOD") return "✓ LAST KNOWN LIVE";
+  const active = Array.isArray(catalogWorkingSet?.activeModels) ? catalogWorkingSet.activeModels : [];
+  return !catalogWorkingSet || active.includes(entry.id) ? "✓ LIVE" : "ROUTE";
+}
+
 function entryLabel(entry) {
-  const parts = [shortName(entry), "✓ LIVE", sourceLabel(entry.billingSource)];
+  const parts = [shortName(entry), executionLabel(entry), sourceLabel(entry.billingSource)];
   if (entry.supportsVision) parts.push("VISION");
   if (entry.inputTokenLimit) parts.push(`${Math.round(entry.inputTokenLimit / 1000)}K CTX`);
   return parts.join(" · ");
@@ -390,8 +398,13 @@ async function loadChatModels() {
     const hidden = catalogEntries.length - usable.length;
     const freeCount = Array.isArray(catalogWorkingSet?.freeModels) ? catalogWorkingSet.freeModels.length : 0;
     const subscriptionCount = Array.isArray(catalogWorkingSet?.subscriptionModels) ? catalogWorkingSet.subscriptionModels.length : 0;
+    const recoveryMode = catalogWorkingSet?.recoveryMode;
     chatModelSelect.title = catalogWorkingSet
-      ? `${usable.length} live routes · ${freeCount} free · ${subscriptionCount} subscription${hidden ? ` · ${hidden} blocked` : ""}`
+      ? recoveryMode === "LAST_KNOWN_GOOD"
+        ? `${usable.length} last-known-good routes · live probe refresh degraded`
+        : recoveryMode === "TRUSTED_CONFIG"
+          ? `${usable.length} trusted configured fallback route${usable.length === 1 ? "" : "s"} · live probes currently degraded`
+          : `${usable.length} live routes · ${freeCount} free · ${subscriptionCount} subscription${hidden ? ` · ${hidden} blocked` : ""}`
       : `${usable.length} executable routes loaded from OmniRoute${hidden ? `; ${hidden} blocked/unverified routes hidden` : ""}.`;
     billingSummary();
     settleChatModelGate(true);
