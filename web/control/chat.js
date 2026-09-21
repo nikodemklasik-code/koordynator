@@ -140,6 +140,37 @@ const sendHermesButton = $("sendHermesButton");
 const hermesState = $("hermesState");
 const hermesHint = $("hermesHint");
 const MUTE_KEY = "koordynator.liveChat.hermesMuted";
+
+for (const button of document.querySelectorAll("[data-chat-quick]")) {
+  button.addEventListener("click", () => {
+    const action = button.dataset.chatQuick;
+    if (action === "message") {
+      input?.focus();
+      return;
+    }
+    if (action === "attach") {
+      attachButton?.click();
+      return;
+    }
+    if (action === "stage-zero") {
+      stageZeroButton?.click();
+      return;
+    }
+    if (action === "terminal") {
+      if (hermesPane?.classList.contains("hidden")) muteHermesButton?.click();
+      requestAnimationFrame(() => hermesInput?.focus());
+      return;
+    }
+    if (action === "github") {
+      document.getElementById("githubChatButton")?.click();
+      return;
+    }
+    if (action === "history") {
+      document.getElementById("historyButton")?.click();
+    }
+  });
+}
+
 let hermesXterm = null;
 let hermesFit = null;
 let dragDepth = 0;
@@ -641,14 +672,12 @@ function renderMessage(message) {
   status.className = `message-state ${message.state}`;
   status.textContent = message.state === "stopped" ? "Generation stopped" : message.state === "error" ? "Generation failed" : "";
   syncMaterialiseButton(article, message);
-  welcome.classList.add("hidden");
   if (shouldFollow) scrollBottom(true);
 }
 
 function renderTranscript(messages) {
   state.messages.clear();
   chatThread.querySelectorAll(".chat-message").forEach((node) => node.remove());
-  welcome.classList.toggle("hidden", messages.length > 0);
   for (const message of messages) {
     state.messages.set(message.id, { ...message });
     renderMessage(message);
