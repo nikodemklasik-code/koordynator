@@ -22,6 +22,15 @@ export type GitHubCommandResult = {
   stderr: string;
 };
 
+export type GitHubRepositorySummary = {
+  repository: string;
+  url: string;
+  defaultBranch: string;
+  visibility: string;
+  private: boolean;
+  archived: boolean;
+};
+
 export type GitHubCommandRunner = (
   executable: string,
   args: string[],
@@ -104,10 +113,12 @@ function isGitHubRemote(value: string): boolean {
 export interface GitHubConnectionPort {
   status(force?: boolean): Promise<GitHubConnectionStatus>;
   connect(approved: boolean): Promise<GitHubConnectionStatus>;
+  repositories?(force?: boolean): Promise<GitHubRepositorySummary[]>;
 }
 
 export class GitHubConnectionService implements GitHubConnectionPort {
   private cached: { value: GitHubConnectionStatus; expiresAt: number } | null = null;
+  private repositoryCache: { value: GitHubRepositorySummary[]; expiresAt: number } | null = null;
   private connecting: Promise<GitHubConnectionStatus> | null = null;
 
   constructor(
@@ -233,6 +244,54 @@ export class GitHubConnectionService implements GitHubConnectionPort {
     });
   }
 
+  async repositories(force = false): Promise<GitHubRepositorySummary[]> {
+    const nowMs = Date.now();
+    if (!force && this.repositoryCache && this.repositoryCache.expiresAt > nowMs) {
+      return this.repositoryCache.value;
+    }
+
+    const status = await this.status(force);
+    if (status.state !== "CONNECTED" || !status.cliAvailable || !status.authenticated) {
+      throw new GitHubConnectionError("GITHUB_REPOSITORY_LIST_AUTH_REQUIRED", 503);
+    }
+
+    const listed = await this.gh([
+      "repo",
+      "list",
+      "--limit",
+      "100",
+      "--json",
+      "nameWithOwner,url,defaultBranchRef,visibility,isPrivate,isArchived"
+    ], false, 20_000);
+    if (listed.code !== 0) throw new GitHubConnectionError("GITHUB_REPOSITORY_LIST_FAILED", 502);
+
+    let parsed: unknown;
+    try { parsed = JSON.parse(listed.stdout); }
+    catch { throw new GitHubConnectionError("GITHUB_REPOSITORY_LIST_INVALID", 502); }
+    if (!Array.isArray(parsed)) throw new GitHubConnectionError("GITHUB_REPOSITORY_LIST_INVALID", 502);
+
+    const repositories = parsed
+      .flatMap((item): GitHubRepositorySummary[] => {
+        if (!item || typeof item !== "object") return [];
+        const row = item as Record<string, unknown>;
+        const repository = typeof row.nameWithOwner === "string" ? row.nameWithOwner.trim() : "";
+        const url = typeof row.url === "string" ? row.url.trim() : "";
+        if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^https:\/\/github\.com\//i.test(url)) return [];
+        return [{
+          repository,
+          url,
+          defaultBranch: typeof row.defaultBranchRef === "string" && row.defaultBranchRef.trim() ? row.defaultBranchRef.trim() : "main",
+          visibility: typeof row.visibility === "string" ? row.visibility : "UNKNOWN",
+          private: row.isPrivate === true,
+          archived: row.isArchived === true
+        }];
+      })
+      .sort((a, b) => a.repository.localeCompare(b.repository));
+
+    this.repositoryCache = { value: repositories, expiresAt: Date.now() + this.cacheTtlMs };
+    return repositories;
+  }
+
   private async connectApproved(): Promise<GitHubConnectionStatus> {
     const before = await this.status(true);
     if (before.state === "CONNECTED" && before.repositoryAccess !== false) return before;
@@ -256,6 +315,7 @@ export class GitHubConnectionService implements GitHubConnectionPort {
     if (setup.code !== 0) throw new GitHubConnectionError("GITHUB_GIT_SETUP_FAILED", 502);
 
     this.cached = null;
+    this.repositoryCache = null;
     const after = await this.status(true);
     if (!after.authenticated) throw new GitHubConnectionError("GITHUB_AUTH_FAILED", 502);
     return this.remember({ ...after, gitConfigured: true, state: "CONNECTED", connectionMethod: "GH_CLI", repositoryAccess: true });
