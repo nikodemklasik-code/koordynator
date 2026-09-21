@@ -41,6 +41,7 @@
     if (/^routing$/.test(label)) return "routing";
     if (/^billing$/.test(label)) return "billing";
     if (/^studio$/.test(label)) return "studio";
+    if (id === "githubchatbutton" || /^github\b/.test(label)) return "github";
     if (/^settings$/.test(label)) return "settings";
     return id ? `id:${id}` : label ? `label:${label}` : "";
   };
@@ -167,6 +168,7 @@
     "create-document",
     "stage-zero",
     "settings",
+    "github",
     "terminal",
     "popout"
   ];
@@ -177,6 +179,16 @@
     el.dataset.shellKey = key;
     el.classList.add("koord-shell-button", key === "stage-zero" ? "importance-2" : "importance-3");
     tools.appendChild(el);
+  }
+
+  // GitHub starts inside the runtime strip, so it is not part of the pre-workspace
+  // clickable scan. Move the single canonical GitHub control into the tools row.
+  const githubControl = document.getElementById("githubChatButton");
+  if (githubControl && !tools.contains(githubControl)) {
+    githubControl.hidden = false;
+    githubControl.dataset.shellKey = "github";
+    githubControl.classList.add("koord-shell-button", "importance-3");
+    tools.appendChild(githubControl);
   }
 
   for (const key of ["export-md", "export-pdf", "export-zip"]) {
