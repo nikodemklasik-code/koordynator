@@ -138,6 +138,15 @@ async function managementApiFetch(): Promise<ApiFetch> {
   return imported.apiFetch;
 }
 
+function isLoopbackEndpoint(value: string): boolean {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 async function fetchModels(endpoint: string, key: string): Promise<string[]> {
   const headers: Record<string, string> = {};
   if (key) headers.authorization = `Bearer ${key}`;
@@ -259,8 +268,8 @@ export async function bootstrapAi(_options: AiBootstrapOptions = {}): Promise<Ai
   const root = endpointRoot(endpoint);
   await ensureServer(root);
   const key = gatewayKey();
-  if (!key) throw new Error("OMNIROUTE_GATEWAY_KEY_MISSING");
-  process.env.OMNIROUTE_API_KEY = key;
+  if (!key && !isLoopbackEndpoint(endpoint)) throw new Error("OMNIROUTE_GATEWAY_KEY_MISSING");
+  if (key) process.env.OMNIROUTE_API_KEY = key;
   const apiFetch = await managementApiFetch();
 
   let models = await fetchModels(endpoint, key);
