@@ -14,7 +14,7 @@
     "test": "npm run build && vitest run",
     "build": "tsc -p tsconfig.build.json",
     "cli": "node dist/cli/main.js",
-    "control": "node dist/control/main.js",
+    "control": "npm run build && node dist/control/main.js",
     "e2e": "node scripts/e2e-smoke.mjs",
     "golden": "node scripts/golden-path.mjs",
     "provider-golden": "node scripts/provider-golden.mjs",
@@ -49,7 +49,8 @@
     "hermes:amazonq": "npm run build && node scripts/hermes-managed.mjs hermes amazonq",
     "hermes:antigravity": "npm run build && node scripts/hermes-managed.mjs hermes antigravity",
     "hermes:astra": "npm run build && node scripts/hermes-managed.mjs hermes astra",
-    "ai:swarm": "npm run build && node dist/runtime/free-swarm-cli.js"
+    "ai:swarm": "npm run build && node dist/runtime/free-swarm-cli.js",
+    "control:run": "node dist/control/main.js"
   },
   "devDependencies": {
     "@types/node": "22.10.0",
