@@ -28,7 +28,8 @@
     "Transactional_Audit": "Corporation mutations use revisioned atomic state+event commits when the journal store is wired",
     "Execution_Isolation": "candidate code work is prepared in leased ephemeral git worktrees; real executor wiring remains blocked until sandbox boundaries are complete",
     "Blind_Execution": "executor receives only stage-scoped inputs, bounded micro-operations, a capability lease and an opaque authoritative stage-contract binding; it emits evidence, not truth",
-    "Dynamic_HLL_Synthesis": "authoritative HLL Engine derives semantic state from trace/artifacts/effects/evidence; Koordynator does not implement a competing local truth engine"
+    "Dynamic_HLL_Synthesis": "authoritative HLL Engine derives semantic state from trace/artifacts/effects/evidence; Koordynator does not implement a competing local truth engine",
+    "Deterministic_Group_Chat": "multi-agent group chat uses frozen-round alphabetical cyclic scheduling; first-response-wins is forbidden and membership changes enter only next round"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -42,7 +43,8 @@
     "Solution selection means best verified available candidate",
     "No automatic secret scraping, paid fallback activation, OAuth consent, billing change, destructive action, production deployment or protected merge",
     "Koordynator MUST NOT mint, synthesize or ratify HLL truth independently of the authoritative HLL Engine",
-    "Blind execution produces trace/artifact/effect/evidence only; semantic truth and next-stage authority come from HLL/VERA"
+    "Blind execution produces trace/artifact/effect/evidence only; semantic truth and next-stage authority come from HLL/VERA",
+    "Multi-agent group chat speaking order is deterministic alphabetical round-robin; provider latency never determines who speaks next"
   ],
   "current_files": [
     "src/corporation/domain.ts",
@@ -97,7 +99,9 @@
     "tests/corporation-hll-authority-adapter.test.ts",
     "tests/corporation-vera-authority.test.ts",
     "docs/HLL_CORPORATION_SEMANTIC_MAP.md",
-    "src/corporation/runtime.ts"
+    "src/corporation/runtime.ts",
+    "src/corporation/group-chat-queue.ts",
+    "tests/corporation-group-chat-queue.test.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -177,7 +181,8 @@
     "vera_stateful_transport": "implemented",
     "hll_stable_corporate_identity": "implemented",
     "hll_typed_corporation_relations_v1": "implemented_on_authority_branch",
-    "corporation_authority_runtime_factory": "implemented"
+    "corporation_authority_runtime_factory": "implemented",
+    "deterministic_group_chat_queue": "implemented"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
