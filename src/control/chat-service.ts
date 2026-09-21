@@ -1125,7 +1125,22 @@ export class ChatService {
         }
       });
       this.emit(sessionId, { type: "assistant_done", message: assistant });
-      await this.generateInvitedResponses(session, key, controller);
+      try {
+        await this.generateInvitedResponses(session, key, controller);
+      } catch (peerError) {
+        this.emit(sessionId, {
+          type: "process_update",
+          update: {
+            sessionId,
+            stage: "ERROR",
+            agent: "Invited chat",
+            process: "Invited chat participant",
+            progress: 100,
+            activity: peerError instanceof Error ? peerError.message : "CHAT_PEER_UNAVAILABLE",
+            model: assistant.model
+          }
+        });
+      }
     } catch (error) {
       if (controller.signal.aborted) {
         const audited = await this.finalize(session, assistant, "stopped");
