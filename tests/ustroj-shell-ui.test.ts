@@ -17,7 +17,11 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain(".importance-1");
     expect(css).toContain(".importance-2");
     expect(css).toContain(".importance-3");
+    expect(shell).toContain('["tasks", "Tasks", "/"]');
+    expect(shell).toContain('["providers", "Providers", "/providers"]');
+    expect(shell).toContain('["releases", "Releases", "/releases"]');
     expect(shell).toContain('["ustroj", "Ustrój", "/ustroj"]');
+    expect(shell).toContain('for (const key of ["conversations", "new-conversation"])');
     expect(shell).toContain("shellDuplicate");
     expect(shell).toContain('for (const key of ["export-md", "export-pdf", "export-zip"])');
   });
@@ -39,10 +43,22 @@ describe("Koordynator Ustrój shell", () => {
     expect(server).toContain('"/chat-shell.js": { name: "chat-shell.js"');
   });
 
-  it("keeps the GitHub/runtime strip flush to the workspace background", async () => {
-    const css = await readFile(new URL("../web/control/chat-shell.css", import.meta.url), "utf8");
+  it("keeps runtime controls compact and the chat composer inside the viewport", async () => {
+    const [css, localAccess, usage] = await Promise.all([
+      readFile(new URL("../web/control/chat-shell.css", import.meta.url), "utf8"),
+      readFile(new URL("../web/control/chat-local-access.js", import.meta.url), "utf8"),
+      readFile(new URL("../web/control/chat-usage.js", import.meta.url), "utf8")
+    ]);
     expect(css).toContain("margin: 0 !important");
     expect(css).toContain("border-radius: 0 !important");
     expect(css).toContain("background: #08131c !important");
+    expect(css).toContain(".koord-local-access");
+    expect(css).toContain("max-height:176px!important");
+    expect(css).toContain("grid-template-columns:auto auto minmax(0,1fr) auto auto!important");
+    expect(localAccess).toContain('id="localTerminalAccess"');
+    expect(localAccess).toContain('id="localDiskAccess"');
+    expect(localAccess).toContain('grant: "local-files"');
+    expect(localAccess).toContain('wrap.id = "sessionFooter"');
+    expect(usage).toContain('document.querySelector(".runtime-terminal-toolbar")');
   });
 });
