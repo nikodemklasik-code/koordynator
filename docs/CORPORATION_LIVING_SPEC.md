@@ -1269,3 +1269,49 @@ truth engine.
 The current transport implementation is
 `src/corporation/blind-stage-execution.ts`.
 
+
+
+## Deterministic multi-agent group-chat turns
+
+Group-agent discussion MUST NOT use race scheduling or "first response wins".
+
+For every group chat, the active participant set is frozen for the current round
+and ordered deterministically by canonical alphabetic key:
+
+```
+NFKC(displayName).lowercase()
+then participantId as tie-breaker
+then UTF-8 byte order
+```
+
+The speaking sequence is cyclic:
+
+```
+A -> B -> C -> ... -> Z -> A -> B -> ...
+```
+
+Only the participant whose turn is current may publish the accepted turn.
+A faster provider/model cannot jump the queue.
+
+Membership changes are staged and become effective only at the next round boundary.
+This prevents a late join from reordering an in-progress round.
+
+Every accepted turn produces a hash-bound `GroupChatTurnReceipt` containing:
+
+- conversation id;
+- round;
+- global turn number;
+- participant id/name;
+- frozen participant-snapshot hash;
+- message fingerprint;
+- previous turn receipt hash.
+
+The queue therefore provides deterministic order and tamper-evident turn history.
+It does not decide semantic truth; HLL remains the semantic authority.
+
+Implementation:
+
+```
+src/corporation/group-chat-queue.ts
+tests/corporation-group-chat-queue.test.ts
+```
