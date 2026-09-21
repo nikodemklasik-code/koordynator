@@ -30,6 +30,7 @@ describe("Studio media workspace", () => {
 
     expect(js).toContain('fetch("/api/studio/providers"');
     expect(js).toContain('fetch("/api/studio/image/generate"');
+    expect(js).toContain('fetch("/api/studio/video/generate"');
     expect(js).toContain('fetch("/api/studio/voice/voices"');
     expect(js).toContain('fetch("/api/studio/voice/tts"');
     expect(js).toContain('fetch("/api/chat/models"');
@@ -43,6 +44,7 @@ describe("Studio media workspace", () => {
     expect(server).toContain('"/studio.js": { name: "studio.js"');
     expect(server).toContain('url.pathname === "/api/studio/providers"');
     expect(server).toContain('url.pathname === "/api/studio/image/generate"');
+    expect(server).toContain('url.pathname === "/api/studio/video/generate"');
     expect(server).toContain('url.pathname === "/api/studio/voice/tts"');
     expect(shell).toContain('["studio", "Studio", "/studio"]');
   });
@@ -76,10 +78,12 @@ describe("Studio media workspace", () => {
       readFile(new URL("../src/control/server.ts", import.meta.url), "utf8")
     ]);
     expect(catalog).toContain('"gpt-image-2.5-sunburst"');
-    expect(catalog).toContain('"veed/fabric-1.0"');
+    expect(catalog).toContain('"veed/fabric-1.0/text"');
     expect(catalog).toContain('"eleven_multilingual_v2"');
     expect(server).toContain('"xi-api-key": key');
     expect(server).toContain("authorization:");
+    expect(server).toContain('"https://fal.run/veed/fabric-1.0/text"');
+    expect(server).toContain('authorization: `Key ${key}`');
     expect(server).not.toContain("OPENAI_API_KEY=");
     expect(server).not.toContain("ELEVENLABS_API_KEY=");
   });
