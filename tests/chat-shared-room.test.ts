@@ -79,6 +79,7 @@ describe("Shared Room", () => {
 
     expect(room.sharedRoom?.participants).toHaveLength(2);
     expect(room.sharedRoom?.participants.map((p) => p.model)).toEqual(["cx/frontend-model", "cc/brand-model"]);
+    expect(room.sharedRoom?.rounds).toBe(3);
 
     const done = new Promise<void>((resolve) => {
       const unsubscribe = chat.subscribe(room.sessionId, (event) => {
@@ -95,23 +96,36 @@ describe("Shared Room", () => {
     const stored = await chat.getSession(room.sessionId);
     expect(stored).not.toBeNull();
     const assistants = stored!.messages.filter((message) => message.role === "assistant");
-    expect(assistants).toHaveLength(2);
+    expect(assistants).toHaveLength(6);
     expect(assistants.map((message) => message.agentLabel)).toEqual([
+      "Build the WWW frontend",
+      "Define brand/content for the WWW",
+      "Build the WWW frontend",
+      "Define brand/content for the WWW",
       "Build the WWW frontend",
       "Define brand/content for the WWW"
     ]);
-    expect(assistants.map((message) => message.sourceSessionId)).toEqual([s1, s2]);
-    expect(assistants.map((message) => message.model)).toEqual(["cx/frontend-model", "cc/brand-model"]);
+    expect(assistants.map((message) => message.sourceSessionId)).toEqual([s1, s2, s1, s2, s1, s2]);
+    expect(assistants.map((message) => message.model)).toEqual([
+      "cx/frontend-model", "cc/brand-model",
+      "cx/frontend-model", "cc/brand-model",
+      "cx/frontend-model", "cc/brand-model"
+    ]);
     expect(assistants.every((message) => message.state === "complete")).toBe(true);
 
-    expect(bodies).toHaveLength(2);
-    expect(bodies[0]?.model).toBe("cx/frontend-model");
-    expect(bodies[1]?.model).toBe("cc/brand-model");
-    expect((bodies[0] as { max_tokens?: number })?.max_tokens).toBe(32_768);
-    expect((bodies[1] as { max_tokens?: number })?.max_tokens).toBe(32_768);
+    expect(bodies).toHaveLength(6);
+    expect(bodies.map((body) => body.model)).toEqual([
+      "cx/frontend-model", "cc/brand-model",
+      "cx/frontend-model", "cc/brand-model",
+      "cx/frontend-model", "cc/brand-model"
+    ]);
+    expect(bodies.every((body) => (body as { max_tokens?: number }).max_tokens === 32_768)).toBe(true);
     const secondPrompt = bodies[1]?.messages?.map((message) => message.content).join("\n") || "";
+    const thirdPrompt = bodies[2]?.messages?.map((message) => message.content).join("\n") || "";
     expect(secondPrompt).toContain("Response from cx/frontend-model");
     expect(secondPrompt).toContain("SHARED TOPIC: WWW / frontend");
+    expect(thirdPrompt).toContain("DISCUSSION ROUND: 2 of 3");
+    expect(thirdPrompt).toContain("Response from cc/brand-model");
 
     const summary = (await chat.listSessions(10)).find((item) => item.sessionId === room.sessionId);
     expect(summary).toMatchObject({
@@ -120,6 +134,49 @@ describe("Shared Room", () => {
       topic: "WWW / frontend"
     });
 
+    chat.close();
+  });
+
+  it("preserves user-selected participant order and bounded round count", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-shared-order-"));
+    roots.push(root);
+    const s1 = await seed(root, "First source", "cx/first-model");
+    const s2 = await seed(root, "Second source", "cc/second-model");
+    const bodies: Array<{ model?: string; messages?: Array<{ content: string }> }> = [];
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      bodies.push(body);
+      const stream = [
+        `data: ${JSON.stringify({ choices: [{ delta: { content: `Response from ${body.model}` } }] })}`,
+        "data: [DONE]",
+        ""
+      ].join("\n\n");
+      return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+
+    const chat = new ChatService({ stateDir: root, apiKey: "test", fetchImpl });
+    const room = await chat.createSharedRoom("Architecture", [
+      { sourceSessionId: s2, role: "RESEARCHER" },
+      { sourceSessionId: s1, role: "DEVELOPER" }
+    ], 2);
+    expect(room.sharedRoom?.participants.map((p) => p.sourceSessionId)).toEqual([s2, s1]);
+    expect(room.sharedRoom?.rounds).toBe(2);
+
+    const done = new Promise<void>((resolve) => {
+      const unsubscribe = chat.subscribe(room.sessionId, (event) => {
+        if (event.type === "process_update" && event.update.agent === "Shared Room" && event.update.stage === "DONE") {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+    await chat.startSharedMessage(room.sessionId, "Discuss this topic.");
+    await done;
+
+    expect(bodies.map((body) => body.model)).toEqual([
+      "cc/second-model", "cx/first-model",
+      "cc/second-model", "cx/first-model"
+    ]);
     chat.close();
   });
 
@@ -135,11 +192,16 @@ describe("Shared Room", () => {
     expect(html).toContain('id="addAgentButton"');
     expect(html).toContain("Zaproś 2. czat");
     expect(html).toContain('id="sharedRoomDialog"');
+    expect(html).toContain('id="sharedRoomStarter"');
+    expect(html).toContain('id="sharedRoomRounds"');
     expect(html).toContain('id="sharedRoomTopicLabel"');
     expect(html).toContain("WSPÓLNY TEMAT / ELEMENT PROJEKTU");
     expect(html).toContain('placeholder="np. WWW / frontend"');
-    expect(html).toContain('/chat-shared-room.js?v=3');
+    expect(html).toContain('/chat-shared-room.js?v=4');
     expect(js).toContain('fetch("/api/chat/shared-rooms"');
+    expect(js).toContain('starterSelect?.value === "second"');
+    expect(js).toContain("rounds,");
+    expect(js).toContain("thread.prepend(bar)");
     expect(js).toContain('topicInput?.scrollIntoView');
     expect(js).toContain('topicInput?.classList.add("invalid")');
     expect(js).toContain("Shared Room · per-agent models");
@@ -149,6 +211,7 @@ describe("Shared Room", () => {
     expect(css).toContain(".shared-room-participant");
     expect(css).toContain(".v5-agent-button");
     expect(css).toContain(".shared-room-topic-step");
+    expect(css).toContain("position:sticky!important");
     expect(css).toContain("#sharedRoomTopic.invalid");
   });
 });
