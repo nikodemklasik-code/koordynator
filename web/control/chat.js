@@ -1403,6 +1403,20 @@ async function restoreHermesPty() {
   }
 }
 
+async function restoreOrStartHermesPty() {
+  if (await restoreHermesPty()) return true;
+  try {
+    const grantResponse = await fetch("/api/integrations/hermes-grants", { headers: { accept: "application/json" } });
+    if (!grantResponse.ok) return false;
+    const grants = await grantResponse.json();
+    if (grants?.terminal !== true) return false;
+    await startHermesPty();
+    return Boolean(state.hermesSessionId);
+  } catch {
+    return false;
+  }
+}
+
 function hermesStartError(code) {
   const known = {
     HERMES_TERMINAL_REQUIRED: "Brak zgody na lokalny terminal.",
@@ -1520,10 +1534,19 @@ async function sendMessage() {
   resizeInput();
   updateControls();
   try {
+    const repository = typeof window.koordynatorSelectedRepository === "function"
+      ? window.koordynatorSelectedRepository()
+      : undefined;
+    const requestBody = {
+      message,
+      attachments,
+      ...(modelSelect.value ? { model: modelSelect.value } : {}),
+      ...(repository ? { repository } : {})
+    };
     const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify(modelSelect.value ? { message, model: modelSelect.value, attachments } : { message, attachments })
+      body: JSON.stringify(requestBody)
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -1683,7 +1706,7 @@ try {
 } catch { state.hermesMuted = false; }
 applyHermesMute();
 
-Promise.all([loadHealth(), restoreSession(), restoreHermesPty()]).catch((error) => {
+Promise.all([loadHealth(), restoreSession(), restoreOrStartHermesPty()]).catch((error) => {
   state.generating = false;
   setStatus("error", error instanceof Error ? error.message : "Chat unavailable");
   updateControls();

@@ -760,3 +760,46 @@ body.koord-shell-active .koord-session-value{font-size:9px!important}
     min-width:95px!important;
   }
 }
+
+
+/* GitHub repository selector: one active repository is attached to every chat turn. */
+.github-repository-menu{
+  position:fixed;
+  z-index:10000;
+  width:min(430px,calc(100vw - 24px));
+  max-height:min(520px,70vh);
+  overflow:auto;
+  padding:8px;
+  border:1px solid #254052;
+  background:#08131c;
+  box-shadow:0 18px 48px rgba(0,0,0,.48);
+}
+.github-repository-menu.hidden{display:none!important}
+.github-repository-menu-head{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  padding:8px 10px 10px;
+  border-bottom:1px solid #1d3444;
+}
+.github-repository-menu-head strong{font-size:13px;color:#e7f0f6}
+.github-repository-menu-head span{font-size:11px;color:#8195a5}
+.github-repository-menu-empty{padding:16px 10px;color:#8ea0ad;font-size:12px}
+.github-repository-item{
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:3px;
+  padding:9px 10px;
+  border:0;
+  border-bottom:1px solid #102534;
+  background:transparent;
+  color:#dbe8ef;
+  text-align:left;
+  cursor:pointer;
+}
+.github-repository-item:hover{background:#0d2230}
+.github-repository-item.active{background:#123042;box-shadow:inset 3px 0 0 #69e3a3}
+.github-repository-item strong{font-size:12px}
+.github-repository-item span{font-size:10px;color:#8398a8;text-transform:uppercase;letter-spacing:.04em}
