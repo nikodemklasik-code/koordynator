@@ -505,11 +505,21 @@ export function createControlServer(options: ControlServerOptions): Server {
         try { selectedRepository = assertWorkspaceRepository(workspace, requestedRepository); }
         catch { throw new ChatServiceError("WORKSPACE_REPOSITORY_FIXED", 403); }
 
+        const session = await chat.getSession(sessionId);
+        if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+        if (session.sharedRoom) {
+          // Shared Rooms are discussion spaces. Each participant keeps its own model/context;
+          // the ordinary single-model selector and repository execution path do not override them.
+          return sendJson(response, 202, await chat.startSharedMessage(
+            sessionId,
+            payload.message,
+            payload.attachments ?? []
+          ));
+        }
+
         const protectedPush = explicitProtectedPushRequest(payload.message, selectedRepository, workspace);
         if (protectedPush) await ownerPushGrants.grant({ ...protectedPush, source: "chat" });
 
-        const session = await chat.getSession(sessionId);
-        if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
         const requestedModel = typeof payload.model === "string" ? safeChatModel(payload.model) : session.model;
         const catalog = await modelCatalog.list();
         const selected = resolveExecutableChatModel({
@@ -548,13 +558,6 @@ export function createControlServer(options: ControlServerOptions): Server {
         const attachments = repoContext
           ? [...clientAttachments, repositoryAttachment(selectedRepository ?? repoContext.repository, repoContext.commit, repoContext.context)]
           : clientAttachments;
-        if (session.sharedRoom) {
-          return sendJson(response, 202, await chat.startSharedMessage(
-            sessionId,
-            payload.message,
-            attachments
-          ));
-        }
         return sendJson(response, 202, await chat.startMessage(
           sessionId,
           payload.message,
