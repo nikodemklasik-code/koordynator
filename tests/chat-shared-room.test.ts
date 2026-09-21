@@ -107,6 +107,8 @@ describe("Shared Room", () => {
     expect(bodies).toHaveLength(2);
     expect(bodies[0]?.model).toBe("cx/frontend-model");
     expect(bodies[1]?.model).toBe("cc/brand-model");
+    expect((bodies[0] as { max_tokens?: number })?.max_tokens).toBe(32_768);
+    expect((bodies[1] as { max_tokens?: number })?.max_tokens).toBe(32_768);
     const secondPrompt = bodies[1]?.messages?.map((message) => message.content).join("\n") || "";
     expect(secondPrompt).toContain("Response from cx/frontend-model");
     expect(secondPrompt).toContain("SHARED TOPIC: WWW / frontend");
