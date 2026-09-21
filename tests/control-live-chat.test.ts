@@ -65,6 +65,31 @@ function confirmedFreeCatalog(model = "openai/gpt-5.6-sol"): ChatModelCatalogPor
 }
 
 describe("Live Chat service", () => {
+  it("persists chat titles, auto-titles the first message, allows rename and safe delete", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-title-"));
+    roots.push(root);
+    const service = new ChatService({ stateDir: root, apiKey: "secret", fetchImpl: streamingFetch(["ok"]) });
+    const session = await service.createSession("openai/gpt-5.6-sol");
+    expect(session.title).toBe("New chat");
+
+    const done = new Promise<void>((resolvePromise) => {
+      service.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done" || event.type === "error") resolvePromise();
+      });
+    });
+    await service.startMessage(session.sessionId, "Frontend i grafika dla strony");
+    await done;
+    expect((await service.getSession(session.sessionId))?.title).toBe("Frontend i grafika dla strony");
+
+    const renamed = await service.renameSession(session.sessionId, "Harmonia WWW");
+    expect(renamed.title).toBe("Harmonia WWW");
+    expect((await service.listSessions())[0]?.title).toBe("Harmonia WWW");
+
+    await service.deleteSession(session.sessionId);
+    expect(await service.getSession(session.sessionId)).toBeNull();
+    service.close();
+  });
+
   it("can use a loopback OmniRoute completion route without a redundant bearer key", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-noauth-"));
     roots.push(root);
@@ -463,6 +488,22 @@ describe("Live Chat HTTP boundary and UI", () => {
       });
       expect(unknown.status).toBe(400);
       expect(await unknown.json()).toEqual({ error: "CHAT_UNKNOWN_FIELD" });
+
+      const renamed = await fetch(`${base}/api/chat/sessions/${otherSession.sessionId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: "Frontend WWW" })
+      });
+      expect(renamed.status).toBe(200);
+      expect(await renamed.json()).toMatchObject({ title: "Frontend WWW" });
+
+      const listed = await fetch(`${base}/api/chat/sessions?limit=100`).then((response) => response.json()) as { sessions: Array<{ sessionId: string; title: string }> };
+      expect(listed.sessions.find((item) => item.sessionId === otherSession.sessionId)?.title).toBe("Frontend WWW");
+
+      const deleted = await fetch(`${base}/api/chat/sessions/${otherSession.sessionId}`, { method: "DELETE" });
+      expect(deleted.status).toBe(200);
+      expect(await deleted.json()).toEqual({ deleted: true, sessionId: otherSession.sessionId });
+      expect((await fetch(`${base}/api/chat/sessions/${otherSession.sessionId}`)).status).toBe(404);
 
       const denied = await fetch(`${base}/api/tasks`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
       expect(denied.status).toBe(405);
