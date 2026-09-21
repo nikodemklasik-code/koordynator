@@ -1278,7 +1278,7 @@ function ensureHermesTerminal() {
     convertEol: true,
     cursorBlink: true,
     disableStdin: false,
-    fontSize: 15,
+    fontSize: 17,
     lineHeight: 1.35,
     letterSpacing: 0.4,
     fontFamily: "SF Mono, Menlo, Monaco, ui-monospace, monospace",

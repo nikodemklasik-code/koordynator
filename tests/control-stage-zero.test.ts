@@ -462,7 +462,7 @@ describe("Etap 0 zasilany z chatu", () => {
       expect(js).toContain("searchParams.set(\"scope\", \"1\")");
       expect(js).toContain("fromIndex");
       expect(js).toContain("toIndex");
-      expect(js).toContain("fontSize: 15");
+      expect(js).toContain("fontSize: 17");
       expect(js).toContain("colorizeHermesOutput");
       expect(js).toContain("▶");
       expect(js).toContain("◀");
