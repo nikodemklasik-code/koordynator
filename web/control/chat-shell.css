@@ -1065,3 +1065,101 @@ body.koord-shell-active .runtime-terminal-toolbar [data-runtime-action="expand"]
   body.koord-shell-active .koord-shell-group{gap:4px}
   body.koord-shell-active .koord-shell-group + .koord-shell-group{margin-left:3px;padding-left:9px}
 }
+
+
+/* V1.4: screen-owned controls.
+   Global navigation stays global; second-row actions are grouped by the current screen's function. */
+body.koord-shell-active .koord-shell-group-creative{
+  padding:3px 5px!important;
+  border:1px solid #315444!important;
+  border-radius:12px!important;
+  background:#0c1915!important;
+}
+body.koord-shell-active .koord-shell-group-creative::before{display:none!important}
+body.koord-shell-active .koord-shell-group-creative .koord-shell-button{
+  border-color:#2e6c51!important;
+  background:#0f261d!important;
+  color:#b8ebcf!important;
+}
+body.koord-shell-active .koord-shell-group-creative .koord-shell-button:hover{
+  border-color:#4a9571!important;
+  background:#133326!important;
+  color:#effff7!important;
+}
+body.koord-shell-active .koord-shell-group-creative .koord-shell-button.active{
+  border-color:#5ba57f!important;
+  background:#143b2c!important;
+  color:#f4fff8!important;
+}
+
+body.koord-shell-active .koord-shell-tools{
+  gap:9px!important;
+}
+body.koord-shell-active .koord-shell-tool-group{
+  position:relative;
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  flex:0 0 auto;
+}
+body.koord-shell-active .koord-shell-tool-group + .koord-shell-tool-group{
+  margin-left:4px;
+  padding-left:11px;
+}
+body.koord-shell-active .koord-shell-tool-group + .koord-shell-tool-group::before{
+  content:"";
+  position:absolute;
+  left:0;
+  top:7px;
+  width:1px;
+  height:24px;
+  background:#28404f;
+}
+body.koord-shell-active .koord-shell-tool-group-process .koord-shell-button,
+body.koord-shell-active .koord-shell-tool-group-legal-work .koord-shell-button{
+  border-color:#376783!important;
+  background:#0e2533!important;
+  color:#c9ebff!important;
+}
+body.koord-shell-active .koord-shell-tool-group-content .koord-shell-button{
+  border-color:#315044!important;
+  background:#0d1e18!important;
+  color:#bce4cf!important;
+}
+body.koord-shell-active .koord-shell-tool-group-governance .koord-shell-button{
+  border-color:#4a466d!important;
+  background:#18172a!important;
+  color:#d7d4f8!important;
+}
+body.koord-shell-active .koord-shell-tool-group-workspace{
+  margin-left:auto!important;
+}
+body.koord-shell-active .koord-shell-tool-group-workspace .koord-shell-button,
+body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill{
+  color:#93a4af!important;
+  background:#09131a!important;
+  border-color:#223642!important;
+}
+body.koord-shell-active .koord-shell-tool-group-workspace .koord-local-access{
+  display:flex!important;
+  align-items:center!important;
+  gap:5px!important;
+}
+body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill{
+  min-height:var(--shell-button-height)!important;
+  height:var(--shell-button-height)!important;
+  padding:0 10px!important;
+  border-radius:10px!important;
+  font-size:9px!important;
+}
+body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill.on{
+  border-color:#2d6647!important;
+  background:#0b1b13!important;
+  color:#b9e8ca!important;
+}
+
+@media(max-width:1280px){
+  body.koord-shell-active .koord-shell-tool-group-workspace{margin-left:0!important}
+  body.koord-shell-active .koord-shell-tools{overflow-x:auto!important}
+}
