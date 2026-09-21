@@ -729,3 +729,79 @@ button { color: inherit; }
   font-weight: 800;
   letter-spacing: .02em;
 }
+
+
+/* Shared Room: cross-conversation multi-agent collaboration. */
+.v5-agent-button{
+  height:40px!important;
+  min-width:54px!important;
+  padding:0 10px!important;
+  border:1px solid #4f4a77!important;
+  border-radius:9px!important;
+  background:#17182a!important;
+  color:#d9d8ff!important;
+  font:inherit!important;
+  font-size:10px!important;
+  font-weight:800!important;
+  letter-spacing:.02em!important;
+  cursor:pointer!important;
+  white-space:nowrap!important;
+}
+.v5-agent-button:hover{border-color:#7772af!important;background:#20213a!important;color:#fff!important}
+.shared-room-dialog{
+  width:min(620px,calc(100vw - 28px));
+  padding:0;
+  border:1px solid #3d4663;
+  border-radius:12px;
+  background:#0b1219;
+  color:#e9eef3;
+  box-shadow:0 30px 90px rgba(0,0,0,.55);
+}
+.shared-room-dialog::backdrop{background:rgba(0,0,0,.72);backdrop-filter:blur(3px)}
+.shared-room-form{display:grid;gap:13px;margin:0;padding:0}
+.shared-room-form header,.shared-room-form footer{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;
+  border-bottom:1px solid #283442;background:#0e171f
+}
+.shared-room-form footer{border-bottom:0;border-top:1px solid #283442;justify-content:flex-end}
+.shared-room-form header h2{margin:2px 0 0;font-size:18px}
+.shared-room-form header button,.shared-room-form footer button{
+  min-height:34px;border:1px solid #354552;border-radius:8px;background:#111c24;color:#cbd5dc;padding:0 11px;cursor:pointer
+}
+.shared-room-form header button{width:34px;padding:0;font-size:19px}
+.shared-room-form footer .primary-button{border-color:#5b5d91;background:#25274a;color:#f4f3ff}
+.shared-room-form>p{margin:0;padding:0 16px;color:#93a3ae;font-size:11px;line-height:1.55}
+.shared-room-form>label{display:grid;gap:6px;padding:0 16px;color:#91a2ae;font-size:10px;font-weight:700}
+.shared-room-form input,.shared-room-form select{
+  width:100%;height:38px;border:1px solid #30414e;border-radius:8px;background:#081118;color:#eef3f6;padding:0 10px;outline:none
+}
+.shared-room-form input:focus,.shared-room-form select:focus{border-color:#6667a0;box-shadow:0 0 0 3px rgba(102,103,160,.12)}
+.shared-room-current{
+  margin:0 16px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border:1px solid #33485a;border-radius:9px;background:#0b1821
+}
+.shared-room-current strong{font-size:11px;color:#e8eef3}
+.shared-room-current span{font-size:9px;color:#7f93a2;text-align:right}
+.shared-room-form #sharedRoomError{position:static!important;margin:0 16px!important;width:auto!important}
+.shared-room-bar{
+  min-height:54px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:7px 10px;
+  border-bottom:1px solid #2b3353;background:linear-gradient(90deg,#121427,#0b121b)
+}
+.shared-room-bar.hidden{display:none!important}
+.shared-room-bar-title{display:grid;gap:2px;flex:0 0 auto}
+.shared-room-bar-title span{color:#777bb4;font-size:7px;font-weight:900;letter-spacing:.12em}
+.shared-room-bar-title strong{max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#f0efff}
+.shared-room-participants{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.shared-room-participants::-webkit-scrollbar{display:none}
+.shared-room-participant{
+  min-width:0;max-width:250px;display:grid;gap:1px;padding:5px 8px;border:1px solid #3b416e;border-radius:8px;background:#171a31
+}
+.shared-room-participant strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#e2e2ff;font-size:9px}
+.shared-room-participant small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8f94bd;font-size:7px}
+.chat-message.assistant .message-author[title*="source"]{color:#c5c7ff}
+@media(max-width:760px){
+  .shared-room-bar{align-items:flex-start;flex-direction:column}
+  .shared-room-participants{width:100%;justify-content:flex-start}
+  .shared-room-participant{flex:0 0 auto}
+  .v5-agent-button{min-width:48px!important;padding:0 8px!important}
+}
