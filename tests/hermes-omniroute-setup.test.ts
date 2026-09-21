@@ -132,6 +132,7 @@ describe("Hermes / OmniRoute operator setup", () => {
       expect(config.fallback_providers).toBeUndefined();
       expect((await stat(path)).mode & 0o777).toBe(0o600);
       expect(launch.args).toEqual(["chat", "--provider", "custom", "--model", settings.model]);
+      expect(launch.command === "hermes" || launch.command.endsWith("/.local/bin/hermes")).toBe(true);
       expect(launch.args.join(" ")).not.toContain(settings.apiKey);
       expect(launch.env.OPENROUTER_API_KEY).toBe("");
       expect(launch.env.OMNIROUTE_API_KEY).toBeUndefined();
