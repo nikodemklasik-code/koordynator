@@ -9,6 +9,7 @@ import { mintTaskTicket } from "../security/task-ticket.js";
 import { startTicketProxy, type TicketProxy } from "../security/ticket-proxy.js";
 import { omniRouteSettings } from "./local-config.js";
 import { freeRouteGuard } from "./free-routes.js";
+import { WORKSPACE_REPOSITORY_POLICIES } from "../control/workspace-repository-policy.js";
 
 async function privateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
@@ -114,6 +115,105 @@ function managedSoul(grants: HermesGrantStatus): string {
     `Separate observable tool output from inference. NOT_TESTED or UNEXECUTED is never PASS.\n`;
 }
 
+
+function protectedPushPolicy(): Record<string, string[]> {
+  const policy: Record<string, string[]> = {};
+  for (const item of Object.values(WORKSPACE_REPOSITORY_POLICIES)) {
+    if (item.repository && item.protectedBranches.length) policy[item.repository.toLowerCase()] = [...item.protectedBranches];
+  }
+  return policy;
+}
+
+async function prepareGitGuard(home: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const realGit = env.KOORDYNATOR_REAL_GIT?.trim()
+    || (existsSync("/usr/bin/git") ? "/usr/bin/git" : existsSync("/usr/local/bin/git") ? "/usr/local/bin/git" : "");
+  const grantFile = env.KOORDYNATOR_OWNER_PUSH_GRANT_FILE?.trim();
+  if (!realGit || !grantFile) return null;
+
+  const bin = join(home, "bin");
+  await privateDirectory(bin);
+  const wrapper = join(bin, "git");
+  const policy = JSON.stringify(protectedPushPolicy());
+  const source = `#!/usr/bin/env node
+const fs = require("node:fs");
+const cp = require("node:child_process");
+const path = require("node:path");
+const REAL_GIT = ${JSON.stringify(realGit)};
+const GRANT_FILE = ${JSON.stringify(grantFile)};
+const POLICY = ${policy};
+
+function repositoryFromRemote() {
+  try {
+    const remote = cp.execFileSync(REAL_GIT, ["remote", "get-url", "origin"], { cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    let match = /^https?:\\/\\/github\\.com\\/([^/]+)\\/([^/]+?)(?:\\.git)?$/.exec(remote);
+    if (!match) match = /^git@github\\.com:([^/]+)\\/([^/]+?)(?:\\.git)?$/.exec(remote);
+    if (!match) match = /^ssh:\\/\\/git@github\\.com\\/([^/]+)\\/([^/]+?)(?:\\.git)?$/.exec(remote);
+    return match ? (match[1] + "/" + match[2]).toLowerCase() : "";
+  } catch { return ""; }
+}
+function currentBranch() {
+  try { return cp.execFileSync(REAL_GIT, ["branch", "--show-current"], { cwd: process.cwd(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); }
+  catch { return ""; }
+}
+function consumeGrant(repository, branch) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(GRANT_FILE, "utf8"));
+    const now = Date.now();
+    const grants = Array.isArray(parsed.grants) ? parsed.grants : [];
+    const index = grants.findIndex((g) => g && String(g.repository || "").toLowerCase() === repository && g.branch === branch && Date.parse(g.expiresAt) > now);
+    if (index < 0) return false;
+    grants.splice(index, 1);
+    const fresh = grants.filter((g) => Date.parse(g.expiresAt) > now);
+    const tmp = GRANT_FILE + "." + process.pid + ".tmp";
+    fs.mkdirSync(path.dirname(GRANT_FILE), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(tmp, JSON.stringify({ grants: fresh }, null, 2) + "\\n", { mode: 0o600 });
+    fs.renameSync(tmp, GRANT_FILE);
+    return true;
+  } catch { return false; }
+}
+function protectedTargets(args, protectedBranches) {
+  const pushIndex = args.indexOf("push");
+  if (pushIndex < 0) return [];
+  const tail = args.slice(pushIndex + 1);
+  const deleteMode = tail.includes("--delete") || tail.includes("-d");
+  const forceMode = tail.some((arg) => arg === "--force" || arg === "-f" || arg.startsWith("--force-with-lease"));
+  const positional = tail.filter((arg) => !arg.startsWith("-"));
+  const refspecs = positional.length > 1 ? positional.slice(1) : [];
+  const current = currentBranch();
+  const targets = (refspecs.length ? refspecs : [current]).map((raw) => {
+    let spec = String(raw || "");
+    const plus = spec.startsWith("+");
+    if (plus) spec = spec.slice(1);
+    const dest = spec.includes(":") ? spec.split(":").pop() : spec;
+    const branch = dest === "HEAD" || !dest ? current : dest.replace(/^refs\\/heads\\//, "");
+    return { branch, force: forceMode || plus, delete: deleteMode || spec.startsWith(":") };
+  });
+  return targets.filter((item) => protectedBranches.includes(item.branch));
+}
+
+const args = process.argv.slice(2);
+const repository = repositoryFromRemote();
+const protectedBranches = POLICY[repository] || [];
+const targets = protectedTargets(args, protectedBranches);
+for (const target of targets) {
+  if (target.force || target.delete) {
+    process.stderr.write("KOORDYNATOR_PROTECTED_BRANCH_FORCE_OR_DELETE_DENIED " + repository + " " + target.branch + "\\n");
+    process.exit(77);
+  }
+  if (!consumeGrant(repository, target.branch)) {
+    process.stderr.write("KOORDYNATOR_OWNER_PUSH_APPROVAL_REQUIRED " + repository + " " + target.branch + "\\n");
+    process.exit(77);
+  }
+}
+const result = cp.spawnSync(REAL_GIT, args, { cwd: process.cwd(), env: process.env, stdio: "inherit" });
+if (result.error) { process.stderr.write(String(result.error.message || result.error) + "\\n"); process.exit(126); }
+process.exit(result.status == null ? 1 : result.status);
+`;
+  await privateFile(wrapper, source);
+  await chmod(wrapper, 0o700);
+  return bin;
+}
+
 async function prepareManagedSkills(home: string): Promise<void> {
   const skillsRoot = join(home, "skills");
   const skill = join(skillsRoot, "koordynator-dynamic-routing");
@@ -158,7 +258,9 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
     }
     const grants = await loadHermesGrants(join(root, ".orchestrator"));
     await prepareManagedSkills(home);
-    await privateFile(join(home, "SOUL.md"), managedSoul(grants));
+    const gitGuardBin = await prepareGitGuard(home, env);
+    await privateFile(join(home, "SOUL.md"), managedSoul(grants) +
+      "\n## Protected Git branches\nProtected branches require a fresh owner approval scoped to the current repository and branch. Never bypass the managed git guard, never call an absolute git binary to evade it, and never force-push or delete a protected branch.\n");
     const externalDirs = dynamicSkillRoots(root, env);
     const config: Record<string, unknown> = {
       model: { provider: "custom", default: settings.model, base_url: proxy.url,
@@ -184,6 +286,7 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
         HERMES_INFERENCE_PROVIDER: "custom",
         HERMES_INFERENCE_MODEL: settings.model,
         KOORDYNATOR_LOCAL_FILE_ROOTS: JSON.stringify(localRoots),
+        ...(gitGuardBin ? { PATH: `${gitGuardBin}:${childEnvironment(env).PATH ?? ""}` } : {}),
         CUSTOM_BASE_URL: held.url,
         OPENAI_BASE_URL: held.url,
         OPENAI_API_KEY: token,

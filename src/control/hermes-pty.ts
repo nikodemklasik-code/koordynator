@@ -26,12 +26,14 @@ export type HermesLaunchSpec = {
 
 export type HermesPtyHooks = {
   spawn?: (spec: HermesLaunchSpec & { cols: number; rows: number }) => PtyHandle;
-  prepare?: (model?: string) => Promise<HermesLaunchSpec>;
+  prepare?: (model?: string, context?: HermesWorkspaceContext) => Promise<HermesLaunchSpec>;
 };
 
 export type HermesPtyEvent =
   | { type: "out"; text: string }
   | { type: "exit"; code: number };
+
+export type HermesWorkspaceContext = { workspace: "general" | "corporation" | "harmonia-legal"; repository?: string };
 
 export class HermesPtyError extends Error {
   constructor(readonly code: string, readonly status: number) {
@@ -122,25 +124,27 @@ export class HermesPtySession {
   private readonly subscribers = new Map<string, Set<(event: HermesPtyEvent) => void>>();
   private cols = HERMES_MIN_COLS;
   private rows = HERMES_MIN_ROWS;
+  private context: HermesWorkspaceContext = { workspace: "general" };
 
   constructor(
     private readonly options: {
       stateDir: string;
       spawn?: HermesPtyHooks["spawn"];
-      prepare: (model?: string) => Promise<HermesLaunchSpec>;
+      prepare: (model?: string, context?: HermesWorkspaceContext) => Promise<HermesLaunchSpec>;
     }
   ) {
     this.grants = new HermesGrantStore(options.stateDir);
   }
 
-  async start(size: { cols?: unknown; rows?: unknown } = {}, model?: string): Promise<{ sessionId: string; cols: number; rows: number; pid: number | null; model: string | null }> {
+  async start(size: { cols?: unknown; rows?: unknown } = {}, model?: string, context: HermesWorkspaceContext = { workspace: "general" }): Promise<{ sessionId: string; cols: number; rows: number; pid: number | null; model: string | null; workspace: string; repository: string | null }> {
     const grant = await this.grants.status();
     if (!grant.terminal) throw new HermesPtyError("HERMES_TERMINAL_REQUIRED", 403);
     this.stop();
     const bounded = hermesSize(size);
     this.cols = bounded.cols;
     this.rows = bounded.rows;
-    const spec = await this.options.prepare(model);
+    this.context = context;
+    const spec = await this.options.prepare(model, context);
     const spawnPty = this.options.spawn ?? ((launch: HermesLaunchSpec & { cols: number; rows: number }) => spawnScriptPty(launch));
     const handle = spawnPty({ ...spec, cols: this.cols, rows: this.rows });
     const sessionId = randomUUID();
@@ -160,11 +164,11 @@ export class HermesPtySession {
       this.subscribers.delete(sessionId);
     });
     try { handle.resize(this.cols, this.rows); } catch { /* optional */ }
-    return { sessionId, cols: this.cols, rows: this.rows, pid: handle.pid ?? null, model: model ?? null };
+    return { sessionId, cols: this.cols, rows: this.rows, pid: handle.pid ?? null, model: model ?? null, workspace: context.workspace, repository: context.repository ?? null };
   }
 
-  status(): { running: boolean; sessionId: string | null; cols: number; rows: number; pid: number | null } {
-    return { running: this.sessionId !== null, sessionId: this.sessionId, cols: this.cols, rows: this.rows, pid: this.handle?.pid ?? null };
+  status(): { running: boolean; sessionId: string | null; cols: number; rows: number; pid: number | null; workspace: string; repository: string | null } {
+    return { running: this.sessionId !== null, sessionId: this.sessionId, cols: this.cols, rows: this.rows, pid: this.handle?.pid ?? null, workspace: this.context.workspace, repository: this.context.repository ?? null };
   }
 
   write(sessionId: string, data: string): void {
@@ -194,6 +198,7 @@ export class HermesPtySession {
     this.handle = null;
     this.sessionId = null;
     this.launch = null;
+    this.context = { workspace: "general" };
     if (activeSessionId) this.subscribers.delete(activeSessionId);
     if (close) void close().catch(() => undefined);
     return { stopped: true };

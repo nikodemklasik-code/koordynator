@@ -33,13 +33,15 @@
     if (/^tasks?$/.test(label)) return "tasks";
     if (/^providers?$/.test(label) || href === "/providers") return "providers";
     if (/^(releases?|readiness)$/.test(label) || href === "/releases") return "releases";
-    if (/harmonia legal/.test(label)) return "harmonia-legal";
+    if (/harmonia legal/.test(label) || href === "/harmonia-legal") return "harmonia-legal";
+    if (/^corporation$/.test(label) || href === "/corporation") return "corporation";
     if (/job app/.test(label)) return "job-app";
     if (/ustr[oó]j/.test(label) || href === "/ustroj") return "ustroj";
     if (/^contracts?$/.test(label)) return "contracts";
     if (/^routing$/.test(label)) return "routing";
     if (/^billing$/.test(label)) return "billing";
     if (/^studio$/.test(label)) return "studio";
+    if (id === "githubchatbutton" || /^github\b/.test(label)) return "github";
     if (/^settings$/.test(label)) return "settings";
     return id ? `id:${id}` : label ? `label:${label}` : "";
   };
@@ -103,21 +105,23 @@
     el.dataset.shellDuplicate = key;
   }
 
+  const currentPath = window.location.pathname;
   const canonicalScreens = [
     ["home", "Home", "/"],
     ["live-chat", "Live Chat", "/chat"],
+    ["corporation", "Corporation", "/corporation"],
     ["tasks", "Tasks", "/"],
     ["providers", "Providers", "/providers"],
     ["releases", "Releases", "/releases"],
-    ["harmonia-legal", "Harmonia Legal", ""],
+    ["harmonia-legal", "Harmonia Legal", "/harmonia-legal"],
     ["job-app", "Job App", ""],
     ["ustroj", "Ustrój", "/ustroj"]
   ];
 
   for (const [key, label, href] of canonicalScreens) {
     let el = preferred.get(key);
-    if (!el && href) el = makeLink(label, href, key, key === "live-chat");
-    if (!el && (key === "harmonia-legal" || key === "job-app")) {
+    if (!el && href) el = makeLink(label, href, key, currentPath === href);
+    if (!el && key === "job-app") {
       const placeholder = document.createElement("button");
       placeholder.type = "button";
       placeholder.textContent = label;
@@ -131,7 +135,13 @@
     el.dataset.shellKey = key;
     el.classList.add("koord-shell-button", "importance-2");
     el.classList.remove("importance-1", "importance-3", "primary");
-    if (key === "live-chat") el.classList.add("active");
+    if (href && currentPath === href) {
+      el.classList.add("active");
+      el.setAttribute("aria-current", "page");
+    } else {
+      el.classList.remove("active");
+      el.removeAttribute("aria-current");
+    }
     primary.appendChild(el);
   }
 
@@ -158,6 +168,7 @@
     "create-document",
     "stage-zero",
     "settings",
+    "github",
     "terminal",
     "popout"
   ];
@@ -168,6 +179,16 @@
     el.dataset.shellKey = key;
     el.classList.add("koord-shell-button", key === "stage-zero" ? "importance-2" : "importance-3");
     tools.appendChild(el);
+  }
+
+  // GitHub starts inside the runtime strip, so it is not part of the pre-workspace
+  // clickable scan. Move the single canonical GitHub control into the tools row.
+  const githubControl = document.getElementById("githubChatButton");
+  if (githubControl && !tools.contains(githubControl)) {
+    githubControl.hidden = false;
+    githubControl.dataset.shellKey = "github";
+    githubControl.classList.add("koord-shell-button", "importance-3");
+    tools.appendChild(githubControl);
   }
 
   for (const key of ["export-md", "export-pdf", "export-zip"]) {

@@ -26,6 +26,7 @@ const controlToken = process.env.KOORDYNATOR_CONTROL_TOKEN?.trim() || undefined;
 if (!loopback && !controlToken) throw new Error("CONTROL_TOKEN_REQUIRED_FOR_NON_LOOPBACK");
 
 const stateDir = resolve(process.env.KOORDYNATOR_STATE_DIR ?? ".orchestrator");
+process.env.KOORDYNATOR_OWNER_PUSH_GRANT_FILE = process.env.KOORDYNATOR_OWNER_PUSH_GRANT_FILE?.trim() || resolve(stateDir, "owner-push-grants.json");
 const materialisationEnabled = process.env.KOORDYNATOR_CHAT_MATERIALISE !== "0";
 const signing = materialisationEnabled ? await loadOrCreateControlSigningKey(stateDir) : null;
 
@@ -96,7 +97,7 @@ const server = createControlServer({
   ...(controlToken === undefined ? {} : { controlToken }),
   chatAllowGithubContext: process.env.KOORDYNATOR_CHAT_GITHUB_CONTEXT !== "0",
   chatAllowWorkspaceContext: process.env.KOORDYNATOR_CHAT_WORKSPACE_CONTEXT !== "0",
-  chatDefaultRepository: process.env.KOORDYNATOR_CHAT_DEFAULT_REPOSITORY?.trim() || "nikodemklasik-code/koordynator",
+  ...(process.env.KOORDYNATOR_CHAT_DEFAULT_REPOSITORY?.trim() ? { chatDefaultRepository: process.env.KOORDYNATOR_CHAT_DEFAULT_REPOSITORY.trim() } : {}),
   chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION === "1",
   chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1",
   chatApiKeyEnv: "OMNIROUTE_API_KEY",
