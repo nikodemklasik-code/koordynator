@@ -401,7 +401,7 @@ export function createControlServer(options: ControlServerOptions): Server {
       const chatSessionMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)$/i.exec(url.pathname);
       if ((method === "GET" || method === "HEAD") && chatSessionMatch?.[1]) {
         const sessionId = safeSessionId(chatSessionMatch[1]);
-        const session = await chat.getSession(sessionId);
+        const session = await chat.recoverSession(sessionId);
         return session ? sendJson(response, 200, session) : sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
       }
 
