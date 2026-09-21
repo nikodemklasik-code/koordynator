@@ -612,3 +612,316 @@ body.koord-shell-active .v5-statusbar{
   height:26px!important;
   flex:0 0 26px!important;
 }
+
+
+/* V1.3 CANONICAL CONTROL CONTRACT
+   ONE CHAT CONTROL ROW:
+   [UNIFIED MODEL SEARCH+MENU] [ROLE] [ATTACH] [STOP] [SEND]
+   HERMES CONTROL BUTTONS USE THE SAME HEIGHT, RADIUS AND VISUAL HIERARCHY.
+   MAXIMUM TWO HERMES CONTROL ROWS ABOVE THE TERMINAL SURFACE. */
+:root{
+  --workspace-control-height:38px;
+  --workspace-control-radius:9px;
+  --chat-composer-height:124px;
+  --hermes-composer-height:68px;
+}
+
+/* Chat control row: exactly one row for model + role + actions. */
+body.koord-shell-active .v5-composer-actions.v5-canonical-control-row{
+  display:block!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:var(--workspace-control-height)!important;
+  padding:5px 7px 7px!important;
+}
+
+body.koord-shell-active .v5-control-row{
+  width:100%;
+  min-width:0;
+  display:grid;
+  grid-template-columns:minmax(280px,1fr) minmax(128px,170px) 38px 38px 38px;
+  gap:7px;
+  align-items:center;
+}
+
+body.koord-shell-active .v5-unified-model-select{
+  position:relative;
+  min-width:0;
+  height:var(--workspace-control-height);
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 34px;
+  align-items:center;
+  border:1px solid #2a3b47;
+  border-radius:var(--workspace-control-radius);
+  background:#091016;
+  overflow:visible;
+}
+
+body.koord-shell-active .v5-unified-model-select:focus-within{
+  border-color:#4b7ea1;
+  box-shadow:0 0 0 3px rgba(75,126,161,.10);
+}
+
+body.koord-shell-active .v5-model-search{
+  width:100%!important;
+  min-width:0!important;
+  height:36px!important;
+  padding:0 10px 0 12px!important;
+  border:0!important;
+  border-radius:var(--workspace-control-radius) 0 0 var(--workspace-control-radius)!important;
+  background:transparent!important;
+  color:#d8e3ea!important;
+  outline:none!important;
+  font-size:11px!important;
+}
+
+body.koord-shell-active .v5-model-search::placeholder{
+  color:#627682!important;
+}
+
+body.koord-shell-active .v5-model-menu-button{
+  width:34px;
+  height:36px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-left:1px solid #22333f;
+  border-radius:0 var(--workspace-control-radius) var(--workspace-control-radius) 0;
+  background:#0b141b;
+  color:#9fb2bd;
+  font-size:16px;
+  line-height:1;
+  cursor:pointer;
+}
+
+body.koord-shell-active .v5-model-menu-button:hover{
+  background:#10202b;
+  color:#edf6fb;
+}
+
+body.koord-shell-active .v5-model-role{
+  width:100%!important;
+  min-width:0!important;
+  height:var(--workspace-control-height)!important;
+  padding:0 10px!important;
+  border:1px solid #2a3b47!important;
+  border-radius:var(--workspace-control-radius)!important;
+  background:#091016!important;
+  color:#d0dce3!important;
+  outline:none!important;
+  font-size:11px!important;
+}
+
+body.koord-shell-active .v5-native-model-picker{
+  position:absolute!important;
+  width:1px!important;
+  height:1px!important;
+  overflow:hidden!important;
+  clip:rect(0 0 0 0)!important;
+  clip-path:inset(50%)!important;
+  white-space:nowrap!important;
+  pointer-events:none!important;
+  opacity:0!important;
+}
+
+body.koord-shell-active .v5-control-row .v5-attach,
+body.koord-shell-active .v5-control-row .v5-stop,
+body.koord-shell-active .v5-control-row .v5-send{
+  width:var(--workspace-control-height)!important;
+  min-width:var(--workspace-control-height)!important;
+  height:var(--workspace-control-height)!important;
+  min-height:var(--workspace-control-height)!important;
+  max-height:var(--workspace-control-height)!important;
+  border-radius:var(--workspace-control-radius)!important;
+  align-self:center!important;
+  padding:0!important;
+  display:grid!important;
+  place-items:center!important;
+  font-size:17px!important;
+  line-height:1!important;
+}
+
+body.koord-shell-active .v5-model-results{
+  position:absolute!important;
+  z-index:260!important;
+  left:-1px!important;
+  right:auto!important;
+  bottom:44px!important;
+  width:min(720px,calc(100vw - 120px))!important;
+  max-height:350px!important;
+  overflow:auto!important;
+  padding:6px!important;
+  border:1px solid #2b3d49!important;
+  border-radius:11px!important;
+  background:#081017!important;
+  box-shadow:0 24px 80px rgba(0,0,0,.68)!important;
+}
+
+body.koord-shell-active .v5-model-result{
+  font-size:11px!important;
+}
+
+body.koord-shell-active .v5-model-result strong{
+  font-size:12px!important;
+}
+
+body.koord-shell-active .v5-model-result small{
+  font-size:10px!important;
+}
+
+body.koord-shell-active .v5-model-tag{
+  font-size:8px!important;
+}
+
+/* Hermes control hierarchy: header + one toolbar, never more than two rows. */
+body.koord-shell-active .v5-terminal-pane.runtime-monitor-installed{
+  grid-template-rows:48px 42px minmax(0,1fr) var(--hermes-composer-height) auto!important;
+}
+
+body.koord-shell-active .v5-terminal-pane:not(.runtime-monitor-installed){
+  grid-template-rows:48px minmax(0,1fr) var(--hermes-composer-height) auto!important;
+}
+
+body.koord-shell-active .v5-terminal-head{
+  min-height:48px!important;
+  height:48px!important;
+  padding:0 9px!important;
+}
+
+body.koord-shell-active .v5-terminal-title strong{
+  font-size:14px!important;
+}
+
+body.koord-shell-active .v5-terminal-title small{
+  font-size:11px!important;
+}
+
+body.koord-shell-active .hermes-state{
+  font-size:11px!important;
+}
+
+body.koord-shell-active .v5-terminal-actions{
+  display:flex!important;
+  flex-wrap:nowrap!important;
+  gap:6px!important;
+}
+
+body.koord-shell-active .v5-terminal-actions .v5-mini-button,
+body.koord-shell-active .runtime-terminal-button{
+  min-height:var(--workspace-control-height)!important;
+  height:var(--workspace-control-height)!important;
+  padding:0 10px!important;
+  border-radius:var(--workspace-control-radius)!important;
+  font-size:11px!important;
+  white-space:nowrap!important;
+}
+
+body.koord-shell-active .runtime-terminal-toolbar{
+  min-height:42px!important;
+  height:42px!important;
+  max-height:42px!important;
+  display:grid!important;
+  grid-template-columns:auto auto minmax(0,1fr) auto auto!important;
+  align-items:center!important;
+  gap:6px!important;
+  padding:2px 7px!important;
+  overflow:hidden!important;
+}
+
+body.koord-shell-active .runtime-terminal-summary{
+  min-width:0!important;
+  max-width:100%!important;
+  overflow:hidden!important;
+  padding:0 4px!important;
+  font-size:10px!important;
+}
+
+body.koord-shell-active .runtime-terminal-summary span{
+  min-width:0!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+
+body.koord-shell-active .v5-terminal-composer{
+  min-height:var(--hermes-composer-height)!important;
+  height:var(--hermes-composer-height)!important;
+  max-height:var(--hermes-composer-height)!important;
+  grid-template-columns:minmax(0,1fr) 42px!important;
+  gap:7px!important;
+  padding:7px 8px!important;
+}
+
+body.koord-shell-active .v5-terminal-composer textarea{
+  min-height:52px!important;
+  height:52px!important;
+  max-height:52px!important;
+  padding:14px 12px!important;
+  font-size:14px!important;
+  line-height:22px!important;
+}
+
+body.koord-shell-active .v5-terminal-send{
+  min-width:42px!important;
+  width:42px!important;
+  min-height:52px!important;
+  height:52px!important;
+  max-height:52px!important;
+  border-radius:var(--workspace-control-radius)!important;
+  font-size:18px!important;
+}
+
+/* +2PX TYPOGRAPHY PASS ACROSS THE LIVE WORKSPACE.
+   Explicit selectors are used instead of scaling the whole UI, so geometry
+   stays stable while text gets genuinely larger. */
+body.koord-shell-active .koord-shell-button,
+body.koord-shell-active .koord-shell button,
+body.koord-shell-active .koord-shell a,
+body.koord-shell-active .koord-shell summary{font-size:13px!important}
+
+body.koord-shell-active .v5-connection strong{font-size:13px!important}
+body.koord-shell-active .billing-badge,
+body.koord-shell-active .usage-24h,
+body.koord-shell-active .runtime-route-badge{font-size:11px!important}
+body.koord-shell-active .v5-github{font-size:12px!important}
+body.koord-shell-active .v5-github-mark{font-size:11px!important}
+
+body.koord-shell-active .v5-welcome h2{font-size:26px!important}
+body.koord-shell-active .v5-welcome p{font-size:16px!important}
+body.koord-shell-active .v5-welcome-grid{font-size:13px!important}
+
+body.koord-shell-active .message-meta{font-size:12.5px!important}
+body.koord-shell-active .message-bubble{font-size:17px!important}
+body.koord-shell-active .message-copy,
+body.koord-shell-active .code-copy,
+body.koord-shell-active .message-materialise{font-size:12px!important}
+
+body.koord-shell-active .v5-composer textarea{font-size:17px!important}
+body.koord-shell-active .v5-model-search,
+body.koord-shell-active .v5-model-role{font-size:13px!important}
+body.koord-shell-active .v5-model-result strong{font-size:14px!important}
+body.koord-shell-active .v5-model-result small{font-size:12px!important}
+body.koord-shell-active .v5-model-tag{font-size:10px!important}
+
+body.koord-shell-active .runtime-readable{font-size:16px!important}
+body.koord-shell-active .runtime-line-tag{font-size:11px!important}
+body.koord-shell-active .runtime-terminal-summary{font-size:12px!important}
+
+body.koord-shell-active .v5-statusbar,
+body.koord-shell-active .ci-status,
+body.koord-shell-active .v5-runtime-meta,
+body.koord-shell-active .status-badge{font-size:11px!important}
+
+body.koord-shell-active .koord-access-pill{font-size:10px!important}
+body.koord-shell-active .koord-access-pill strong{font-size:9px!important}
+body.koord-shell-active .koord-session-footer,
+body.koord-shell-active .koord-session-value{font-size:9px!important}
+
+@media(max-width:1050px){
+  body.koord-shell-active .v5-control-row{
+    grid-template-columns:minmax(220px,1fr) minmax(110px,142px) 38px 38px 38px;
+    gap:5px;
+  }
+  body.koord-shell-active .runtime-terminal-summary span{display:none!important}
+}
