@@ -8,9 +8,19 @@
   const connection = $("studioConnection");
   const providers = new Map();
   let imageOutput = null;
+  let videoOutputUrl = null;
   let voiceOutputUrl = null;
   let studioContextSession = null;
   let studioContextSelectedIds = new Set();
+
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("load", () => resolve(String(reader.result || "")), { once: true });
+      reader.addEventListener("error", () => reject(reader.error || new Error("FILE_READ_FAILED")), { once: true });
+      reader.readAsDataURL(file);
+    });
+  }
 
   function eligibleContextMessages(session) {
     return (Array.isArray(session?.messages) ? session.messages : []).filter((message) =>
@@ -189,12 +199,15 @@
 
     const videoGenerate = $("videoGenerate");
     const videoProcess = $("videoProcess");
-    for (const button of [videoGenerate, videoProcess]) {
-      if (!button) continue;
-      button.disabled = true;
-      button.title = providerReady("video")
-        ? "VEED/Fabric binding is configured; the queued execution adapter is not exposed in this Control build yet."
-        : "Configure FAL_KEY / VEED provider first.";
+    if (videoGenerate) {
+      videoGenerate.disabled = !providerReady("video");
+      videoGenerate.title = videoGenerate.disabled
+        ? "Configure FAL_KEY to enable VEED Fabric."
+        : "Generate a VEED Fabric talking video from the first selected image and the direction text.";
+    }
+    if (videoProcess) {
+      videoProcess.disabled = true;
+      videoProcess.title = "Source-processing workflows remain separate from Fabric generation.";
     }
 
     const voiceGenerate = $("voiceGenerate");
@@ -460,14 +473,69 @@
 
   $("videoInput")?.addEventListener("change", (event) => {
     const files = [...(event.target.files || [])];
+    const images = files.filter((file) => String(file.type || "").startsWith("image/"));
     $("videoPreviewState").textContent = files.length ? `${files.length} source file${files.length === 1 ? "" : "s"} loaded` : "No output";
     $("videoTruth").textContent = providerReady("video")
-      ? "VEED/Fabric provider is configured. Source files are staged in the Studio UI; queued execution remains fail-closed until the server adapter is enabled."
-      : "Configure FAL_KEY / VEED provider before video execution.";
+      ? (images.length ? "VEED Fabric is ready. The first image will be animated from your direction and selected chat context." : "VEED Fabric needs at least one image source.")
+      : "Configure FAL_KEY before video execution.";
+  });
+
+  $("videoGenerate")?.addEventListener("click", async () => {
+    const rawPrompt = String($("videoPrompt")?.value || "").trim();
+    const prompt = promptWithContext(rawPrompt);
+    const files = [...($("videoInput")?.files || [])];
+    const imageFile = files.find((file) => String(file.type || "").startsWith("image/"));
+    if (!rawPrompt) {
+      $("videoTruth").textContent = "Add a video direction first.";
+      return;
+    }
+    if (!imageFile) {
+      $("videoTruth").textContent = "Add an image source for VEED Fabric.";
+      return;
+    }
+    const button = $("videoGenerate");
+    button.disabled = true;
+    $("videoPreviewState").textContent = "Generating…";
+    $("videoTruth").textContent = "Sending image + direction to VEED Fabric through the server-side fal.ai adapter.";
+    try {
+      const imageDataUrl = await fileToDataUrl(imageFile);
+      const response = await fetch("/api/studio/video/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ prompt, imageDataUrl, resolution: "720p" })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+      if (!payload.url) throw new Error("VIDEO_RESULT_EMPTY");
+      videoOutputUrl = payload.url;
+      const preview = $("videoPreview");
+      preview.replaceChildren();
+      const video = document.createElement("video");
+      video.src = videoOutputUrl;
+      video.controls = true;
+      video.playsInline = true;
+      preview.appendChild(video);
+      $("videoPreviewState").textContent = "Ready";
+      $("videoTruth").textContent = "Video generated through VEED Fabric.";
+    } catch (error) {
+      $("videoPreviewState").textContent = "Failed";
+      $("videoTruth").textContent = error instanceof Error ? error.message : "Video generation failed";
+    } finally {
+      button.disabled = !providerReady("video");
+    }
   });
 
   $("videoExport")?.addEventListener("click", () => {
-    $("videoTruth").textContent = "There is no rendered video to export yet.";
+    if (!videoOutputUrl) {
+      $("videoTruth").textContent = "There is no rendered video to export yet.";
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = videoOutputUrl;
+    link.download = "studio-video.mp4";
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.click();
   });
 
   updateFrontendPreview();
