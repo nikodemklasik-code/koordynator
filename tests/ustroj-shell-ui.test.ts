@@ -9,10 +9,10 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=3');
+    expect(html).toContain('/chat-shell.css?v=4');
     expect(html).toContain('/chat-shell.js?v=2');
-    expect(html).toContain('/chat-v5.js?v=6');
-    expect(html.indexOf('/chat-shell.js?v=2')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=6'));
+    expect(html).toContain('/chat-v5.js?v=7');
+    expect(html.indexOf('/chat-shell.js?v=2')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=7'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
     expect(css).toContain(".importance-1");
@@ -54,20 +54,20 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("border-radius: 0 !important");
     expect(css).toContain("background: #08131c !important");
     expect(css).toContain(".koord-local-access");
-    expect(css).toContain("max-height:176px!important");
+    expect(css).toContain("--chat-composer-height:176px");
     expect(css).toContain("grid-template-columns:auto auto minmax(0,1fr) auto auto!important");
     expect(css).toContain("grid-template-rows:46px minmax(0,1fr) var(--chat-composer-height)!important");
     expect(css).toContain("position:relative!important");
-    expect(css).toContain("grid-template-columns:minmax(0,1fr) 42px!important");
-    expect(css).toContain("height:var(--hermes-composer-height)!important");
+    expect(css).toContain("grid-template-columns:minmax(0,1fr) 46px!important");
+    expect(css).toContain("height:72px!important");
     expect(localAccess).toContain('id="localTerminalAccess"');
     expect(localAccess).toContain('id="localDiskAccess"');
     expect(localAccess).toContain('grant: "local-files"');
     expect(localAccess).toContain('wrap.id = "sessionFooter"');
     expect(usage).toContain('document.querySelector(".runtime-terminal-toolbar")');
-    expect(css).toContain("--workspace-control-height:38px");
-    expect(css).toContain("--hermes-composer-height:68px");
-    expect(css).toContain("height:52px!important");
+    expect(css).toContain("--workspace-control-height:40px");
+    expect(css).toContain("--hermes-input-height:58px");
+    expect(css).toContain("height:58px!important");
     expect(css).toContain("font-size:14px!important");
   });
 
@@ -78,16 +78,17 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../docs/UI_MANIFEST.md", import.meta.url), "utf8")
     ]);
 
-    expect(script).toContain('className = "v5-control-row"');
-    expect(script).toContain('className = "v5-unified-model-select"');
-    expect(script).toContain('id="modelMenuButton"');
-    expect(script).toContain('row.append(unified, role)');
+    expect(script).toContain('actions.querySelector(".v5-control-row")');
+    expect(script).toContain('document.getElementById("unifiedModelSelector")');
+    expect(script).toContain('document.getElementById("modelMenuButton")');
+    expect(script).toContain("row.append(unified, role)");
     expect(script).toContain("row.appendChild(attach)");
     expect(script).toContain("row.appendChild(stop)");
     expect(script).toContain("row.appendChild(send)");
-    expect(css).toContain("grid-template-columns:minmax(280px,1fr) minmax(128px,170px) 38px 38px 38px");
+    expect(css).toContain("grid-template-columns:minmax(220px,1fr) minmax(120px,160px) 40px 40px 40px!important");
     expect(css).toContain(".v5-native-model-picker");
     expect(manifest).toContain("WYSZUKIWARKA MODELU I MENU ROZWIJANE MODELI MUSZĄ BYĆ JEDNYM KOMPONENTEM");
     expect(manifest).toContain("HERMES MOŻE MIEĆ MAKSYMALNIE DWA WIERSZE KONTROLEK");
+    expect(await readFile(new URL("../web/control/chat.html", import.meta.url), "utf8")).toContain('id="unifiedModelSelector"');
   });
 });
