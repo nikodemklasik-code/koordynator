@@ -29,6 +29,10 @@ describe("Hermes terminal grants", () => {
     expect(deniedConfig.disabled_toolsets).toContain("terminal");
 
     expect((await store.grant("terminal", true)).terminal).toBe(true);
+    await expect(store.grant("local-files", true, [])).rejects.toThrow("HERMES_LOCAL_ROOT_REQUIRED");
+    const localRoot = resolve(root, "allowed");
+    const diskGrant = await store.grant("local-files", true, [localRoot, localRoot, "relative"]);
+    expect(diskGrant).toMatchObject({ terminal: true, localFiles: true, localRoots: [localRoot] });
     const allowed = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
     try {
     const allowedConfig = JSON.parse(await readFile(join(allowed.env.HERMES_HOME!, "config.yaml"), "utf8"));
@@ -76,6 +80,15 @@ describe("Hermes grant HTTP boundary", () => {
       });
       expect(approved.status).toBe(200);
       expect(await approved.json()).toMatchObject({ terminal: true });
+
+      const diskRoot = resolve(root, "Documents");
+      const localFiles = await fetch(`${base}/api/integrations/hermes-grants`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ grant: "local-files", approved: true, roots: [diskRoot] })
+      });
+      expect(localFiles.status).toBe(200);
+      expect(await localFiles.json()).toMatchObject({ localFiles: true, localRoots: [diskRoot] });
 
       const page = await fetch(`${base}/providers`).then((response) => response.text());
       expect(page).toContain('id="hermesGrantCard"');
