@@ -9,7 +9,7 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=6');
+    expect(html).toContain('/chat-shell.css?v=7');
     expect(html).toContain('/chat-shell.js?v=3');
     expect(html).toContain('/chat-v5.js?v=8');
     expect(html.indexOf('/chat-shell.js?v=3')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
