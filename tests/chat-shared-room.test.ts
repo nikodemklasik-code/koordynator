@@ -136,7 +136,7 @@ describe("Shared Room", () => {
     expect(html).toContain('id="sharedRoomTopicLabel"');
     expect(html).toContain("WSPÓLNY TEMAT / ELEMENT PROJEKTU");
     expect(html).toContain('placeholder="np. WWW / frontend"');
-    expect(html).toContain('/chat-shared-room.js?v=2');
+    expect(html).toContain('/chat-shared-room.js?v=3');
     expect(js).toContain('fetch("/api/chat/shared-rooms"');
     expect(js).toContain('topicInput?.scrollIntoView');
     expect(js).toContain('topicInput?.classList.add("invalid")');
