@@ -7,6 +7,9 @@ const state = {
   connected: false,
   preparingAttachments: false,
   stageZeroRunning: false,
+  concluding: false,
+  ended: false,
+  conclusion: null,
   stageZeroFrom: 0,
   stageZeroTo: 0,
   stageZeroPick: "start",
@@ -112,6 +115,7 @@ const composer = $("composer");
 const sendButton = $("sendButton");
 const stopButton = $("stopButton");
 const newChatButton = $("newChatButton");
+const endConversationButton = $("endConversationButton");
 const modelSelect = $("modelSelect");
 const attachButton = $("attachButton");
 const fileInput = $("fileInput");
@@ -123,6 +127,7 @@ const exportPdfButton = $("exportPdfButton");
 const exportZipButton = $("exportZipButton");
 const stageZeroButton = $("stageZeroButton");
 const stageZeroNotice = $("stageZeroNotice");
+const conversationConclusionNotice = $("conversationConclusionNotice");
 const stageZeroDialog = $("stageZeroDialog");
 const stageZeroRangeList = $("stageZeroRangeList");
 const stageZeroScopePreview = $("stageZeroScopePreview");
@@ -351,13 +356,19 @@ async function handleDroppedPayload(dataTransfer) {
 
 function updateControls() {
   const hasPayload = input.value.trim().length > 0 || state.pendingAttachments.length > 0;
-  sendButton.disabled = !hasPayload || state.generating || state.preparingAttachments || !state.sessionId;
+  const locked = state.ended || state.concluding;
+  sendButton.disabled = !hasPayload || state.generating || state.preparingAttachments || !state.sessionId || locked;
   stopButton.classList.remove("hidden");
   stopButton.disabled = !state.generating;
-  newChatButton.disabled = state.generating || state.preparingAttachments;
-  modelSelect.disabled = state.generating;
-  attachButton.disabled = state.generating || state.preparingAttachments;
-  if (stageZeroButton) stageZeroButton.disabled = state.generating || state.preparingAttachments || !state.sessionId || state.stageZeroRunning;
+  newChatButton.disabled = state.generating || state.preparingAttachments || state.concluding;
+  modelSelect.disabled = state.generating || locked;
+  attachButton.disabled = state.generating || state.preparingAttachments || locked;
+  input.disabled = locked;
+  if (endConversationButton) {
+    endConversationButton.disabled = state.generating || state.preparingAttachments || !state.sessionId || state.concluding || state.ended;
+    endConversationButton.textContent = state.concluding ? "Kończę…" : state.ended ? "Rozmowa zakończona" : "Koniec rozmowy";
+  }
+  if (stageZeroButton) stageZeroButton.disabled = state.generating || state.preparingAttachments || !state.sessionId || state.stageZeroRunning || locked;
 }
 
 function textBlock(text) {
@@ -645,6 +656,79 @@ function renderMessage(message) {
   if (shouldFollow) scrollBottom(true);
 }
 
+function renderConversationConclusion(conclusion) {
+  state.conclusion = conclusion || null;
+  if (!conversationConclusionNotice) return;
+  conversationConclusionNotice.textContent = "";
+  if (!conclusion) {
+    conversationConclusionNotice.classList.add("hidden");
+    return;
+  }
+
+  const title = document.createElement("strong");
+  title.textContent = "KONIEC ROZMOWY";
+  conversationConclusionNotice.appendChild(title);
+
+  const tasks = Array.isArray(conclusion.tasks) ? conclusion.tasks : [];
+  const summary = document.createElement("div");
+  summary.textContent = tasks.length
+    ? `Wykryto ${tasks.length} zdeterminowanych zadań.`
+    : "Brak wystarczająco zdeterminowanych zadań do utworzenia.";
+  conversationConclusionNotice.appendChild(summary);
+
+  for (const task of tasks) {
+    const row = document.createElement("div");
+    row.className = "conversation-conclusion-task";
+    const label = document.createElement("strong");
+    label.textContent = task.title || task.objective || "Task";
+    row.appendChild(label);
+
+    const stateLabel = document.createElement("span");
+    stateLabel.textContent = ` · ${task.state || "DETERMINED"}`;
+    row.appendChild(stateLabel);
+
+    if (task.taskId) {
+      const link = document.createElement("a");
+      link.href = `/tasks/${encodeURIComponent(task.taskId)}`;
+      link.textContent = ` ${task.taskId}`;
+      link.title = "Otwórz zadanie";
+      row.appendChild(link);
+    }
+    conversationConclusionNotice.appendChild(row);
+  }
+
+  conversationConclusionNotice.classList.remove("hidden");
+}
+
+async function endConversation() {
+  if (!state.sessionId || state.generating || state.concluding || state.ended) return;
+  state.concluding = true;
+  setStatus("generating", "Concluding");
+  updateControls();
+  try {
+    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/conclude`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: "{}"
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `CHAT_CONCLUDE_HTTP_${response.status}`);
+    state.ended = true;
+    state.conclusion = payload.conclusion || null;
+    input.value = "";
+    state.pendingAttachments = [];
+    renderPendingAttachments();
+    renderConversationConclusion(state.conclusion);
+    setStatus("connected", "Conversation ended");
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "CHAT_CONCLUSION_FAILED";
+    setStatus("error", humanError(code));
+  } finally {
+    state.concluding = false;
+    updateControls();
+  }
+}
+
 function renderTranscript(messages) {
   state.messages.clear();
   chatThread.querySelectorAll(".chat-message").forEach((node) => node.remove());
@@ -664,6 +748,15 @@ function applyEvent(event) {
   }
   if (event.type === "process_update" && event.update) {
     window.dispatchEvent(new CustomEvent("koordynator:routing-event", { detail: event.update }));
+    return;
+  }
+  if (event.type === "conversation_concluded") {
+    state.ended = true;
+    state.concluding = false;
+    state.conclusion = event.conclusion || null;
+    renderConversationConclusion(state.conclusion);
+    setStatus("connected", "Conversation ended");
+    updateControls();
     return;
   }
   if (event.type === "user_message" || event.type === "assistant_start" || event.type === "assistant_done" || event.type === "stopped") {
@@ -708,6 +801,9 @@ function humanError(code) {
     CHAT_RATE_LIMITED: "Rate limited — try another model or wait for quota reset",
     CHAT_TIMEOUT: "Request timed out",
     CHAT_GENERATION_IN_PROGRESS: "Already generating",
+    CHAT_SESSION_ENDED: "Ta rozmowa została zakończona. Utwórz nową rozmowę, aby kontynuować.",
+    CHAT_CONCLUSION_FAILED: "Nie udało się zakończyć rozmowy.",
+    CHAT_USAGE_LEDGER_WRITE_FAILED: "Nie zapisano audytu użycia modelu. Zakończenie zostało zablokowane.",
     CHAT_UNAVAILABLE: "OmniRoute unavailable",
     CHAT_ATTACHMENTS_INVALID: "Invalid attachment data",
     CHAT_ATTACHMENT_TYPE_UNSUPPORTED: "Unsupported attachment type",
@@ -734,6 +830,9 @@ async function reconcileChatSession() {
     const session = await response.json();
     const messages = Array.isArray(session.messages) ? session.messages : [];
     renderTranscript(messages);
+    state.ended = Boolean(session.endedAt);
+    state.conclusion = session.conclusion || null;
+    renderConversationConclusion(state.conclusion);
     state.generating = messages.some((message) => message?.role === "assistant" && message?.state === "streaming");
     if ([...modelSelect.options].some((option) => option.value === session.model && !option.disabled)) {
       modelSelect.value = session.model;
@@ -777,6 +876,10 @@ async function createSession({ persist = !isPopoutWindow } = {}) {
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
   state.sessionId = session.sessionId;
+  state.ended = false;
+  state.concluding = false;
+  state.conclusion = null;
+  renderConversationConclusion(null);
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   renderTranscript([]);
@@ -791,6 +894,10 @@ async function loadSessionById(sessionId, { persist = false } = {}) {
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
   state.sessionId = session.sessionId;
+  state.ended = Boolean(session.endedAt);
+  state.concluding = false;
+  state.conclusion = session.conclusion || null;
+  renderConversationConclusion(state.conclusion);
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   if ([...modelSelect.options].some((option) => option.value === session.model)) modelSelect.value = session.model;
@@ -1547,7 +1654,7 @@ function openPopoutChat() {
 async function sendMessage() {
   const message = input.value.trim();
   const attachments = state.pendingAttachments.map(({ name, mimeType, size, dataUrl }) => ({ name, mimeType, size, dataUrl }));
-  if ((!message && attachments.length === 0) || state.generating || state.preparingAttachments || !state.sessionId) return;
+  if ((!message && attachments.length === 0) || state.generating || state.preparingAttachments || !state.sessionId || state.ended || state.concluding) return;
   state.generating = true;
   setStatus("generating", "Generating");
   input.value = "";
@@ -1609,6 +1716,10 @@ async function newConversation() {
   if (state.generating || state.preparingAttachments) return;
   if (state.source) state.source.close();
   state.sessionId = null;
+  state.ended = false;
+  state.concluding = false;
+  state.conclusion = null;
+  renderConversationConclusion(null);
   state.pendingAttachments = [];
   renderPendingAttachments();
   showAttachmentError("");
@@ -1692,6 +1803,7 @@ if (chatFrame) {
 sendButton.addEventListener("click", () => void sendMessage());
 stopButton.addEventListener("click", () => void stopGeneration());
 newChatButton.addEventListener("click", () => void newConversation());
+endConversationButton?.addEventListener("click", () => void endConversation());
 popoutChatButton?.addEventListener("click", () => openPopoutChat());
 stageZeroButton?.addEventListener("click", () => void openStageZeroDialog());
 stageZeroRunButton?.addEventListener("click", () => void runStageZero());

@@ -122,4 +122,41 @@ describe("persistent chat collaboration", () => {
     expect(await second.getSession(guest.sessionId)).toBeNull();
     second.close();
   });
+
+  it("allows more than eight invited agent chats and asks every invited participant to respond", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-many-agents-"));
+    roots.push(root);
+    const requestBodies: Array<Record<string, unknown>> = [];
+    const service = new ChatService({
+      stateDir: root,
+      apiKey: "test",
+      fetchImpl: streamingFetch(requestBodies)
+    });
+
+    const host = await service.createSession("auto/best-free");
+    const guests = [];
+    for (let index = 0; index < 12; index += 1) {
+      const guest = await service.createSession("auto/best-free");
+      await service.updateTitle(guest.sessionId, `Agent ${index + 1}`);
+      await service.setInvitation(host.sessionId, guest.sessionId, true);
+      guests.push(guest);
+    }
+
+    const configured = await service.getSession(host.sessionId);
+    expect(configured?.invitedSessionIds).toHaveLength(12);
+
+    await sendAndWait(service, host.sessionId, "Shared group question.", 13);
+
+    const shared = await service.getSession(host.sessionId);
+    const peerIds = new Set(
+      shared?.messages
+        .filter((message) => message.sourceSessionId && message.state === "complete")
+        .map((message) => message.sourceSessionId)
+    );
+    expect(peerIds.size).toBe(12);
+    for (const guest of guests) expect(peerIds.has(guest.sessionId)).toBe(true);
+
+    service.close();
+  });
+
 });
