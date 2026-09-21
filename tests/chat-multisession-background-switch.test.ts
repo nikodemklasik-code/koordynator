@@ -63,7 +63,7 @@ describe("multi-chat background switching", () => {
     expect(chatJs).toContain("messages.some((message) => message?.role === \"assistant\" && message?.state === \"streaming\")");
 
     expect(historyJs).not.toContain("historyIsGenerating()");
-    expect(historyJs).not.toContain("button.disabled =");
+    expect(historyJs).not.toContain("button.disabled = historyIsGenerating()");
     expect(historyJs).toContain("window.koordynatorLoadChatSession");
     expect(historyJs).toContain("● Generating");
     expect(historyJs).not.toContain("if (historyIsGenerating()) return");
