@@ -225,6 +225,8 @@ export class ChatService {
   private readonly projectContextProvider?: () => Promise<string | null | undefined>;
   private readonly hermesSkillsEveryTurn: boolean;
   private readonly subscribers = new Map<string, Set<Subscriber>>();
+  private readonly persistQueues = new Map<string, Promise<void>>();
+  private readonly checkpointAt = new Map<string, number>();
   private readonly starting = new Set<string>();
   private readonly active = new Map<string, ActiveGeneration>();
   private readonly materialiser: ChatServiceOptions["materialiser"];
@@ -263,12 +265,31 @@ export class ChatService {
     for (const subscriber of this.subscribers.get(sessionId) ?? []) subscriber(event);
   }
 
-  private async persist(session: ChatSession): Promise<void> {
-    await mkdir(this.root, { recursive: true });
-    const target = sessionFile(this.root, session.sessionId);
-    const tmp = `${target}.${randomUUID()}.tmp`;
-    await writeFile(tmp, `${JSON.stringify(session, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    await rename(tmp, target);
+  private persist(session: ChatSession): Promise<void> {
+    const sessionId = session.sessionId;
+    const target = sessionFile(this.root, sessionId);
+    const body = `${JSON.stringify(session, null, 2)}\n`;
+    const previous = this.persistQueues.get(sessionId) ?? Promise.resolve();
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        await mkdir(this.root, { recursive: true });
+        const tmp = `${target}.${randomUUID()}.tmp`;
+        await writeFile(tmp, body, { encoding: "utf8", mode: 0o600 });
+        await rename(tmp, target);
+      });
+    this.persistQueues.set(sessionId, next);
+    return next.finally(() => {
+      if (this.persistQueues.get(sessionId) === next) this.persistQueues.delete(sessionId);
+    });
+  }
+
+  private checkpoint(session: ChatSession, intervalMs = 750): void {
+    const nowMs = Date.now();
+    const previous = this.checkpointAt.get(session.sessionId) ?? 0;
+    if (nowMs - previous < intervalMs) return;
+    this.checkpointAt.set(session.sessionId, nowMs);
+    void this.persist(session).catch(() => undefined);
   }
 
   private normalizeAttachments(value: unknown): ChatAttachment[] {
@@ -525,6 +546,7 @@ export class ChatService {
     assistant.completedAt = now();
     session.updatedAt = assistant.completedAt;
     await this.persist(session);
+    this.checkpointAt.delete(session.sessionId);
     const audited = await this.recordUsage(assistant);
     if (state === "complete") await this.maybeMaterialise(session, assistant);
     await this.persist(session);
@@ -565,6 +587,8 @@ export class ChatService {
       if (repositoryTask(taskText) && this.repositoryExecutor) {
         await this.repositoryExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments: userMessage.attachments ?? [], signal: controller.signal, emit: delta => {
           assistant.content += delta;
+          session.updatedAt = now();
+          this.checkpoint(session);
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         } });
         const audited = await this.finalize(session, assistant, "complete");
@@ -597,6 +621,7 @@ export class ChatService {
         await this.skillExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments, context, signal: controller.signal, emit: delta => {
           assistant.content += delta;
           session.updatedAt = now();
+          this.checkpoint(session);
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         } });
         const audited = await this.finalize(session, assistant, "complete");
@@ -657,6 +682,7 @@ export class ChatService {
           if (!delta) continue;
           assistant.content += delta;
           session.updatedAt = now();
+          this.checkpoint(session);
           this.emit(sessionId, { type: "assistant_delta", sessionId, messageId: assistant.id, delta });
         }
       }
@@ -688,5 +714,6 @@ export class ChatService {
     for (const active of this.active.values()) active.controller.abort(new Error("CHAT_SERVER_CLOSED"));
     this.active.clear();
     this.subscribers.clear();
+    this.checkpointAt.clear();
   }
 }
