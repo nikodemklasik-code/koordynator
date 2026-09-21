@@ -37,29 +37,49 @@ export async function resolveHermesWorkspaceRoot(input: {
   stateDir: string;
 }): Promise<string> {
   const context = input.context ?? { workspace: "general" as const };
-  if (context.workspace !== "harmonia-legal") return resolve(input.projectRoot);
+  const repository = context.repository?.trim();
 
-  const explicit = process.env.KOORDYNATOR_HARMONIA_LEGAL_ROOT?.trim();
-  if (explicit) {
-    const root = resolve(explicit);
-    if (!await exists(join(root, ".git"))) throw new Error("HARMONIA_LEGAL_ROOT_NOT_GIT");
+  if (context.workspace === "corporation" || repository?.toLowerCase() === "nikodemklasik-code/koordynator") {
+    return resolve(input.projectRoot);
+  }
+
+  if (context.workspace === "harmonia-legal") {
+    const explicit = process.env.KOORDYNATOR_HARMONIA_LEGAL_ROOT?.trim();
+    if (explicit) {
+      const root = resolve(explicit);
+      if (!await exists(join(root, ".git"))) throw new Error("HARMONIA_LEGAL_ROOT_NOT_GIT");
+      return root;
+    }
+
+    const parent = resolve(input.stateDir, "product-workspaces");
+    const root = join(parent, "harmonia-legal");
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+
+    if (!await exists(join(root, ".git"))) {
+      await runGit([
+        "clone",
+        "--single-branch",
+        "--branch",
+        "develop",
+        "--",
+        "https://github.com/nikodemklasik-code/Harmonia-Legal-Platform.git",
+        root
+      ], parent);
+    }
     return root;
   }
 
-  const parent = resolve(input.stateDir, "product-workspaces");
-  const root = join(parent, "harmonia-legal");
-  await mkdir(parent, { recursive: true, mode: 0o700 });
-
-  if (!await exists(join(root, ".git"))) {
-    await runGit([
-      "clone",
-      "--single-branch",
-      "--branch",
-      "develop",
-      "--",
-      "https://github.com/nikodemklasik-code/Harmonia-Legal-Platform.git",
-      root
-    ], parent);
+  if (context.workspace === "general" && repository) {
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error("WORKSPACE_REPOSITORY_INVALID");
+    const parent = resolve(input.stateDir, "repository-workspaces");
+    const slug = repository.replace(/[^A-Za-z0-9_.-]+/g, "--");
+    const root = join(parent, slug);
+    await mkdir(parent, { recursive: true, mode: 0o700 });
+    if (!await exists(join(root, ".git"))) {
+      await runGit(["clone", "--", `https://github.com/${repository}.git`, root], parent);
+    }
+    return root;
   }
-  return root;
+
+  return resolve(input.projectRoot);
 }
