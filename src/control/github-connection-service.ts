@@ -277,10 +277,15 @@ export class GitHubConnectionService implements GitHubConnectionPort {
         const repository = typeof row.nameWithOwner === "string" ? row.nameWithOwner.trim() : "";
         const url = typeof row.url === "string" ? row.url.trim() : "";
         if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) || !/^https:\/\/github\.com\//i.test(url)) return [];
+        const defaultBranch = typeof row.defaultBranchRef === "string"
+          ? row.defaultBranchRef.trim()
+          : row.defaultBranchRef && typeof row.defaultBranchRef === "object" && typeof (row.defaultBranchRef as { name?: unknown }).name === "string"
+            ? String((row.defaultBranchRef as { name: string }).name).trim()
+            : "";
         return [{
           repository,
           url,
-          defaultBranch: typeof row.defaultBranchRef === "string" && row.defaultBranchRef.trim() ? row.defaultBranchRef.trim() : "main",
+          defaultBranch: defaultBranch || "main",
           visibility: typeof row.visibility === "string" ? row.visibility : "UNKNOWN",
           private: row.isPrivate === true,
           archived: row.isArchived === true
