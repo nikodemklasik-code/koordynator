@@ -19,7 +19,7 @@
 .runtime-terminal-summary.alive .runtime-terminal-heartbeat{background:#62d895;box-shadow:0 0 0 4px rgba(98,216,149,.09);animation:runtimePulse 1.35s ease-in-out infinite;}
 .runtime-terminal-summary.stalled .runtime-terminal-heartbeat{background:#e1b45d;box-shadow:0 0 0 4px rgba(225,180,93,.09);}
 .runtime-terminal-summary.dead .runtime-terminal-heartbeat{background:#ef7a7a;}
-.runtime-readable{display:none;min-width:0;min-height:0;overflow:auto;padding:16px 14px 80px;background:#06090c;color:#e9f0f4;scrollbar-width:thin;scrollbar-color:#2a3944 transparent;font:500 14px/1.62 "SF Mono",Menlo,Monaco,ui-monospace,monospace;}
+.runtime-readable{display:none;min-width:0;min-height:0;overflow:auto;padding:16px 14px 80px;background:#06090c;color:#e9f0f4;scrollbar-width:thin;scrollbar-color:#2a3944 transparent;font:500 14px/1.62 "SF Mono",Menlo,Monaco,ui-monospace,monospace;user-select:text;-webkit-user-select:text;}
 .runtime-readable.active{display:block;}
 .runtime-readable-empty{padding:24px 10px;color:#61717c;font-size:12px;line-height:1.55;}
 .runtime-raw-hidden{display:none!important;}
@@ -38,6 +38,9 @@
 .runtime-line.error .runtime-line-tag{color:#ff7c87;}
 .runtime-line.meta{margin-bottom:5px;padding-top:6px;padding-bottom:6px;border-left-color:#35434d;background:#080c10;color:#72828d;font-size:11px;opacity:.84;}
 .runtime-line.meta .runtime-line-tag{color:#52636f;}
+.runtime-line.timer{display:flex;align-items:center;gap:10px;width:max-content;max-width:100%;margin-bottom:5px;padding:6px 10px;border-left-color:#3b6b85;background:#08131a;color:#9ccde6;white-space:nowrap;}
+.runtime-line.timer .runtime-line-tag{padding:0;color:#6d9ab3;}
+.runtime-line.timer .runtime-line-text{white-space:nowrap;}
 .v5-terminal-pane.runtime-expanded{position:fixed!important;z-index:320!important;inset:68px 14px 36px 78px!important;width:auto!important;height:auto!important;border:1px solid #31424f!important;border-radius:12px!important;box-shadow:0 28px 110px rgba(0,0,0,.72)!important;}
 .router-runtime-strip{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:10px;}
 .router-runtime-pill{display:inline-flex;align-items:center;gap:6px;min-height:24px;padding:3px 8px;border:1px solid #263641;border-radius:999px;background:#091017;color:#7f929f;font:700 9px/1 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:nowrap;}
