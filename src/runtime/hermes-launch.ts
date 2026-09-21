@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -54,6 +55,17 @@ function fallbackProviders(endpoint: string, settings: ReturnType<typeof omniRou
     base_url: endpoint,
     key_env: "OPENAI_API_KEY"
   }));
+}
+
+function hermesBinary(env: NodeJS.ProcessEnv): string {
+  const configured = env.KOORDYNATOR_HERMES_BIN?.trim();
+  if (configured) return configured;
+  const home = env.HOME?.trim();
+  if (home) {
+    const local = join(home, ".local", "bin", "hermes");
+    if (existsSync(local)) return local;
+  }
+  return "hermes";
 }
 
 function realUserHome(env: NodeJS.ProcessEnv): string {
@@ -148,7 +160,7 @@ export async function prepareHermes(settings: ReturnType<typeof omniRouteSetting
     const held = proxy;
     const localRoots = grants.localFiles ? (grants.localRoots ?? []) : [];
     return {
-      command: "hermes",
+      command: hermesBinary(env),
       args: ["chat", "--provider", "custom", "--model", settings.model],
       cwd: resolve(root),
       env: {
