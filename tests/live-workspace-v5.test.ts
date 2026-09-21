@@ -32,7 +32,7 @@ describe("Live Workspace V5", () => {
 
     expect(html).toContain("Koordynator · Live Workspace");
     expect(html).toContain('/chat-v5.css?v=5');
-    expect(html).toContain('/chat-v5.js?v=5');
+    expect(html).toContain('/chat-v5.js?v=8');
     expect(html).not.toContain("control-workspace-v3");
     expect(html).not.toContain("control-workspace-v4");
 
