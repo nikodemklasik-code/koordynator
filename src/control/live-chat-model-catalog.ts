@@ -26,6 +26,15 @@ function normalizeEndpoint(value: string): string {
   return endpoint || "http://127.0.0.1:20128/v1";
 }
 
+function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 function modelId(value: unknown): string | null {
   if (typeof value === "string") {
     const id = value.trim();
@@ -83,15 +92,14 @@ export class LiveChatModelCatalogService implements ChatModelCatalogPort {
 
   private async executableIds(): Promise<string[]> {
     const key = this.credential();
-    if (!key) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
+    if (!key && !isLoopbackEndpoint(this.endpoint)) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
     let response: Response;
     try {
       response = await this.fetchImpl(`${this.endpoint}/models`, {
         method: "GET",
         headers: {
           accept: "application/json",
-          authorization: `Bearer ${key}`,
-          "x-api-key": key
+          ...(key ? { authorization: `Bearer ${key}`, "x-api-key": key } : {})
         },
         signal: AbortSignal.timeout(this.timeoutMs)
       });

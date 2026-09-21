@@ -61,6 +61,29 @@ function fixturePort(): ChatModelCatalogPort {
 }
 
 describe("WorkingChatModelCatalogService", () => {
+  it("can live-probe the local OmniRoute harness without a redundant bearer key", async () => {
+    let authorization = "unset";
+    const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const headers = init?.headers as Record<string, string> | undefined;
+      authorization = String(headers?.authorization ?? "");
+      return new Response(JSON.stringify({ choices: [{ message: { content: "PONG" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }) as typeof fetch;
+    const catalog = await new WorkingChatModelCatalogService({
+      endpoint: "http://127.0.0.1:20128/v1",
+      apiKey: " ",
+      catalog: fixturePort(),
+      fetchImpl,
+      maxCandidates: 4,
+      targetActive: 1
+    }).list();
+    expect(catalog.models.length).toBeGreaterThan(0);
+    expect(catalog.workingSet.recoveryMode).toBe("LIVE");
+    expect(authorization).toBe("");
+  });
+
   it("returns a compact exact-model live set and never leaks the huge inventory into the picker", async () => {
     const probed: string[] = [];
     const fetchImpl = (async (_input: string | URL | Request, init?: RequestInit) => {

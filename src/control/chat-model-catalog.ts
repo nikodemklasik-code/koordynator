@@ -109,6 +109,15 @@ function normalizeEndpoint(value: string): string {
   return endpoint || "http://127.0.0.1:20128/v1";
 }
 
+function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 function gatewayRoot(endpoint: string): string {
   if (endpoint.endsWith("/api/v1")) return endpoint.slice(0, -7).replace(/\/+$/, "");
   if (endpoint.endsWith("/v1")) return endpoint.slice(0, -3).replace(/\/+$/, "");
@@ -466,11 +475,14 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     return value?.trim() || undefined;
   }
 
-  private headers(key: string): Record<string, string> {
-    return { accept: "application/json", authorization: `Bearer ${key}`, "x-api-key": key };
+  private headers(key?: string): Record<string, string> {
+    return {
+      accept: "application/json",
+      ...(key ? { authorization: `Bearer ${key}`, "x-api-key": key } : {})
+    };
   }
 
-  private async readCatalog(url: string, key: string): Promise<Response> {
+  private async readCatalog(url: string, key?: string): Promise<Response> {
     try {
       return await this.fetchImpl(url, { method: "GET", headers: this.headers(key), signal: AbortSignal.timeout(this.timeoutMs) });
     } catch {
@@ -478,7 +490,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     }
   }
 
-  private async optionalJson(url: string, key: string): Promise<unknown | undefined> {
+  private async optionalJson(url: string, key?: string): Promise<unknown | undefined> {
     try {
       const response = await this.fetchImpl(url, { method: "GET", headers: this.headers(key), signal: AbortSignal.timeout(this.timeoutMs) });
       if (!response.ok) return undefined;
@@ -490,7 +502,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
     }
   }
 
-  private async syncedProviderCatalogs(root: string, key: string, providersPayload: unknown, managementCatalog: unknown): Promise<Array<{ provider: string; payload: unknown }>> {
+  private async syncedProviderCatalogs(root: string, key: string | undefined, providersPayload: unknown, managementCatalog: unknown): Promise<Array<{ provider: string; payload: unknown }>> {
     const discovered = expandKnownProviderAliases([
       ...providerIds(providersPayload),
       ...providerIds(managementCatalog)
@@ -505,7 +517,7 @@ export class ChatModelCatalogService implements ChatModelCatalogPort {
 
   async list(): Promise<ChatModelCatalog> {
     const key = this.credential();
-    if (!key) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
+    if (!key && !isLoopbackEndpoint(this.endpoint)) throw new ChatModelCatalogError("CHAT_MODEL_CATALOG_AUTH_REQUIRED", 503);
 
     const urls = catalogUrls(this.endpoint);
     let response = await this.readCatalog(urls[0]!, key);
