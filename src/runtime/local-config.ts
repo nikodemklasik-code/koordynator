@@ -6,6 +6,15 @@ import { parseEnv } from "node:util";
 
 export type OmniRouteKeyLookup = () => string;
 
+const LOCAL_PROVIDER_ENV_KEYS = new Set([
+  "OPENAI_API_KEY",
+  "ELEVENLABS_API_KEY",
+  "ELEVENLABS_MODEL",
+  "HARMONIA_ELEVEN_API_KEY",
+  "FAL_KEY",
+  "VEED_API_KEY"
+]);
+
 function keychainOmniRouteApiKey(): string {
   if (platform() !== "darwin") return "";
   const account = process.env.USER?.trim() || userInfo().username;
@@ -49,7 +58,9 @@ export function loadLocalConfig(
     throw new Error("LOCAL_ENV_UNREADABLE");
   }
   for (const [key, value] of Object.entries(parseEnv(text))) {
-    if (/^(KOORDYNATOR_|OMNIROUTE_)/.test(key) && env[key] === undefined) env[key] = value;
+    if ((/^(KOORDYNATOR_|OMNIROUTE_)/.test(key) || LOCAL_PROVIDER_ENV_KEYS.has(key)) && env[key] === undefined) {
+      env[key] = value;
+    }
   }
   // Blank OMNIROUTE_API_KEY= in .env must not block Keychain hydration.
   if (!env.OMNIROUTE_API_KEY?.trim()) {
