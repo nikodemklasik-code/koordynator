@@ -319,8 +319,9 @@ export function createControlServer(options: ControlServerOptions): Server {
       const url = parseUrl(request);
       const method = request.method ?? "GET";
       assertControlAuth(request, options.controlToken, url.pathname);
-      if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isControlPost(url.pathname))) {
-        response.setHeader("allow", "GET, HEAD");
+      const chatSessionMutation = /^\/api\/chat\/sessions\/[0-9a-f-]+$/i.test(url.pathname) && (method === "PATCH" || method === "DELETE");
+      if (method !== "GET" && method !== "HEAD" && !(method === "POST" && isControlPost(url.pathname)) && !chatSessionMutation) {
+        response.setHeader("allow", "GET, HEAD, POST, PATCH, DELETE");
         return sendJson(response, 405, { error: "METHOD_NOT_ALLOWED" });
       }
 
@@ -476,6 +477,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 201, {
           sessionId: session.sessionId,
           model: session.model,
+          title: session.title ?? "New chat",
           createdAt: session.createdAt,
           ...(selected.recoveredFrom === undefined ? {} : { recoveredFromModel: selected.recoveredFrom })
         });
@@ -608,8 +610,22 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
 
       const chatSessionMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)$/i.exec(url.pathname);
-      if ((method === "GET" || method === "HEAD") && chatSessionMatch?.[1]) {
+      if (chatSessionMatch?.[1] && (method === "GET" || method === "HEAD" || method === "PATCH" || method === "DELETE")) {
         const sessionId = safeSessionId(chatSessionMatch[1]);
+        if (method === "PATCH") {
+          const payload = await readJsonBody(request, 4 * 1024);
+          assertExactKeys(payload, ["title"]);
+          const session = await chat.renameSession(sessionId, payload.title);
+          return sendJson(response, 200, {
+            sessionId: session.sessionId,
+            title: session.title,
+            updatedAt: session.updatedAt
+          });
+        }
+        if (method === "DELETE") {
+          await chat.deleteSession(sessionId);
+          return sendJson(response, 200, { deleted: true, sessionId });
+        }
         const session = await chat.recoverSession(sessionId);
         return session ? sendJson(response, 200, session) : sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
       }

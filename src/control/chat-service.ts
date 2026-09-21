@@ -4,7 +4,7 @@ import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
 import { createSkillExecutor, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api/provider-usage.js";
 import type { ChatBillingDecision } from "./chat-billing-policy.js";
@@ -80,6 +80,7 @@ export type ChatSession = {
   createdAt: string;
   updatedAt: string;
   model: string;
+  title?: string;
   messages: ChatMessage[];
   sharedRoom?: SharedRoomMeta;
 };
@@ -158,6 +159,8 @@ export type ChatServiceOptions = {
   maxAttachmentBytes?: number;
   maxAttachmentTotalBytes?: number;
   maxHistoryAttachmentBytes?: number;
+  /** Requested upper bound for one AI response. Provider/model may enforce a lower hard cap. */
+  maxOutputTokens?: number;
   timeoutMs?: number;
   projectContextProvider?: () => Promise<string | null | undefined>;
   /** Route every substantive chat turn through Hermes dynamic skill discovery. */
@@ -241,6 +244,8 @@ function parseAttachmentDataUrl(value: unknown, mimeType: string): { dataUrl: st
 }
 
 function sessionTitle(session: ChatSession): string {
+  const manual = session.title?.trim().replace(/\s+/g, " ");
+  if (manual) return manual.length > 80 ? `${manual.slice(0, 77)}…` : manual;
   if (session.sharedRoom?.topic) return `Shared · ${session.sharedRoom.topic}`;
   const firstUser = session.messages.find((message) => message.role === "user");
   const fromText = firstUser?.content.trim().replace(/\s+/g, " ");
@@ -307,6 +312,7 @@ export class ChatService {
   private readonly maxAttachmentBytes: number;
   private readonly maxAttachmentTotalBytes: number;
   private readonly maxHistoryAttachmentBytes: number;
+  private readonly maxOutputTokens: number;
   private readonly timeoutMs: number;
   private readonly usageLedger: ChatUsageLedger;
   private readonly projectContextProvider?: () => Promise<string | null | undefined>;
@@ -337,7 +343,10 @@ export class ChatService {
     this.maxAttachmentBytes = options.maxAttachmentBytes ?? 128 * 1024 * 1024;
     this.maxAttachmentTotalBytes = options.maxAttachmentTotalBytes ?? 192 * 1024 * 1024;
     this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 224 * 1024 * 1024;
-    this.timeoutMs = options.timeoutMs ?? 120_000;
+    const envMaxOutput = Number(process.env.KOORDYNATOR_CHAT_MAX_OUTPUT_TOKENS ?? "");
+    const requestedMaxOutput = options.maxOutputTokens ?? (Number.isFinite(envMaxOutput) && envMaxOutput > 0 ? envMaxOutput : 32_768);
+    this.maxOutputTokens = Math.min(Math.max(Math.trunc(requestedMaxOutput), 1_024), 65_536);
+    this.timeoutMs = options.timeoutMs ?? 600_000;
     this.usageLedger = new ChatUsageLedger(options.stateDir);
     this.hermesSkillsEveryTurn = options.hermesSkillsEveryTurn ?? false;
     if (options.projectContextProvider) this.projectContextProvider = options.projectContextProvider;
@@ -415,6 +424,7 @@ export class ChatService {
       createdAt: timestamp,
       updatedAt: timestamp,
       model: model === undefined ? this.defaultModel : safeModel(model),
+      title: "New chat",
       messages: []
     };
     await this.persist(session);
@@ -470,6 +480,7 @@ export class ChatService {
       createdAt: timestamp,
       updatedAt: timestamp,
       model: participants[0]!.model,
+      title: `Shared · ${topic}`,
       messages: [],
       sharedRoom: { topic, participants }
     };
@@ -566,6 +577,7 @@ export class ChatService {
           { role: "user", content: userContent }
         ],
         stream: true,
+        max_tokens: this.maxOutputTokens,
         stream_options: { include_usage: true }
       }),
       signal: controller.signal
@@ -717,6 +729,10 @@ export class ChatService {
         state: "complete",
         ...(attachments.length ? { attachments } : {})
       };
+      if (!session.title || session.title === "New chat") {
+        const autoTitle = text.trim().replace(/\s+/g, " ");
+        if (autoTitle) session.title = autoTitle.length > 80 ? `${autoTitle.slice(0, 77)}…` : autoTitle;
+      }
       session.messages.push(user);
       session.updatedAt = now();
       await this.persist(session);
@@ -780,11 +796,45 @@ export class ChatService {
     if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
     try {
       const body = await readFile(sessionFile(this.root, sessionId), "utf8");
-      return JSON.parse(body) as ChatSession;
+      const session = JSON.parse(body) as ChatSession;
+      if (!session.title) session.title = sessionTitle(session);
+      return session;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
+  }
+
+  async renameSession(sessionId: string, titleValue: unknown): Promise<ChatSession> {
+    if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
+    if (typeof titleValue !== "string") throw new ChatServiceError("CHAT_TITLE_INVALID", 400);
+    const title = titleValue.trim().replace(/\s+/g, " ");
+    if (!title || title.length > 80) throw new ChatServiceError("CHAT_TITLE_INVALID", 400);
+    const session = await this.getSession(sessionId);
+    if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    session.title = title;
+    session.updatedAt = now();
+    await this.persist(session);
+    return session;
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
+    if (this.active.has(sessionId) || this.starting.has(sessionId)) {
+      throw new ChatServiceError("CHAT_SESSION_ACTIVE", 409);
+    }
+    const session = await this.getSession(sessionId);
+    if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    const pending = this.persistQueues.get(sessionId);
+    if (pending) await pending.catch(() => undefined);
+    try {
+      await unlink(sessionFile(this.root, sessionId));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    this.subscribers.delete(sessionId);
+    this.checkpointAt.delete(sessionId);
+    this.persistQueues.delete(sessionId);
   }
 
   async recoverSession(sessionId: string): Promise<ChatSession | null> {
@@ -956,6 +1006,10 @@ export class ChatService {
       id: randomUUID(), sessionId, role: "assistant", content: "", createdAt: now(), state: "streaming", model,
       ...(billing === undefined ? {} : { billing })
     };
+    if (!session.title || session.title === "New chat") {
+      const autoTitle = text.trim().replace(/\s+/g, " ");
+      if (autoTitle) session.title = autoTitle.length > 80 ? `${autoTitle.slice(0, 77)}…` : autoTitle;
+    }
     session.messages.push(user, assistant);
     session.updatedAt = now();
     await this.persist(session);
@@ -1200,7 +1254,7 @@ export class ChatService {
         const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
           method: "POST",
           headers: completionHeaders(key),
-          body: JSON.stringify({ model, messages: history, stream: true, stream_options: { include_usage: true } }),
+          body: JSON.stringify({ model, messages: history, stream: true, max_tokens: this.maxOutputTokens, stream_options: { include_usage: true } }),
           signal: controller.signal
         });
         if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);

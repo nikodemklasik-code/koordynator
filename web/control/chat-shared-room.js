@@ -65,8 +65,8 @@
       bar.classList.add("hidden");
       bar.replaceChildren();
       if (addButton) {
-        addButton.textContent = "＋ AI";
-        addButton.title = "Create shared room with another AI agent";
+        addButton.textContent = "Zaproś 2. czat";
+        addButton.title = "Zaproś agenta z innej rozmowy do wspólnego czatu";
       }
       return;
     }

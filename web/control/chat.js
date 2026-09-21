@@ -824,7 +824,7 @@ async function createSession({ persist = !isPopoutWindow } = {}) {
   state.generating = false;
   state.sharedRoom = session.sharedRoom || null;
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
-  $("sessionLabel").textContent = shortSession(session.sessionId);
+  $("sessionLabel").textContent = session.title || shortSession(session.sessionId);
   renderTranscript([]);
   connectEvents();
   updateControls();
@@ -840,7 +840,7 @@ async function loadSessionById(sessionId, { persist = false } = {}) {
   state.sessionId = session.sessionId;
   state.sharedRoom = session.sharedRoom || null;
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
-  $("sessionLabel").textContent = shortSession(session.sessionId);
+  $("sessionLabel").textContent = session.title || shortSession(session.sessionId);
   if ([...modelSelect.options].some((option) => option.value === session.model)) modelSelect.value = session.model;
   const messages = Array.isArray(session.messages) ? session.messages : [];
   state.generating = messages.some((message) => message?.role === "assistant" && message?.state === "streaming");
@@ -1627,6 +1627,11 @@ async function sendMessage() {
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || `CHAT_HTTP_${response.status}`);
+    }
+    const currentLabel = document.getElementById("sessionLabel");
+    if (currentLabel && currentLabel.textContent === "New chat" && message) {
+      const autoTitle = message.replace(/\s+/g, " ").slice(0, 80);
+      currentLabel.textContent = autoTitle;
     }
   } catch (error) {
     state.generating = false;
