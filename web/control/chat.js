@@ -1404,7 +1404,8 @@ function hermesStartError(code) {
     HERMES_TERMINAL_GRANT_FAILED: "Nie udało się zapisać zgody na terminal.",
     OMNIROUTE_API_KEY_REQUIRED: "Brak klucza OmniRoute dla Hermesa.",
     FREE_ROUTE_DENIED: "Wybrany model nie jest dozwolony dla Hermesa.",
-    HERMES_MODEL_INVALID: "Wybrany model jest nieprawidłowy."
+    HERMES_MODEL_INVALID: "Wybrany model jest nieprawidłowy.",
+    HERMES_BINARY_UNAVAILABLE: "Nie znaleziono polecenia hermes w PATH procesu Koordynatora."
   };
   return known[code] || code || "HERMES_PTY_FAILED";
 }
