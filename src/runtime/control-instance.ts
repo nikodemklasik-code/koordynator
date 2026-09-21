@@ -8,8 +8,13 @@ export async function isKoordynatorControl(url: string, fetchImpl: typeof fetch 
     });
     if (!response.ok) return false;
     const body = await response.json() as Record<string, unknown>;
+    const routes = Array.isArray(body.workspaceRoutes) ? body.workspaceRoutes : [];
     return body.ok === true
       && typeof body.version === "string"
+      && body.runtimeRevision === "PRODUCT_WORKSPACES_V1"
+      && body.productWorkspaces === true
+      && routes.includes("/corporation")
+      && routes.includes("/harmonia-legal")
       && body.liveChatBillingPolicy === "STRICT_PROVENANCE";
   } catch {
     return false;
