@@ -14,6 +14,7 @@ function fixtureCatalog(): ChatModelCatalog {
     "gh/claude-sonnet-5",
     "gh/claude-opus-4.8-fast",
     "oc/free-a",
+    "ddgw/free-a",
     "kiro/auto",
     "gh/quota-model"
   ];
@@ -23,6 +24,7 @@ function fixtureCatalog(): ChatModelCatalog {
   for (const model of models) modelSources[model] = "UNKNOWN";
   for (const model of active) modelSources[model] = "SUBSCRIPTION_HARNESS";
   modelSources["oc/free-a"] = "FREE_CONFIRMED";
+  modelSources["ddgw/free-a"] = "FREE_OAUTH";
   modelSources["kiro/auto"] = "FREE_OAUTH";
   modelSources["paid/model"] = "PAID_API";
 
@@ -89,6 +91,7 @@ describe("WorkingChatModelCatalogService", () => {
       "gh/claude-sonnet-5",
       "gh/claude-opus-4.8-fast",
       "oc/free-a",
+      "ddgw/free-a",
       "kiro/auto"
     ]));
     expect(catalog.models).not.toContain("github/gpt-6-astra");
@@ -97,7 +100,7 @@ describe("WorkingChatModelCatalogService", () => {
     expect(catalog.models).not.toContain("unknown/model");
     expect(catalog.models).not.toContain("gh/quota-model");
     expect(catalog.workingSet.limitedModels).toContain("gh/quota-model");
-    expect(catalog.workingSet.freeModels).toEqual(expect.arrayContaining(["oc/free-a", "kiro/auto"]));
+    expect(catalog.workingSet.freeModels).toEqual(expect.arrayContaining(["oc/free-a", "ddgw/free-a", "kiro/auto"]));
     expect(catalog.workingSet.subscriptionModels).toEqual(expect.arrayContaining([
       "gh/gpt-6-astra",
       "gh/claude-fable-5.1",
