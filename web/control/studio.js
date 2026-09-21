@@ -9,6 +9,138 @@
   const providers = new Map();
   let imageOutput = null;
   let voiceOutputUrl = null;
+  let studioContextSession = null;
+  let studioContextSelectedIds = new Set();
+
+  function eligibleContextMessages(session) {
+    return (Array.isArray(session?.messages) ? session.messages : []).filter((message) =>
+      message && (message.role === "user" || message.role === "assistant") && String(message.content || "").trim()
+    );
+  }
+
+  function selectedContextMessages() {
+    return eligibleContextMessages(studioContextSession).filter((message) => studioContextSelectedIds.has(message.id));
+  }
+
+  function attachmentContext(message) {
+    if (!$("studioContextAttachments")?.checked) return [];
+    return (Array.isArray(message.attachments) ? message.attachments : []).map((attachment) => {
+      const text = String(attachment.extractedText || "").trim();
+      return text ? `[ZAŁĄCZNIK: ${attachment.name || "plik"}]\n${text}` : `[ZAŁĄCZNIK: ${attachment.name || "plik"} · treść niedostępna]`;
+    });
+  }
+
+  function contextText() {
+    const selected = selectedContextMessages();
+    if (!selected.length) return "";
+    return selected.map((message) => {
+      const who = message.role === "user" ? "UŻYTKOWNIK" : (message.agentLabel || "AI");
+      const attachments = attachmentContext(message);
+      return [`[${who}]`, String(message.content || "").trim(), ...attachments].filter(Boolean).join("\n");
+    }).join("\n\n");
+  }
+
+  function promptWithContext(brief) {
+    const context = contextText();
+    const clean = String(brief || "").trim();
+    if (!context) return clean;
+    return [
+      "OPIS / POLECENIE UŻYTKOWNIKA:",
+      clean,
+      "",
+      "WYBRANE ELEMENTY ROZMOWY — użyj jako kontekstu, nie kopiuj mechanicznie:",
+      context
+    ].join("\n");
+  }
+
+  function renderContextSummary() {
+    const summary = $("studioContextSummary");
+    if (!summary) return;
+    if (!studioContextSession) {
+      summary.textContent = "Brak wybranej rozmowy. Generator użyje tylko opisu z bieżącego ekranu.";
+      return;
+    }
+    const selected = selectedContextMessages();
+    const attachments = selected.reduce((total, message) => total + (Array.isArray(message.attachments) ? message.attachments.length : 0), 0);
+    summary.textContent = `${studioContextSession.title || "Rozmowa"} · ${selected.length} wybranych wiadomości${$("studioContextAttachments")?.checked ? ` · ${attachments} załączników` : " · załączniki wyłączone"}`;
+  }
+
+  function renderContextDialog() {
+    const root = $("studioContextMessages");
+    if (!root) return;
+    root.replaceChildren();
+    const messages = eligibleContextMessages(studioContextSession);
+    messages.forEach((message, index) => {
+      const row = document.createElement("label");
+      row.className = "studio-context-message";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = studioContextSelectedIds.has(message.id);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) studioContextSelectedIds.add(message.id);
+        else studioContextSelectedIds.delete(message.id);
+        $("studioContextCount").textContent = `${studioContextSelectedIds.size} wybranych`;
+      });
+      const body = document.createElement("span");
+      const who = document.createElement("strong");
+      who.textContent = `${index + 1}. ${message.role === "user" ? "TY" : (message.agentLabel || "AI")}`;
+      const text = document.createElement("span");
+      text.textContent = String(message.content || "").replace(/\s+/g, " ").slice(0, 360);
+      body.append(who, text);
+      if (Array.isArray(message.attachments) && message.attachments.length) {
+        const files = document.createElement("small");
+        files.textContent = `${message.attachments.length} załącznik${message.attachments.length === 1 ? "" : "i"}`;
+        body.appendChild(files);
+      }
+      row.append(checkbox, body);
+      root.appendChild(row);
+    });
+    $("studioContextCount").textContent = `${studioContextSelectedIds.size} wybranych`;
+  }
+
+  async function loadStudioSessions() {
+    const select = $("studioContextSession");
+    if (!select) return;
+    const previous = select.value;
+    try {
+      const response = await fetch("/api/chat/sessions?limit=100", { headers: { accept: "application/json" } });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
+      const sessions = Array.isArray(payload.sessions) ? payload.sessions : [];
+      select.replaceChildren();
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Bez kontekstu z czatu";
+      select.appendChild(empty);
+      for (const session of sessions) {
+        const option = document.createElement("option");
+        option.value = session.sessionId;
+        option.textContent = `${session.title || "Bez tytułu"} · ${session.messageCount || 0} wiad.`;
+        select.appendChild(option);
+      }
+      if ([...select.options].some((option) => option.value === previous)) select.value = previous;
+    } catch (error) {
+      select.innerHTML = '<option value="">Historia czatów niedostępna</option>';
+      $("studioContextSummary").textContent = error instanceof Error ? error.message : "CHAT_HISTORY_UNAVAILABLE";
+    }
+  }
+
+  async function selectStudioSession(sessionId) {
+    studioContextSession = null;
+    studioContextSelectedIds.clear();
+    if (!sessionId) {
+      renderContextSummary();
+      return;
+    }
+    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, { headers: { accept: "application/json" } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      $("studioContextSummary").textContent = payload.error || `HTTP_${response.status}`;
+      return;
+    }
+    studioContextSession = payload;
+    renderContextSummary();
+  }
 
   function setConnection(text, state = "") {
     if (!connection) return;
@@ -157,6 +289,35 @@
   $("refreshStudioProviders")?.addEventListener("click", () => void loadProviders());
   $("voiceRefresh")?.addEventListener("click", () => void loadVoices());
 
+  $("studioContextSession")?.addEventListener("change", (event) => void selectStudioSession(event.target.value));
+  $("studioContextAttachments")?.addEventListener("change", renderContextSummary);
+  $("studioContextChoose")?.addEventListener("click", () => {
+    if (!studioContextSession) {
+      $("studioContextSummary").textContent = "Najpierw wybierz rozmowę.";
+      return;
+    }
+    renderContextDialog();
+    $("studioContextDialog")?.showModal?.();
+  });
+  $("studioContextSelectAll")?.addEventListener("click", () => {
+    studioContextSelectedIds = new Set(eligibleContextMessages(studioContextSession).map((message) => message.id));
+    renderContextDialog();
+  });
+  $("studioContextSelectNone")?.addEventListener("click", () => {
+    studioContextSelectedIds.clear();
+    renderContextDialog();
+  });
+  $("studioContextApply")?.addEventListener("click", () => {
+    $("studioContextDialog")?.close?.();
+    renderContextSummary();
+  });
+  $("studioContextClear")?.addEventListener("click", () => {
+    studioContextSession = null;
+    studioContextSelectedIds.clear();
+    if ($("studioContextSession")) $("studioContextSession").value = "";
+    renderContextSummary();
+  });
+
   $("imageInput")?.addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -172,8 +333,9 @@
   });
 
   $("imageGenerate")?.addEventListener("click", async () => {
-    const prompt = String($("imagePrompt")?.value || "").trim();
-    if (!prompt) {
+    const rawPrompt = String($("imagePrompt")?.value || "").trim();
+    const prompt = promptWithContext(rawPrompt);
+    if (!rawPrompt) {
       $("imageTruth").textContent = "Add an image prompt first.";
       return;
     }
@@ -291,7 +453,7 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("frontendOpenChat")?.addEventListener("click", () => {
-    const brief = String($("frontendPrompt")?.value || "").trim();
+    const brief = promptWithContext(String($("frontendPrompt")?.value || "").trim());
     try { sessionStorage.setItem("koordynator.studio.frontendBrief", brief); } catch {}
     window.location.href = "/chat?studio=frontend";
   });
@@ -309,5 +471,6 @@
   });
 
   updateFrontendPreview();
-  void loadProviders();
+  renderContextSummary();
+  void Promise.all([loadProviders(), loadStudioSessions()]);
 })();

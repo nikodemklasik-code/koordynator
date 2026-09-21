@@ -7,7 +7,7 @@
   <title>Koordynator · Studio</title>
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/control-ui.css" />
-  <link rel="stylesheet" href="/studio.css?v=1" />
+  <link rel="stylesheet" href="/studio.css?v=2" />
 </head>
 <body class="studio-body">
   <header class="studio-shell">
@@ -55,6 +55,19 @@
     </aside>
 
     <section class="studio-workspace">
+      <section class="studio-context-picker" aria-labelledby="studioContextTitle">
+        <div class="studio-context-picker-head">
+          <div><span class="studio-kicker">ŹRÓDŁO Z ROZMOWY</span><strong id="studioContextTitle">Kontekst dla tworzenia multimediów</strong></div>
+          <button id="studioContextClear" type="button">Wyczyść</button>
+        </div>
+        <div class="studio-context-picker-grid">
+          <label>Rozmowa<select id="studioContextSession"><option value="">Bez kontekstu z czatu</option></select></label>
+          <button id="studioContextChoose" type="button">Wybierz elementy rozmowy</button>
+          <label class="studio-context-check"><input id="studioContextAttachments" type="checkbox" checked /> Dołącz treść załączników</label>
+        </div>
+        <div id="studioContextSummary" class="studio-context-summary">Brak wybranej rozmowy. Generator użyje tylko opisu z bieżącego ekranu.</div>
+      </section>
+
       <article class="studio-panel active" data-studio-panel="image">
         <header class="studio-panel-head">
           <div><span>GRAPHICS</span><h1>Image generation & editing</h1></div>
@@ -168,10 +181,20 @@
     </section>
   </main>
 
+  <dialog id="studioContextDialog" class="studio-context-dialog" aria-labelledby="studioContextDialogTitle">
+    <form method="dialog">
+      <header><div><span class="studio-kicker">KONTEKST ROZMOWY</span><strong id="studioContextDialogTitle">Wybierz elementy dla AI</strong></div><button value="cancel" type="submit" aria-label="Zamknij">×</button></header>
+      <p>Zaznacz wiadomości, na których ma oprzeć się Grafika, Video, Voice albo Frontend. To nie tworzy nowej wiadomości w czacie.</p>
+      <div class="studio-context-dialog-tools"><button id="studioContextSelectAll" type="button">Cała rozmowa</button><button id="studioContextSelectNone" type="button">Wyczyść zaznaczenie</button></div>
+      <div id="studioContextMessages" class="studio-context-messages"></div>
+      <footer><span id="studioContextCount">0 wybranych</span><button value="cancel" type="submit">Anuluj</button><button id="studioContextApply" type="button" class="primary">Użyj wybranych elementów</button></footer>
+    </form>
+  </dialog>
+
   <footer class="studio-footer">
     <span id="studioConnection">CONNECTING</span>
     <span>Provider bindings are capability-specific. No silent fallback between image, video, voice and frontend.</span>
   </footer>
-  <script src="/studio.js?v=1" defer></script>
+  <script src="/studio.js?v=2" defer></script>
 </body>
 </html>
