@@ -478,8 +478,30 @@
         if (button.dataset.runtimeMode) setMode(button.dataset.runtimeMode);
         if (button.dataset.runtimeAction === "expand") { pane.classList.toggle("runtime-expanded"); button.textContent = pane.classList.contains("runtime-expanded") ? "Collapse" : "Expand"; requestAnimationFrame(() => window.dispatchEvent(new Event("resize"))); }
         if (button.dataset.runtimeAction === "copy") {
-          try { await navigator.clipboard.writeText(readableRoot?.innerText || ""); const old = button.textContent; button.textContent = "Copied"; setTimeout(() => { button.textContent = old; }, 1000); }
-          catch { button.textContent = "Copy failed"; }
+          try {
+            let text = "";
+            if (currentMode === "raw") {
+              text = window.koordynatorHermesTerminal?.getSelection?.() || "";
+              if (!text) {
+                button.textContent = "Select text first";
+                setTimeout(() => { button.textContent = "Copy"; }, 1200);
+                return;
+              }
+            } else {
+              const selection = window.getSelection();
+              const selected = selection && selection.anchorNode && readableRoot?.contains(selection.anchorNode)
+                ? selection.toString().trim()
+                : "";
+              text = selected || readableRoot?.innerText || "";
+            }
+            await navigator.clipboard.writeText(text);
+            const old = button.textContent;
+            button.textContent = "Copied";
+            setTimeout(() => { button.textContent = old; }, 1000);
+          } catch {
+            button.textContent = "Copy failed";
+            setTimeout(() => { button.textContent = "Copy"; }, 1200);
+          }
         }
       });
     }
