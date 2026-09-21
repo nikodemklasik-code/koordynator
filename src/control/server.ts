@@ -28,6 +28,7 @@ import { HarmoniaError } from "./harmonia-cognition.js";
 import { asStageZeroHttpError, StageZeroService } from "./stage-zero-service.js";
 import { HermesPtyError, HermesPtySession, type HermesLaunchSpec, type HermesPtyHooks } from "./hermes-pty.js";
 import { OwnerPushGrantStore } from "./owner-push-grant-store.js";
+import { resolveHermesWorkspaceRoot } from "./workspace-root.js";
 import { assertWorkspaceRepository, explicitProtectedPushRequest, safeWorkspaceId, WORKSPACE_REPOSITORY_POLICIES } from "./workspace-repository-policy.js";
 import { prepareHermes } from "../runtime/hermes-launch.js";
 import { omniRouteSettings } from "../runtime/local-config.js";
@@ -283,13 +284,14 @@ export function createControlServer(options: ControlServerOptions): Server {
   const hermesPty = new HermesPtySession({
     stateDir,
     ...(options.hermesPty?.spawn === undefined ? {} : { spawn: options.hermesPty.spawn }),
-    prepare: options.hermesPty?.prepare ?? (async (requestedModel?: string): Promise<HermesLaunchSpec> => {
+    prepare: options.hermesPty?.prepare ?? (async (requestedModel, context): Promise<HermesLaunchSpec> => {
       const settings = omniRouteSettings();
+      const workspaceRoot = await resolveHermesWorkspaceRoot({ context, projectRoot, stateDir });
       const launch = await prepareHermes({
         endpoint: options.chatEndpoint ?? settings.endpoint,
         apiKey: options.chatApiKey ?? settings.apiKey,
         model: requestedModel ?? options.chatDefaultModel ?? settings.model
-      }, projectRoot);
+      }, workspaceRoot);
       return { command: launch.command, args: launch.args, cwd: launch.cwd, env: launch.env, close: launch.close };
     })
   });
