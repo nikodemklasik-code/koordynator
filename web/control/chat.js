@@ -14,6 +14,7 @@ const state = {
   hermesMuted: false,
   hermesSessionId: null,
   hermesSource: null,
+  chatStreamOpened: false,
   pendingAttachments: [],
   messages: new Map()
 };
@@ -351,7 +352,8 @@ async function handleDroppedPayload(dataTransfer) {
 function updateControls() {
   const hasPayload = input.value.trim().length > 0 || state.pendingAttachments.length > 0;
   sendButton.disabled = !hasPayload || state.generating || state.preparingAttachments || !state.sessionId;
-  stopButton.classList.toggle("hidden", !state.generating);
+  stopButton.classList.remove("hidden");
+  stopButton.disabled = !state.generating;
   newChatButton.disabled = state.generating || state.preparingAttachments;
   modelSelect.disabled = state.generating;
   attachButton.disabled = state.generating || state.preparingAttachments;
@@ -720,18 +722,45 @@ function humanError(code) {
   return "Chat error";
 }
 
+async function reconcileChatSession() {
+  if (!state.sessionId) return;
+  try {
+    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}`, { headers: { accept: "application/json" } });
+    if (!response.ok) return;
+    const session = await response.json();
+    const messages = Array.isArray(session.messages) ? session.messages : [];
+    renderTranscript(messages);
+    state.generating = messages.some((message) => message?.role === "assistant" && message?.state === "streaming");
+    if ([...modelSelect.options].some((option) => option.value === session.model && !option.disabled)) {
+      modelSelect.value = session.model;
+      modelSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    setStatus(state.generating ? "generating" : "connected", state.generating ? "Generating" : "Connected");
+    updateControls();
+  } catch {
+    // EventSource owns retry. Reconciliation is best-effort and never destroys the draft.
+  }
+}
+
 function connectEvents() {
   if (state.source) state.source.close();
   state.connected = false;
   setStatus("", "Connecting");
   const source = new EventSource(`/api/chat/sessions/${encodeURIComponent(state.sessionId)}/events`);
   state.source = source;
+  source.onopen = () => {
+    const reconnect = state.chatStreamOpened;
+    state.chatStreamOpened = true;
+    state.connected = true;
+    if (reconnect) void reconcileChatSession();
+    else if (!state.generating) setStatus("connected", "Connected");
+  };
   source.onmessage = (event) => {
     try { applyEvent(JSON.parse(event.data)); } catch { setStatus("error", "Invalid stream event"); }
   };
   source.onerror = () => {
     state.connected = false;
-    if (!state.generating) setStatus("error", "Connection lost");
+    if (!state.generating) setStatus("error", "Reconnecting");
   };
 }
 
@@ -1149,6 +1178,18 @@ async function runStageZero() {
 
 function setHermesState(label) {
   if (hermesState) hermesState.textContent = label;
+  const live = label === "LIVE";
+  const busy = label === "STARTING";
+  if (startHermesButton) startHermesButton.disabled = live || busy;
+  if (stopHermesButton) stopHermesButton.disabled = !live && !busy;
+  if (sendHermesButton) sendHermesButton.disabled = !live;
+  if (hermesInput) hermesInput.disabled = !live;
+}
+
+function showHermesHint(message = "") {
+  if (!hermesHint) return;
+  hermesHint.textContent = message;
+  hermesHint.classList.toggle("hidden", !message);
 }
 
 function applyHermesMute() {
@@ -1237,23 +1278,48 @@ function appendHermesOutput(text) {
   hermesTerm.textContent += painted;
 }
 
+async function hermesStatus() {
+  const response = await fetch("/api/hermes/pty", { headers: { accept: "application/json" } });
+  if (!response.ok) throw new Error(`HERMES_STATUS_HTTP_${response.status}`);
+  return response.json();
+}
+
+async function ensureHermesTerminalGrant() {
+  const statusResponse = await fetch("/api/integrations/hermes-grants", { headers: { accept: "application/json" } });
+  const status = statusResponse.ok ? await statusResponse.json() : {};
+  if (status.terminal === true) return;
+  const grantResponse = await fetch("/api/integrations/hermes-grants", {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ grant: "terminal", approved: true })
+  });
+  const grant = await grantResponse.json().catch(() => ({}));
+  if (!grantResponse.ok || grant.terminal !== true) throw new Error(grant.error || "HERMES_TERMINAL_GRANT_FAILED");
+}
+
 async function sendHermesInput(data) {
   if (!state.hermesSessionId || !data) return;
-  await fetch(`/api/hermes/pty/${encodeURIComponent(state.hermesSessionId)}/input`, {
+  const response = await fetch(`/api/hermes/pty/${encodeURIComponent(state.hermesSessionId)}/input`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
     body: JSON.stringify({ data })
-  });
+  }).catch(() => null);
+  if (!response?.ok) {
+    if (response?.status === 404) {
+      state.hermesSessionId = null;
+      state.hermesSource?.close();
+      state.hermesSource = null;
+      setHermesState("OFF");
+      showHermesHint("Sesja Hermesa wygasła. Naciśnij Start.");
+    }
+  }
 }
 
 async function sendHermesLine() {
   const text = hermesInput?.value ?? "";
   if (!text.trim()) return;
   if (!state.hermesSessionId) {
-    if (hermesHint) {
-      hermesHint.textContent = "Najpierw Start Hermes.";
-      hermesHint.classList.remove("hidden");
-    }
+    showHermesHint("Najpierw uruchom Hermes.");
     return;
   }
   hermesInput.value = "";
@@ -1267,21 +1333,37 @@ function connectHermesEvents(sessionId) {
   state.hermesSource?.close();
   const source = new EventSource(`/api/hermes/pty/${encodeURIComponent(sessionId)}/events`);
   state.hermesSource = source;
+  source.onopen = () => setHermesState("LIVE");
   source.onmessage = (event) => {
     try {
       const payload = JSON.parse(event.data);
       if (payload.type === "out") appendHermesOutput(payload.text);
       if (payload.type === "exit") {
-        setHermesState("OFF");
+        state.hermesSource?.close();
+        state.hermesSource = null;
         state.hermesSessionId = null;
-        if (hermesHint) {
-          hermesHint.textContent = `Hermes ended (${payload.code}). Start again.`;
-          hermesHint.classList.remove("hidden");
-        }
+        setHermesState("OFF");
+        showHermesHint(`Hermes zakończył proces (kod ${payload.code}).`);
       }
-    } catch { /* ignore */ }
+    } catch { /* malformed PTY event cannot corrupt the session */ }
   };
-  source.onerror = () => setHermesState(state.hermesSessionId ? "LIVE" : "OFF");
+  source.onerror = () => {
+    window.setTimeout(async () => {
+      if (state.hermesSource !== source) return;
+      try {
+        const current = await hermesStatus();
+        if (current.running && current.sessionId === sessionId) {
+          setHermesState("LIVE");
+          return;
+        }
+      } catch { /* handled below */ }
+      source.close();
+      if (state.hermesSource === source) state.hermesSource = null;
+      if (state.hermesSessionId === sessionId) state.hermesSessionId = null;
+      setHermesState("OFF");
+      showHermesHint("Połączenie z Hermes PTY zostało utracone.");
+    }, 700);
+  };
 }
 
 function hermesDimensions() {
@@ -1294,37 +1376,86 @@ function hermesDimensions() {
   };
 }
 
+async function restoreHermesPty() {
+  try {
+    const current = await hermesStatus();
+    if (!current.running || !current.sessionId) {
+      setHermesState("OFF");
+      return false;
+    }
+    state.hermesSessionId = current.sessionId;
+    ensureHermesTerminal();
+    connectHermesEvents(current.sessionId);
+    setHermesState("LIVE");
+    showHermesHint("");
+    requestAnimationFrame(() => {
+      try { hermesFit?.fit(); } catch { /* ignore */ }
+    });
+    return true;
+  } catch {
+    setHermesState("OFF");
+    return false;
+  }
+}
+
+function hermesStartError(code) {
+  const known = {
+    HERMES_TERMINAL_REQUIRED: "Brak zgody na lokalny terminal.",
+    HERMES_TERMINAL_GRANT_FAILED: "Nie udało się zapisać zgody na terminal.",
+    OMNIROUTE_API_KEY_REQUIRED: "Brak klucza OmniRoute dla Hermesa.",
+    FREE_ROUTE_DENIED: "Wybrany model nie jest dozwolony dla Hermesa.",
+    HERMES_MODEL_INVALID: "Wybrany model jest nieprawidłowy."
+  };
+  return known[code] || code || "HERMES_PTY_FAILED";
+}
+
 async function startHermesPty() {
   setHermesState("STARTING");
-  if (hermesHint) { hermesHint.textContent = ""; hermesHint.classList.add("hidden"); }
+  showHermesHint("");
   try {
+    const current = await hermesStatus().catch(() => null);
+    if (current?.running && current.sessionId) {
+      state.hermesSessionId = current.sessionId;
+      ensureHermesTerminal();
+      connectHermesEvents(current.sessionId);
+      setHermesState("LIVE");
+      return;
+    }
+
+    // Clicking Start is the explicit local-terminal consent action.
+    await ensureHermesTerminalGrant();
     const term = ensureHermesTerminal();
     term?.reset();
     const { cols, rows } = hermesDimensions();
+    const body = { cols, rows, ...(modelSelect.value ? { model: modelSelect.value } : {}) };
     const response = await fetch("/api/hermes/pty", {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ cols, rows })
+      body: JSON.stringify(body)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `HTTP_${response.status}`);
     state.hermesSessionId = payload.sessionId;
     connectHermesEvents(payload.sessionId);
     setHermesState("LIVE");
-    if (hermesHint) { hermesHint.textContent = ""; hermesHint.classList.add("hidden"); }
+    showHermesHint("");
     term?.focus();
   } catch (error) {
+    state.hermesSessionId = null;
+    state.hermesSource?.close();
+    state.hermesSource = null;
     setHermesState("OFF");
-    if (hermesHint) {
-      hermesHint.textContent = error instanceof Error ? error.message : "HERMES_PTY_FAILED";
-      hermesHint.classList.remove("hidden");
-    }
+    const code = error instanceof Error ? error.message : "HERMES_PTY_FAILED";
+    showHermesHint(hermesStartError(code));
   }
 }
 
 async function stopHermesPty() {
   const sessionId = state.hermesSessionId;
-  if (!sessionId) return;
+  if (!sessionId) {
+    setHermesState("OFF");
+    return;
+  }
   await fetch(`/api/hermes/pty/${encodeURIComponent(sessionId)}/stop`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -1334,6 +1465,7 @@ async function stopHermesPty() {
   state.hermesSource = null;
   state.hermesSessionId = null;
   setHermesState("OFF");
+  showHermesHint("");
 }
 
 function exportConversation(kind) {
@@ -1545,7 +1677,7 @@ try {
 } catch { state.hermesMuted = false; }
 applyHermesMute();
 
-Promise.all([loadHealth(), restoreSession()]).catch((error) => {
+Promise.all([loadHealth(), restoreSession(), restoreHermesPty()]).catch((error) => {
   state.generating = false;
   setStatus("error", error instanceof Error ? error.message : "Chat unavailable");
   updateControls();
