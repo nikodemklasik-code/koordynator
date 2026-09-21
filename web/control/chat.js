@@ -1295,6 +1295,7 @@ async function ensureHermesTerminalGrant() {
   });
   const grant = await grantResponse.json().catch(() => ({}));
   if (!grantResponse.ok || grant.terminal !== true) throw new Error(grant.error || "HERMES_TERMINAL_GRANT_FAILED");
+  window.dispatchEvent(new CustomEvent("koordynator:hermes-grants-changed", { detail: grant }));
 }
 
 async function sendHermesInput(data) {
