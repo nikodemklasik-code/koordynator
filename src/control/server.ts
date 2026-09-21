@@ -8,7 +8,6 @@ import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.
 import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 import { ReleaseReadModel } from "./release-read-model.js";
 import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
-import { loadChatProjectContext } from "./chat-project-context.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
@@ -28,6 +27,8 @@ import { BrainError } from "./brain-roadmap.js";
 import { HarmoniaError } from "./harmonia-cognition.js";
 import { asStageZeroHttpError, StageZeroService } from "./stage-zero-service.js";
 import { HermesPtyError, HermesPtySession, type HermesLaunchSpec, type HermesPtyHooks } from "./hermes-pty.js";
+import { OwnerPushGrantStore } from "./owner-push-grant-store.js";
+import { assertWorkspaceRepository, explicitProtectedPushRequest, safeWorkspaceId, WORKSPACE_REPOSITORY_POLICIES } from "./workspace-repository-policy.js";
 import { prepareHermes } from "../runtime/hermes-launch.js";
 import { omniRouteSettings } from "../runtime/local-config.js";
 import { VERSION } from "../version.js";
@@ -233,6 +234,7 @@ export function createControlServer(options: ControlServerOptions): Server {
   });
   const projectPacks = options.projectPack ?? new ProjectPackService(stateDir);
   const repositories = new RepositoryRegistry(stateDir);
+  const ownerPushGrants = new OwnerPushGrantStore(join(stateDir, "owner-push-grants.json"));
   const providerAutoconnect = new ProviderAutoconnectService(projectRoot);
   const materialisation = options.materialisationPrivateKeyPem
     ? new MaterialisationService(options.materialisationPrivateKeyPem, options.materialisationKeyId ?? "control-plane", stateDir)
@@ -266,7 +268,6 @@ export function createControlServer(options: ControlServerOptions): Server {
     ...(options.chatFallbackModels === undefined ? {} : { fallbackModels: options.chatFallbackModels }),
     ...(options.chatHermesSkillsEveryTurn === undefined ? {} : { hermesSkillsEveryTurn: options.chatHermesSkillsEveryTurn }),
     ...(options.chatFetchImpl === undefined ? {} : { fetchImpl: options.chatFetchImpl }),
-    projectContextProvider: () => loadChatProjectContext(projectRoot)
   });
   const stageZero = new StageZeroService({
     stateDir,
@@ -351,20 +352,28 @@ export function createControlServer(options: ControlServerOptions): Server {
       if (method === "POST" && chatMessageMatch?.[1]) {
         const sessionId = safeSessionId(chatMessageMatch[1]);
         const payload = await readJsonBody(request, CHAT_MESSAGE_MAX_BYTES);
-        assertExactKeys(payload, ["message", "model", "attachments", "repository"]);
+        assertExactKeys(payload, ["message", "model", "attachments", "repository", "workspace"]);
         if (typeof payload.message !== "string") throw new ChatServiceError("CHAT_MESSAGE_REQUIRED", 400);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
         if (payload.attachments !== undefined && !Array.isArray(payload.attachments)) throw new ChatServiceError("CHAT_ATTACHMENTS_INVALID", 400);
         if (payload.repository !== undefined && typeof payload.repository !== "string") throw new RepositoryRegistryError("REPOSITORY_INVALID", 400);
+        if (payload.workspace !== undefined && typeof payload.workspace !== "string") throw new ChatServiceError("WORKSPACE_INVALID", 400);
 
-        let selectedRepository: string | undefined;
-        const requestedRepository = typeof payload.repository === "string" && payload.repository.trim()
-          ? payload.repository.trim()
-          : options.chatDefaultRepository?.trim();
-        if (requestedRepository) {
-          const parsedRepository = parseRepositoryReference(requestedRepository);
-          selectedRepository = `${parsedRepository.owner}/${parsedRepository.name}`;
+        let workspace;
+        try { workspace = safeWorkspaceId(payload.workspace); }
+        catch { throw new ChatServiceError("WORKSPACE_INVALID", 400); }
+
+        let requestedRepository: string | undefined;
+        if (typeof payload.repository === "string" && payload.repository.trim()) {
+          const parsedRepository = parseRepositoryReference(payload.repository);
+          requestedRepository = `${parsedRepository.owner}/${parsedRepository.name}`;
         }
+        let selectedRepository: string | undefined;
+        try { selectedRepository = assertWorkspaceRepository(workspace, requestedRepository); }
+        catch { throw new ChatServiceError("WORKSPACE_REPOSITORY_FIXED", 403); }
+
+        const protectedPush = explicitProtectedPushRequest(payload.message, selectedRepository, workspace);
+        if (protectedPush) await ownerPushGrants.grant({ ...protectedPush, source: "chat" });
 
         const session = await chat.getSession(sessionId);
         if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
@@ -385,14 +394,14 @@ export function createControlServer(options: ControlServerOptions): Server {
 
         const clientAttachments = payload.attachments ?? [];
         const isRepoTask = /^\s*\/repo(?:\s|$)/.test(payload.message);
-        const defaultRepository = options.chatDefaultRepository?.trim().toLowerCase();
-        const selectedIsLocalWorkspace = Boolean(selectedRepository && defaultRepository && selectedRepository.toLowerCase() === defaultRepository);
+        const fixedPolicy = WORKSPACE_REPOSITORY_POLICIES[workspace];
+        const selectedIsLocalWorkspace = Boolean(selectedRepository && fixedPolicy.localWorkspace && fixedPolicy.repository?.toLowerCase() === selectedRepository.toLowerCase());
 
         let repoContext = null;
         if (!isRepoTask && selectedRepository && selectedIsLocalWorkspace && wantsWorkspaceContext(options)) {
           // The selected Koordynator repository is already the running local workspace.
           // Hydrate source context only when the message actually asks for workspace/repository work.
-          repoContext = await workspaceRepositories.fromMessage(payload.message);
+          repoContext = await workspaceRepositories.fromMessage(`repo ${payload.message}`);
         } else if (!isRepoTask && selectedRepository && wantsGithubContext(options)) {
           repoContext = await githubRepositories.fromMessage(`${payload.message}\nhttps://github.com/${selectedRepository}`);
         } else if (!isRepoTask && wantsGithubContext(options)) {
@@ -532,12 +541,24 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       if (method === "POST" && url.pathname === "/api/hermes/pty") {
         const payload = await readJsonBody(request, 2048);
-        assertExactKeys(payload, ["cols", "rows", "model"]);
+        assertExactKeys(payload, ["cols", "rows", "model", "workspace", "repository"]);
         if (payload.model !== undefined && typeof payload.model !== "string") {
           throw new HermesPtyError("HERMES_MODEL_INVALID", 400);
         }
+        if (payload.workspace !== undefined && typeof payload.workspace !== "string") throw new HermesPtyError("WORKSPACE_INVALID", 400);
+        if (payload.repository !== undefined && typeof payload.repository !== "string") throw new HermesPtyError("REPOSITORY_INVALID", 400);
+        let workspace;
+        try { workspace = safeWorkspaceId(payload.workspace); } catch { throw new HermesPtyError("WORKSPACE_INVALID", 400); }
+        let requestedRepository: string | undefined;
+        if (typeof payload.repository === "string" && payload.repository.trim()) {
+          const parsedRepository = parseRepositoryReference(payload.repository);
+          requestedRepository = `${parsedRepository.owner}/${parsedRepository.name}`;
+        }
+        let repository: string | undefined;
+        try { repository = assertWorkspaceRepository(workspace, requestedRepository); }
+        catch { throw new HermesPtyError("WORKSPACE_REPOSITORY_FIXED", 403); }
         const model = typeof payload.model === "string" ? safeChatModel(payload.model) : undefined;
-        return sendJson(response, 201, await hermesPty.start(payload, model));
+        return sendJson(response, 201, await hermesPty.start(payload, model, { workspace, repository }));
       }
       const hermesPtyMatch = /^\/api\/hermes\/pty\/([0-9a-f-]+)\/(events|input|resize|stop)$/i.exec(url.pathname);
       if (hermesPtyMatch?.[1] && hermesPtyMatch[2]) {
@@ -573,8 +594,20 @@ export function createControlServer(options: ControlServerOptions): Server {
         }
         if (action === "input") {
           const payload = await readJsonBody(request, 16 * 1024);
-          assertExactKeys(payload, ["data"]);
+          assertExactKeys(payload, ["data", "workspace", "repository"]);
           if (typeof payload.data !== "string") throw new HermesPtyError("HERMES_PTY_INPUT_INVALID", 400);
+          let workspace;
+          try { workspace = safeWorkspaceId(payload.workspace); } catch { throw new HermesPtyError("WORKSPACE_INVALID", 400); }
+          let requestedRepository: string | undefined;
+          if (typeof payload.repository === "string" && payload.repository.trim()) {
+            const parsedRepository = parseRepositoryReference(payload.repository);
+            requestedRepository = `${parsedRepository.owner}/${parsedRepository.name}`;
+          }
+          let repository: string | undefined;
+          try { repository = assertWorkspaceRepository(workspace, requestedRepository); }
+          catch { throw new HermesPtyError("WORKSPACE_REPOSITORY_FIXED", 403); }
+          const protectedPush = explicitProtectedPushRequest(payload.data, repository, workspace);
+          if (protectedPush) await ownerPushGrants.grant({ ...protectedPush, source: "terminal" });
           hermesPty.write(sessionId, payload.data);
           return sendJson(response, 200, { ok: true });
         }
@@ -814,6 +847,8 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/": { name: "index.html", type: "text/html; charset=utf-8" },
         "/index.html": { name: "index.html", type: "text/html; charset=utf-8" },
         "/chat": { name: "chat.html", type: "text/html; charset=utf-8" },
+        "/corporation": { name: "chat.html", type: "text/html; charset=utf-8" },
+        "/harmonia-legal": { name: "chat.html", type: "text/html; charset=utf-8" },
         "/ustroj": { name: "ustroj.html", type: "text/html; charset=utf-8" },
         "/providers": { name: "providers.html", type: "text/html; charset=utf-8" },
         "/releases": { name: "releases.html", type: "text/html; charset=utf-8" },
@@ -838,6 +873,7 @@ export function createControlServer(options: ControlServerOptions): Server {
         "/chat-v5.js": { name: "chat-v5.js", type: "text/javascript; charset=utf-8" },
         "/chat-shell.js": { name: "chat-shell.js", type: "text/javascript; charset=utf-8" },
         "/chat-local-access.js": { name: "chat-local-access.js", type: "text/javascript; charset=utf-8" },
+        "/chat-workspace.js": { name: "chat-workspace.js", type: "text/javascript; charset=utf-8" },
         "/ustroj.js": { name: "ustroj.js", type: "text/javascript; charset=utf-8" },
         "/task.css": { name: "task.css", type: "text/css; charset=utf-8" },
         "/task.js": { name: "task.js", type: "text/javascript; charset=utf-8" },
