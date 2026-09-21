@@ -508,6 +508,9 @@ describe("Etap 0 zasilany z chatu", () => {
       expect(js).toContain("searchParams.set(\"scope\", \"1\")");
       expect(js).toContain("fromIndex");
       expect(js).toContain("toIndex");
+      expect(js).toContain("unreadableAttachmentCount");
+      expect(js).toContain("stageZeroRangeList.scrollTop = 0");
+      expect(js).toContain("NIE URUCHOMIĘ");
       expect(js).toContain("fontSize: 15");
       expect(js).toContain("colorizeHermesOutput");
       expect(js).toContain("▶");
@@ -515,6 +518,7 @@ describe("Etap 0 zasilany z chatu", () => {
       const css = await fetch(`${base}/chat.css`).then((item) => item.text());
       expect(css).toContain(".stage-zero-range-list");
       expect(css).toContain(".stage-zero-dialog");
+      expect(css).toContain(".stage-zero-range-item.attachment-unreadable");
       expect(css).toContain("font-size:15px");
     } finally {
       await close();
