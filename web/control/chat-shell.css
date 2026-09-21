@@ -803,3 +803,86 @@ body.koord-shell-active .koord-session-value{font-size:9px!important}
 .github-repository-item.active{background:#123042;box-shadow:inset 3px 0 0 #69e3a3}
 .github-repository-item strong{font-size:12px}
 .github-repository-item span{font-size:10px;color:#8398a8;text-transform:uppercase;letter-spacing:.04em}
+
+
+/* V1.2: canonical runtime strip + terminal toolbar geometry.
+   Status controls share one height; terminal toolbar never hides actions behind xterm. */
+body.koord-shell-active .v5-routebar{
+  min-height:42px!important;
+  height:42px!important;
+  display:flex!important;
+  align-items:center!important;
+  gap:7px!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  scrollbar-width:none!important;
+}
+body.koord-shell-active .v5-routebar::-webkit-scrollbar{display:none!important}
+
+body.koord-shell-active .v5-routebar .v5-connection,
+body.koord-shell-active .v5-routebar .billing-badge,
+body.koord-shell-active .v5-routebar .usage-24h,
+body.koord-shell-active .v5-routebar .runtime-route-badge,
+body.koord-shell-active .v5-routebar .koord-access-pill,
+body.koord-shell-active .v5-routebar .github-chat-button,
+body.koord-shell-active .v5-routebar .v5-github{
+  min-height:28px!important;
+  height:28px!important;
+  max-height:28px!important;
+  box-sizing:border-box!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  flex:0 0 auto!important;
+  padding-top:0!important;
+  padding-bottom:0!important;
+  border-radius:9px!important;
+  line-height:1!important;
+}
+
+body.koord-shell-active .v5-routebar .github-chat-button,
+body.koord-shell-active .v5-routebar .v5-github{
+  padding-left:10px!important;
+  padding-right:10px!important;
+  font-size:11px!important;
+}
+
+body.koord-shell-active .runtime-terminal-toolbar{
+  grid-template-columns:72px 72px minmax(80px,1fr) 68px!important;
+  gap:5px!important;
+  padding:4px 7px!important;
+  overflow:hidden!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-button{
+  width:100%!important;
+  min-width:0!important;
+  height:34px!important;
+  min-height:34px!important;
+  max-height:34px!important;
+  padding:0 7px!important;
+  font-size:10px!important;
+}
+body.koord-shell-active .runtime-terminal-toolbar .runtime-terminal-spacer{display:none!important}
+body.koord-shell-active .runtime-terminal-toolbar [data-runtime-action="copy"]{display:none!important}
+body.koord-shell-active .runtime-terminal-summary{
+  min-width:0!important;
+  width:100%!important;
+  display:flex!important;
+  align-items:center!important;
+  gap:6px!important;
+  overflow:hidden!important;
+  padding:0 4px!important;
+}
+body.koord-shell-active .runtime-terminal-summary>span{
+  min-width:0!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+body.koord-shell-active .v5-terminal-pane.runtime-monitor-installed{
+  grid-template-rows:var(--shell-row-height) var(--shell-row-height) minmax(0,1fr) 72px auto!important;
+}
+
+.github-repository-item.fixed{
+  cursor:default!important;
+}
