@@ -173,27 +173,30 @@ export function conclusionExtractionPrompt(messages: ConclusionSourceMessage[]):
   const transcript = messages
     .filter((message) => normalizeSpace(message.content))
     .map((message) => "[" + message.id + "] " + message.role.toUpperCase() + ": " + message.content)
-    .join("\\n\\n");
+    .join("\n\n");
 
   return [
     "Extract only concrete conclusions that are ready to become deterministic Koordynator tasks.",
-    "Return JSON only: {\\"tasks\\":[{\\"title\\":string,\\"objective\\":string,\\"modules\\":string[],\\"allowedPaths\\":string[],\\"acceptanceCriteria\\":string[],\\"evidence\\":[{\\"messageId\\":string,\\"quote\\":string}]}]}.",
+    'Return JSON only: {"tasks":[{"title":string,"objective":string,"modules":string[],"allowedPaths":string[],"acceptanceCriteria":string[],"evidence":[{"messageId":string,"quote":string}]}]}.',
     "Every task must be grounded in the transcript. Evidence.quote MUST be an exact contiguous quote from the referenced message.",
     "Do not invent repository paths. allowedPaths may contain only relative paths explicitly present in the transcript.",
     "Do not create a task when objective, modules, allowedPaths or acceptance criteria are unresolved.",
     "Separate independent conclusions into separate tasks. Preserve dependencies in the objective or acceptance criteria when stated.",
-    "If nothing is sufficiently determined, return {\\"tasks\\":[]}.",
+    'If nothing is sufficiently determined, return {"tasks":[]}.',
     "",
     transcript.slice(0, 96000)
-  ].join("\\n");
+  ].join("\n");
 }
 
 export function parseJsonObject(text: string): unknown {
   const trimmed = text.trim();
-  const unfenced = trimmed
-    .replace(/^\x60\x60\x60(?:json)?\\s*/i, "")
-    .replace(/\\s*\x60\x60\x60$/i, "")
-    .trim();
+  const fence = String.fromCharCode(96).repeat(3);
+  let unfenced = trimmed;
+  if (unfenced.startsWith(fence)) {
+    unfenced = unfenced.slice(fence.length).replace(/^json\s*/i, "");
+    if (unfenced.endsWith(fence)) unfenced = unfenced.slice(0, -fence.length);
+    unfenced = unfenced.trim();
+  }
   try {
     return JSON.parse(unfenced);
   } catch {
