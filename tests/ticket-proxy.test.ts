@@ -25,6 +25,37 @@ describe("Ticket proxy (worker never holds the gateway key)", () => {
     expect(response.status).toBe(200);
     expect(calls).toBe(1);
   });
+  it("allows a no-key upstream only on loopback and never invents an Authorization header", async () => {
+    let forwardedAuthorization = "missing";
+    const proxy = await startTicketProxy({
+      upstream: "http://127.0.0.1:20128/v1",
+      apiKey: "",
+      secret: "broker-secret",
+      fetchImpl: (async (_url, init) => {
+        const headers = init?.headers as Record<string, string> | undefined;
+        forwardedAuthorization = String(headers?.authorization ?? "");
+        return Response.json({ ok: true });
+      }) as typeof fetch
+    });
+    proxies.push(proxy);
+    const { token } = mintTaskTicket("broker-secret", { aud: "hermes", model: "cx/gpt-5.6-sol" });
+    const response = await fetch(`${proxy.url}/chat/completions`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: "cx/gpt-5.6-sol" })
+    });
+    expect(response.status).toBe(200);
+    expect(forwardedAuthorization).toBe("");
+  });
+
+  it("still requires a gateway key for a remote upstream", async () => {
+    await expect(startTicketProxy({
+      upstream: "https://gateway.example/v1",
+      apiKey: "",
+      secret: "broker-secret"
+    })).rejects.toThrow("OMNIROUTE_API_KEY_REQUIRED");
+  });
+
   it("exchanges a valid ticket for the upstream call and never forwards the ticket", async () => {
     const calls: Array<{ url: string; authorization: string; body: string }> = [];
     const proxy = await startTicketProxy({
