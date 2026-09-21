@@ -35,6 +35,11 @@ export type ChatMessage = {
   completedAt?: string;
   state: ChatMessageState;
   model?: string;
+  /** Present on assistant turns produced inside a Shared Room. */
+  agentId?: string;
+  agentLabel?: string;
+  agentRole?: string;
+  sourceSessionId?: string;
   providerRequestId?: string;
   attachments?: ChatAttachment[];
   billing?: ChatBillingDecision;
@@ -47,12 +52,28 @@ export type ChatMessage = {
   materialisationError?: string;
 };
 
+export type SharedAgentParticipant = {
+  agentId: string;
+  label: string;
+  role: string;
+  model: string;
+  sourceSessionId: string;
+  fromIndex: number;
+  toIndex: number;
+};
+
+export type SharedRoomMeta = {
+  topic: string;
+  participants: SharedAgentParticipant[];
+};
+
 export type ChatSession = {
   sessionId: string;
   createdAt: string;
   updatedAt: string;
   model: string;
   messages: ChatMessage[];
+  sharedRoom?: SharedRoomMeta;
 };
 
 export type ChatSessionSummary = {
@@ -63,6 +84,9 @@ export type ChatSessionSummary = {
   title: string;
   messageCount: number;
   generating: boolean;
+  sharedRoom: boolean;
+  participantCount: number;
+  topic?: string;
 };
 
 export type ChatProcessStage =
@@ -144,6 +168,7 @@ const SESSION_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 const MODEL_RE = /^[A-Za-z0-9._:/-]{1,160}$/;
 const MIME_RE = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/;
 const DATA_URL_RE = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/;
+const SHARED_ROLE_RE = /^[A-Za-z][A-Za-z0-9 _./-]{0,63}$/;
 
 function now(): string { return new Date().toISOString(); }
 function normalizeEndpoint(value: string): string { return value.replace(/\/+$/, ""); }
@@ -154,6 +179,19 @@ function safeModel(value: string): string {
   if (!MODEL_RE.test(model)) throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
   if (model.toLowerCase().includes("deepseek")) throw new ChatServiceError("CHAT_MODEL_FORBIDDEN", 400);
   return model;
+}
+
+function safeSharedText(value: unknown, code: string, max: number): string {
+  if (typeof value !== "string") throw new ChatServiceError(code, 400);
+  const text = value.trim().replace(/\s+/g, " ");
+  if (!text || text.length > max) throw new ChatServiceError(code, 400);
+  return text;
+}
+
+function safeSharedRole(value: unknown): string {
+  const role = safeSharedText(value ?? "GENERAL", "CHAT_SHARED_ROLE_INVALID", 64);
+  if (!SHARED_ROLE_RE.test(role)) throw new ChatServiceError("CHAT_SHARED_ROLE_INVALID", 400);
+  return role;
 }
 
 function safeAttachmentName(value: unknown): string {
