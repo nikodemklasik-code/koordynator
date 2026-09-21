@@ -14,6 +14,7 @@ import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPo
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
 import { WorkspaceRepositoryContextService, type WorkspaceRepositoryContextPort } from "./workspace-repository-context.js";
 import { chatBillingErrorCode, evaluateChatBilling, type ChatBillingPolicyOptions } from "./chat-billing-policy.js";
+import { resolveExecutableChatModel } from "./chat-route-selection.js";
 import { OmniRouteLiveStatusService } from "./omniroute-live-status.js";
 import { ProviderAutoconnectError, ProviderAutoconnectService } from "./provider-autoconnect.js";
 import { buildMaterialisationReadiness } from "./materialisation-readiness.js";
@@ -320,8 +321,27 @@ export function createControlServer(options: ControlServerOptions): Server {
         const payload = await readJsonBody(request);
         assertExactKeys(payload, ["model"]);
         if (payload.model !== undefined && typeof payload.model !== "string") throw new ChatServiceError("CHAT_MODEL_INVALID", 400);
-        const session = await chat.createSession(typeof payload.model === "string" ? safeChatModel(payload.model) : undefined);
-        return sendJson(response, 201, { sessionId: session.sessionId, model: session.model, createdAt: session.createdAt });
+        const requestedModel = typeof payload.model === "string" ? safeChatModel(payload.model) : undefined;
+        const catalog = await modelCatalog.list();
+        const selected = resolveExecutableChatModel({
+          requestedModel,
+          catalog,
+          policy: options.chatBillingPolicy,
+          preferredModels: [
+            ...(options.chatDefaultModel ? [options.chatDefaultModel] : []),
+            ...(options.chatFallbackModels ?? [])
+          ]
+        });
+        if (!selected) throw new ChatServiceError("CHAT_UNAVAILABLE", 503);
+        const billingError = chatBillingErrorCode(selected.billing);
+        if (billingError) throw new ChatServiceError(billingError, 403);
+        const session = await chat.createSession(selected.model);
+        return sendJson(response, 201, {
+          sessionId: session.sessionId,
+          model: session.model,
+          createdAt: session.createdAt,
+          ...(selected.recoveredFrom === undefined ? {} : { recoveredFromModel: selected.recoveredFrom })
+        });
       }
 
       const chatMessageMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/messages$/i.exec(url.pathname);
@@ -335,10 +355,19 @@ export function createControlServer(options: ControlServerOptions): Server {
 
         const session = await chat.getSession(sessionId);
         if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
-        const model = typeof payload.model === "string" ? safeChatModel(payload.model) : session.model;
+        const requestedModel = typeof payload.model === "string" ? safeChatModel(payload.model) : session.model;
         const catalog = await modelCatalog.list();
-        const billing = evaluateChatBilling(model, catalog, options.chatBillingPolicy);
-        const billingError = chatBillingErrorCode(billing);
+        const selected = resolveExecutableChatModel({
+          requestedModel,
+          catalog,
+          policy: options.chatBillingPolicy,
+          preferredModels: [
+            ...(options.chatDefaultModel ? [options.chatDefaultModel] : []),
+            ...(options.chatFallbackModels ?? [])
+          ]
+        });
+        if (!selected) throw new ChatServiceError("CHAT_UNAVAILABLE", 503);
+        const billingError = chatBillingErrorCode(selected.billing);
         if (billingError) throw new ChatServiceError(billingError, 403);
 
         const clientAttachments = payload.attachments ?? [];
@@ -354,9 +383,9 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 202, await chat.startMessage(
           sessionId,
           payload.message,
-          model,
+          selected.model,
           attachments,
-          billing
+          selected.billing
         ));
       }
 
