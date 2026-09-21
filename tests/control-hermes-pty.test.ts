@@ -101,6 +101,10 @@ describe("Live Chat + Hermes PTY screen", () => {
       expect(js).toContain("reconcileChatSession");
       expect(js).toContain("muteHermes");
       expect(js).toContain("new Terminal");
+      expect(js).toContain("attachCustomKeyEventHandler");
+      expect(js).toContain("koordynatorHermesTerminal");
+      expect(js).toContain("getSelection");
+      expect(js).toContain("navigator.clipboard.writeText");
     } finally {
       await close();
     }
