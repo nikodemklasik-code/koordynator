@@ -36,6 +36,10 @@ export type ChatMessage = {
   state: ChatMessageState;
   model?: string;
   providerRequestId?: string;
+  /** Display name of an invited chat participant when this message came from a peer chat. */
+  agentTitle?: string;
+  /** Persisted source chat that supplied this invited participant. */
+  sourceSessionId?: string;
   attachments?: ChatAttachment[];
   billing?: ChatBillingDecision;
   usage?: ProviderReportedUsage;
@@ -54,7 +58,7 @@ export type ChatSession = {
   model: string;
   /** User-controlled persistent title. Falls back to the first user message for legacy sessions. */
   title?: string;
-  /** Other persisted chats explicitly invited into this chat as read-only collaboration context. */
+  /** Other persisted chats explicitly invited into this chat as peer participants. */
   invitedSessionIds?: string[];
   messages: ChatMessage[];
 };
@@ -211,6 +215,26 @@ function extractDelta(payload: unknown): string {
   const delta = (first as { delta?: unknown }).delta;
   if (typeof delta !== "object" || delta === null) return "";
   const content = (delta as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((item) => {
+      if (typeof item === "string") return item;
+      if (typeof item === "object" && item !== null && typeof (item as { text?: unknown }).text === "string") return (item as { text: string }).text;
+      return "";
+    }).join("");
+  }
+  return "";
+}
+
+function extractCompletionText(payload: unknown): string {
+  if (typeof payload !== "object" || payload === null) return "";
+  const choices = (payload as { choices?: unknown }).choices;
+  if (!Array.isArray(choices)) return "";
+  const first = choices[0];
+  if (typeof first !== "object" || first === null) return "";
+  const message = (first as { message?: unknown }).message;
+  if (typeof message !== "object" || message === null) return "";
+  const content = (message as { content?: unknown }).content;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content.map((item) => {
@@ -680,6 +704,106 @@ export class ChatService {
     return { accepted: true, messageId: assistant.id, model, billingSource: billing?.source ?? "UNKNOWN" };
   }
 
+  private async generateInvitedResponses(session: ChatSession, key: string, controller: AbortController): Promise<void> {
+    const invitedIds = [...new Set(session.invitedSessionIds ?? [])]
+      .filter((value) => SESSION_RE.test(value))
+      .slice(0, 8);
+    if (!invitedIds.length) return;
+
+    for (const invitedId of invitedIds) {
+      if (controller.signal.aborted) return;
+      const invited = await this.getSession(invitedId);
+      if (!invited) continue;
+
+      const model = safeModel(invited.model);
+      const billing = await this.authorizeModel?.(model);
+      if (billing && !billing.allowed) continue;
+
+      const title = sessionTitle(invited);
+      const peer: ChatMessage = {
+        id: randomUUID(),
+        sessionId: session.sessionId,
+        role: "assistant",
+        content: "",
+        createdAt: now(),
+        state: "streaming",
+        model,
+        agentTitle: title,
+        sourceSessionId: invited.sessionId,
+        ...(billing === undefined ? {} : { billing })
+      };
+      session.messages.push(peer);
+      session.updatedAt = now();
+      await this.persist(session);
+      this.emit(session.sessionId, { type: "assistant_start", message: peer });
+      this.emit(session.sessionId, {
+        type: "process_update",
+        update: {
+          sessionId: session.sessionId,
+          stage: "EXECUTION",
+          agent: title,
+          process: "Invited chat participant",
+          progress: 72,
+          activity: `Invited chat ${title} is responding`,
+          model
+        }
+      });
+
+      try {
+        const historySession: ChatSession = {
+          ...session,
+          messages: session.messages.filter((item) => item.id !== peer.id)
+        };
+        const history = await this.boundedHistory(historySession);
+        history.unshift({
+          role: "system",
+          content: [
+            `You are the invited chat participant "${title}".`,
+            `Your source chat id is ${invited.sessionId}.`,
+            "Respond as a distinct participant in the shared Koordynator conversation.",
+            "Use your source-chat context and the shared conversation. Do not pretend to be the main Koordynator.",
+            "Do not change repository identity: the active repository remains nikodemklasik-code/koordynator."
+          ].join("\n")
+        });
+
+        const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+          body: JSON.stringify({ model, messages: history, stream: false }),
+          signal: controller.signal
+        });
+        if (response.status === 401 || response.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+        if (response.status === 429) throw new ChatServiceError("CHAT_RATE_LIMITED", 429);
+        if (!response.ok) throw new ChatServiceError(`CHAT_UPSTREAM_${response.status}`, 502);
+
+        const payload = await response.json().catch(() => null);
+        const content = extractCompletionText(payload).trim();
+        if (!content) throw new ChatServiceError("CHAT_PEER_EMPTY_RESPONSE", 502);
+        peer.content = content;
+        const usage = extractProviderReportedUsage(payload);
+        if (usage) peer.usage = usage;
+        const providerRequestId = response.headers.get("x-request-id") ?? undefined;
+        if (providerRequestId !== undefined) peer.providerRequestId = providerRequestId;
+
+        this.emit(session.sessionId, {
+          type: "assistant_delta",
+          sessionId: session.sessionId,
+          messageId: peer.id,
+          delta: content
+        });
+        const audited = await this.finalize(session, peer, "complete");
+        if (!audited) peer.usageAudit = "WRITE_FAILED";
+        this.emit(session.sessionId, { type: "assistant_done", message: peer });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_PEER_UNAVAILABLE";
+        peer.content = `[${title}: ${code}]`;
+        await this.finalize(session, peer, "error");
+        this.emit(session.sessionId, { type: "assistant_done", message: peer });
+      }
+    }
+  }
+
   private async finalize(session: ChatSession, assistant: ChatMessage, state: "complete" | "stopped" | "error"): Promise<boolean> {
     assistant.state = state;
     assistant.completedAt = now();
@@ -1001,6 +1125,7 @@ export class ChatService {
         }
       });
       this.emit(sessionId, { type: "assistant_done", message: assistant });
+      await this.generateInvitedResponses(session, key, controller);
     } catch (error) {
       if (controller.signal.aborted) {
         const audited = await this.finalize(session, assistant, "stopped");
