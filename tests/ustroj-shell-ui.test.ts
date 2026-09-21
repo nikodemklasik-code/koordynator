@@ -9,9 +9,9 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=4');
-    expect(html).toContain('/chat-shell.js?v=2');
-    expect(html).toContain('/chat-v5.js?v=7');
+    expect(html).toContain('/chat-shell.css?v=5');
+    expect(html).toContain('/chat-shell.js?v=3');
+    expect(html).toContain('/chat-v5.js?v=8');
     expect(html.indexOf('/chat-shell.js?v=2')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=7'));
     expect(css).toContain("grid-template-rows: var(--shell-row-height) var(--shell-row-height)");
     expect(css).toContain("max-height: calc(var(--shell-row-height) * 2)");
