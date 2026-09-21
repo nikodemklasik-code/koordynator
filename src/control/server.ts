@@ -7,7 +7,7 @@ import type { Digest, TaskId } from "../domain/ids.js";
 import { TaskReadModel, controlRoots, type TaskFilter } from "./task-read-model.js";
 import { ProviderReadModel, providerReceiptRoot } from "./provider-read-model.js";
 import { ReleaseReadModel } from "./release-read-model.js";
-import { ChatService, ChatServiceError, type ChatEvent } from "./chat-service.js";
+import { ChatService, ChatServiceError, type ChatEvent, type SharedAgentParticipantInput } from "./chat-service.js";
 import { GitHubConnectionError, GitHubConnectionService, type GitHubConnectionPort } from "./github-connection-service.js";
 import { ChatModelCatalogError, ChatModelCatalogService, type ChatModelCatalogPort } from "./chat-model-catalog.js";
 import { GitHubRepositoryContextError, GitHubRepositoryContextService, type GitHubRepositoryContextPort } from "./github-repository-context.js";
@@ -138,6 +138,7 @@ function safeChatModel(value: string): string {
 
 function isControlPost(pathname: string): boolean {
   return pathname === "/api/chat/sessions" ||
+    pathname === "/api/chat/shared-rooms" ||
     pathname === "/api/integrations/github/connect" ||
     pathname === "/api/integrations/hermes-grants" ||
     pathname === "/api/providers/connect-existing" ||
@@ -422,6 +423,36 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, { sessions: await chat.listSessions(limit) });
       }
 
+      if (method === "POST" && url.pathname === "/api/chat/shared-rooms") {
+        const payload = await readJsonBody(request, 32 * 1024);
+        assertExactKeys(payload, ["topic", "participants"]);
+        if (!Array.isArray(payload.participants)) throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
+        const participants: SharedAgentParticipantInput[] = payload.participants.map((item) => {
+          if (typeof item !== "object" || item === null || Array.isArray(item)) throw new ChatServiceError("CHAT_SHARED_PARTICIPANTS_INVALID", 400);
+          const record = item as Record<string, unknown>;
+          assertExactKeys(record, ["sourceSessionId", "label", "role", "fromIndex", "toIndex"]);
+          if (typeof record.sourceSessionId !== "string") throw new ChatServiceError("CHAT_SHARED_SOURCE_INVALID", 400);
+          if (record.label !== undefined && typeof record.label !== "string") throw new ChatServiceError("CHAT_SHARED_LABEL_INVALID", 400);
+          if (record.role !== undefined && typeof record.role !== "string") throw new ChatServiceError("CHAT_SHARED_ROLE_INVALID", 400);
+          if (record.fromIndex !== undefined && typeof record.fromIndex !== "number") throw new ChatServiceError("CHAT_SHARED_RANGE_INVALID", 400);
+          if (record.toIndex !== undefined && typeof record.toIndex !== "number") throw new ChatServiceError("CHAT_SHARED_RANGE_INVALID", 400);
+          return {
+            sourceSessionId: record.sourceSessionId,
+            ...(typeof record.label === "string" ? { label: record.label } : {}),
+            ...(typeof record.role === "string" ? { role: record.role } : {}),
+            ...(typeof record.fromIndex === "number" ? { fromIndex: record.fromIndex } : {}),
+            ...(typeof record.toIndex === "number" ? { toIndex: record.toIndex } : {})
+          };
+        });
+        const room = await chat.createSharedRoom(payload.topic, participants);
+        return sendJson(response, 201, {
+          sessionId: room.sessionId,
+          model: room.model,
+          createdAt: room.createdAt,
+          sharedRoom: room.sharedRoom
+        });
+      }
+
       if (method === "POST" && url.pathname === "/api/chat/sessions") {
         const payload = await readJsonBody(request);
         assertExactKeys(payload, ["model"]);
@@ -517,6 +548,13 @@ export function createControlServer(options: ControlServerOptions): Server {
         const attachments = repoContext
           ? [...clientAttachments, repositoryAttachment(selectedRepository ?? repoContext.repository, repoContext.commit, repoContext.context)]
           : clientAttachments;
+        if (session.sharedRoom) {
+          return sendJson(response, 202, await chat.startSharedMessage(
+            sessionId,
+            payload.message,
+            attachments
+          ));
+        }
         return sendJson(response, 202, await chat.startMessage(
           sessionId,
           payload.message,
