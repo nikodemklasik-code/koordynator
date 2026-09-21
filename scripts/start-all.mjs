@@ -2,7 +2,8 @@
 /**
  * One-click always-on start for Koordynator.
  * Boots OmniRoute (if needed), safely reuses persisted/local AI sessions,
- * refreshes live routes, starts Control UI, then opens chat.
+ * refreshes live routes, starts Control UI, starts the managed Hermes PTY,
+ * then opens chat. OmniRoute, Control and Hermes stay running in background.
  *
  * Daily:
  *   npm run start:all
@@ -103,6 +104,72 @@ function startControlWithLog() {
   process.exit(1);
 }
 
+
+function controlHeaders(extra = {}) {
+  const token = String(process.env.KOORDYNATOR_CONTROL_TOKEN || "").trim();
+  return {
+    ...(token ? { "x-control-token": token } : {}),
+    ...extra
+  };
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try { return JSON.parse(text); }
+  catch { return { raw: text }; }
+}
+
+async function ensureHermes() {
+  const base = `http://${host}:${port}`;
+  let statusResponse;
+  try {
+    statusResponse = await fetch(`${base}/api/hermes/pty`, {
+      headers: controlHeaders({ accept: "application/json" })
+    });
+  } catch (error) {
+    console.error(`Hermes status check failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+
+  if (statusResponse.ok) {
+    const current = await readJsonResponse(statusResponse);
+    if (current?.running === true) {
+      console.log(`Hermes: already running (pid ${current.pid ?? "unknown"})`);
+      return current;
+    }
+  }
+
+  let startResponse;
+  try {
+    startResponse = await fetch(`${base}/api/hermes/pty`, {
+      method: "POST",
+      headers: controlHeaders({
+        accept: "application/json",
+        "content-type": "application/json"
+      }),
+      body: JSON.stringify({ cols: 140, rows: 44 })
+    });
+  } catch (error) {
+    console.error(`Hermes start failed: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+
+  const payload = await readJsonResponse(startResponse);
+  if (!startResponse.ok) {
+    if (payload?.error === "HERMES_TERMINAL_REQUIRED") {
+      console.error("Hermes cannot start because the one-time terminal grant is missing.");
+      console.error("Grant Hermes terminal access once in Koordynator, then rerun npm run start:all.");
+    } else {
+      console.error(`Hermes did not start: HTTP ${startResponse.status} ${payload?.error ?? ""}`);
+    }
+    process.exit(1);
+  }
+
+  console.log(`Hermes: ready in managed PTY (pid ${payload.pid ?? "unknown"}, session ${payload.sessionId ?? "unknown"})`);
+  return payload;
+}
+
 function openChat() {
   if (process.platform === "darwin") {
     run("Open chat", "open", [chatUrl], { allowFail: true });
@@ -119,7 +186,8 @@ ensureOmniRoute();
 run("Reuse existing AI sessions (no login)", "npm", ["run", "ai:connect-existing", "--", "--no-bootstrap"], { allowFail: true });
 run("AI always-on (no login)", "npm", ["run", "ai:always-on"]);
 startControlWithLog();
+await ensureHermes();
 openChat();
 console.log(`\nDone. Chat: ${chatUrl}`);
+console.log("Running in background: OmniRoute + Koordynator Control + Hermes PTY.");
 console.log("Fresh vendor authorization is never launched here. Run npm run ai:auth-missing only when a missing route needs one-time consent.");
-console.log("Stop later: close the Control UI process; OmniRoute can stay running.");
