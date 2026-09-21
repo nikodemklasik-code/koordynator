@@ -1,0 +1,249 @@
+/* Koordynator shell normalization.
+   Two rows only. Every visible action has an explicit importance tier. */
+
+:root {
+  --shell-row-height: 48px;
+  --shell-gap: 7px;
+  --shell-bg: #071018;
+  --shell-bg-soft: #0a141d;
+  --shell-line: #1d3141;
+  --shell-text: #d8e2ea;
+  --shell-muted: #8ea0ad;
+  --shell-blue: #3c82b9;
+  --shell-blue-soft: #153a58;
+}
+
+body.koord-shell-active .v5-shell {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+body.koord-shell-active [data-shell-retired="true"] {
+  display: none !important;
+}
+
+body.koord-shell-active .v5-main {
+  grid-template-rows: auto minmax(0, 1fr) 26px !important;
+  gap: 0 !important;
+}
+
+.koord-shell {
+  position: relative;
+  z-index: 90;
+  display: grid;
+  grid-template-rows: var(--shell-row-height) var(--shell-row-height);
+  width: 100%;
+  min-width: 0;
+  max-height: calc(var(--shell-row-height) * 2);
+  overflow: hidden;
+  border-bottom: 1px solid var(--shell-line);
+  background: var(--shell-bg);
+  box-shadow: none;
+}
+
+.koord-shell-row {
+  min-width: 0;
+  min-height: var(--shell-row-height);
+  display: flex;
+  align-items: center;
+  gap: var(--shell-gap);
+  padding: 5px 8px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.koord-shell-row-primary {
+  justify-content: space-between;
+  border-bottom: 1px solid #142634;
+  background: #08131c;
+}
+
+.koord-shell-row-secondary {
+  background: #09151e;
+}
+
+.koord-shell-products,
+.koord-shell-conversation,
+.koord-shell-tools {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--shell-gap);
+  flex-wrap: nowrap;
+}
+
+.koord-shell-products,
+.koord-shell-tools {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.koord-shell-products::-webkit-scrollbar,
+.koord-shell-tools::-webkit-scrollbar {
+  display: none;
+}
+
+.koord-shell-conversation {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.koord-shell-tools {
+  flex: 1 1 auto;
+}
+
+.koord-shell-button,
+.koord-shell .v5-action,
+.koord-shell .v5-icon-button,
+.koord-shell button,
+.koord-shell a,
+.koord-shell summary {
+  min-height: 38px !important;
+  height: 38px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 0 13px !important;
+  border: 1px solid #233847 !important;
+  border-radius: 10px !important;
+  background: #0b1821 !important;
+  color: var(--shell-text) !important;
+  text-decoration: none !important;
+  font: 750 11px/1 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  letter-spacing: 0 !important;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.koord-shell .importance-1 {
+  border-color: #346b95 !important;
+  background: linear-gradient(180deg, #163d5d, #12334f) !important;
+  color: #eef8ff !important;
+  box-shadow: inset 0 0 0 1px rgba(127, 197, 245, .08);
+}
+
+.koord-shell .importance-1.active {
+  border-color: #4b8ec1 !important;
+  background: linear-gradient(180deg, #19466b, #123955) !important;
+}
+
+.koord-shell .importance-2 {
+  border-color: #2b4355 !important;
+  background: #0b1923 !important;
+  color: #d9e4ec !important;
+}
+
+.koord-shell .importance-3 {
+  border-color: #20313d !important;
+  background: #09141c !important;
+  color: #9eb0bd !important;
+}
+
+.koord-shell button:hover,
+.koord-shell a:hover,
+.koord-shell summary:hover {
+  border-color: #47708d !important;
+  background: #112535 !important;
+  color: #f3f8fb !important;
+}
+
+.koord-shell-export {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.koord-shell-export > summary {
+  list-style: none;
+}
+
+.koord-shell-export > summary::-webkit-details-marker {
+  display: none;
+}
+
+.koord-shell-export-menu {
+  position: fixed;
+  z-index: 200;
+  top: calc(var(--shell-row-height) * 2 - 4px);
+  right: 8px;
+  min-width: 180px;
+  display: none;
+  gap: 4px;
+  padding: 7px;
+  border: 1px solid #2a4050;
+  border-radius: 10px;
+  background: #08131b;
+  box-shadow: 0 18px 70px rgba(0,0,0,.5);
+}
+
+.koord-shell-export[open] .koord-shell-export-menu {
+  display: grid;
+}
+
+.koord-shell-export-item {
+  width: 100% !important;
+  justify-content: flex-start !important;
+  min-height: 34px !important;
+  height: 34px !important;
+  border: 0 !important;
+  border-radius: 7px !important;
+  background: transparent !important;
+  color: #aebdc7 !important;
+}
+
+.koord-shell [hidden] {
+  display: none !important;
+}
+
+/* Route/status strip is attached directly to the workspace. No visual gutter. */
+body.koord-shell-active .v5-workspace,
+body.koord-shell-active .v5-chat-pane,
+body.koord-shell-active .chat-frame {
+  margin: 0 !important;
+  padding-top: 0 !important;
+  gap: 0 !important;
+  border-top: 0 !important;
+}
+
+body.koord-shell-active .v5-routebar,
+body.koord-shell-active .chat-connection-bar,
+body.koord-shell-active .chat-usage-bar {
+  width: 100% !important;
+  margin: 0 !important;
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  background: #08131c !important;
+  box-shadow: none !important;
+}
+
+body.koord-shell-active .v5-github,
+body.koord-shell-active .github-chat-button {
+  border-radius: 8px !important;
+  background: #0a1822 !important;
+}
+
+@media (max-width: 1120px) {
+  :root { --shell-row-height: 46px; }
+  .koord-shell-button,
+  .koord-shell button,
+  .koord-shell a,
+  .koord-shell summary {
+    min-height: 36px !important;
+    height: 36px !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+    font-size: 10px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .koord-shell-conversation {
+    max-width: 45vw;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .koord-shell-conversation::-webkit-scrollbar { display: none; }
+}

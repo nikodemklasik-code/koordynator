@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Koordynator · Ustrój</title>
+  <link rel="stylesheet" href="/ustroj.css?v=1" />
+</head>
+<body>
+  <header class="ustroj-topbar">
+    <nav class="ustroj-products" aria-label="Produkty">
+      <a href="/">Home</a>
+      <a href="/chat">Live Chat</a>
+      <span class="product-placeholder" data-product="harmonia-legal">Harmonia Legal</span>
+      <span class="product-placeholder" data-product="job-app">Job App</span>
+      <a href="/ustroj" class="active" aria-current="page">Ustrój</a>
+    </nav>
+    <div class="ustroj-core-badge"><span>CORE</span><strong>main</strong></div>
+  </header>
+
+  <main class="ustroj-page">
+    <section class="ustroj-hero">
+      <div>
+        <p class="eyebrow">KOORDYNATOR · USTRÓJ</p>
+        <h1>Rdzeń organizacji i granice odpowiedzialności</h1>
+        <p class="lead">Ten ekran jest mapą ustroju, nie drugim silnikiem wykonawczym. Core żyje na <code>main</code>; każdy element ustroju powstaje na krótkiej gałęzi komponentowej, przechodzi testy, trafia do core i gałąź znika.</p>
+      </div>
+      <div class="repo-card">
+        <span>Docelowe repo</span>
+        <strong>nikodemklasik-code/Korporacja</strong>
+        <small>Repozytorium jeszcze nie jest traktowane jako utworzone przez ten ekran.</small>
+      </div>
+    </section>
+
+    <section class="branch-flow" aria-label="Cykl gałęzi">
+      <div class="flow-node core"><span>1</span><strong>main</strong><small>jedyny trwały core</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node"><span>2</span><strong>component/&lt;element&gt;</strong><small>jeden składnik ustroju</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node"><span>3</span><strong>test + audit</strong><small>bez samopotwierdzania</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node"><span>4</span><strong>merge/push main</strong><small>tylko po PASS</small></div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node"><span>5</span><strong>delete branch</strong><small>brak długowiecznych odgałęzień</small></div>
+    </section>
+
+    <section class="ustroj-grid">
+      <article class="ustroj-card constitutional">
+        <div class="card-head"><span class="card-kicker">KONSTYTUCJA</span><span class="status stable">CORE</span></div>
+        <h2>Harmonia</h2>
+        <p>Dopuszczalność, prawda, ratyfikacja i granice działania. Nie wykonuje zadań operacyjnych.</p>
+        <code>component/harmonia</code>
+      </article>
+
+      <article class="ustroj-card semantic">
+        <div class="card-head"><span class="card-kicker">SEMANTYKA</span><span class="status component">COMPONENT</span></div>
+        <h2>HLL</h2>
+        <p>Ontologia, relacje, provenance, konflikty i canonical truth boundary.</p>
+        <code>component/hll</code>
+      </article>
+
+      <article class="ustroj-card executive">
+        <div class="card-head"><span class="card-kicker">WYKONANIE</span><span class="status component">COMPONENT</span></div>
+        <h2>Koordynator / Brain</h2>
+        <p>Portfolio, planowanie, priorytety, delegowanie i dojście zadania do wyniku.</p>
+        <code>component/brain</code>
+      </article>
+
+      <article class="ustroj-card authority">
+        <div class="card-head"><span class="card-kicker">AUTHORITY</span><span class="status component">COMPONENT</span></div>
+        <h2>VERA</h2>
+        <p>Capabilities, permits, receipts, module admission i kontrola skutków zewnętrznych.</p>
+        <code>component/vera</code>
+      </article>
+
+      <article class="ustroj-card organization">
+        <div class="card-head"><span class="card-kicker">ORGANIZACJA</span><span class="status component">COMPONENT</span></div>
+        <h2>Corporation</h2>
+        <p>Departamenty, role, zadania, wykonawcy, kontrola jakości i odpowiedzialność.</p>
+        <code>component/corporation</code>
+      </article>
+
+      <article class="ustroj-card products">
+        <div class="card-head"><span class="card-kicker">PRODUKTY</span><span class="status linked">LINKED</span></div>
+        <h2>Harmonia Legal + Job App</h2>
+        <p>Produkty korzystają z core przez jawne kontrakty. Ich kod nie staje się przypadkiem częścią ustroju.</p>
+        <code>component/product-bridges</code>
+      </article>
+    </section>
+
+    <section class="rules-panel">
+      <div>
+        <span class="eyebrow">ZASADY BRANCHINGU</span>
+        <h2>Krótka gałąź, jeden element, zero sierot</h2>
+      </div>
+      <ol>
+        <li><strong>main</strong> jest core i zawsze ma pozostać uruchamialny.</li>
+        <li>Nowy składnik zaczyna się od aktualnego <strong>main</strong> jako <code>component/&lt;nazwa&gt;</code>.</li>
+        <li>Gałąź nie miesza kilku elementów ustroju i nie staje się drugim środowiskiem produkcyjnym.</li>
+        <li>Po PASS zmiana trafia do <strong>main</strong>, a gałąź komponentowa jest usuwana.</li>
+      </ol>
+    </section>
+  </main>
+
+  <script src="/ustroj.js?v=1" defer></script>
+</body>
+</html>
