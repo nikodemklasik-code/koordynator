@@ -25,12 +25,16 @@ describe("Hermes / OmniRoute operator setup", () => {
     const root = await mkdtemp(join(tmpdir(), "koord-env-"));
     try {
       const path = join(root, ".env");
-      await writeFile(path, 'OMNIROUTE_API_KEY="local-key"\nKOORDYNATOR_CHAT_MODEL=cc/claude-test\nOMNIROUTE_LITERAL=$(touch /tmp/should-not-run)\nNODE_OPTIONS=--inspect\nPATH=bad\n');
+      await writeFile(path, 'OMNIROUTE_API_KEY="local-key"\nKOORDYNATOR_CHAT_MODEL=cc/claude-test\nOPENAI_API_KEY=studio-openai\nELEVENLABS_API_KEY=studio-eleven\nFAL_KEY=studio-fal\nVEED_API_KEY=studio-veed\nOMNIROUTE_LITERAL=$(touch /tmp/should-not-run)\nNODE_OPTIONS=--inspect\nPATH=bad\n');
       const env = { OMNIROUTE_API_KEY: "process-key" } as NodeJS.ProcessEnv;
       loadLocalConfig(path, env);
       expect(env.OMNIROUTE_API_KEY).toBe("process-key");
       expect(env.KOORDYNATOR_CHAT_MODEL).toBe("cc/claude-test");
       expect(env.OMNIROUTE_LITERAL).toBe("$(touch /tmp/should-not-run)");
+      expect(env.OPENAI_API_KEY).toBe("studio-openai");
+      expect(env.ELEVENLABS_API_KEY).toBe("studio-eleven");
+      expect(env.FAL_KEY).toBe("studio-fal");
+      expect(env.VEED_API_KEY).toBe("studio-veed");
       expect(env.NODE_OPTIONS).toBeUndefined();
       expect(env.PATH).toBeUndefined();
       expect(() => loadLocalConfig(join(root, "missing"), env)).not.toThrow();
