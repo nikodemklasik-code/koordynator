@@ -159,6 +159,8 @@ export type ChatServiceOptions = {
   maxAttachmentBytes?: number;
   maxAttachmentTotalBytes?: number;
   maxHistoryAttachmentBytes?: number;
+  /** Requested upper bound for one AI response. Provider/model may enforce a lower hard cap. */
+  maxOutputTokens?: number;
   timeoutMs?: number;
   projectContextProvider?: () => Promise<string | null | undefined>;
   /** Route every substantive chat turn through Hermes dynamic skill discovery. */
@@ -310,6 +312,7 @@ export class ChatService {
   private readonly maxAttachmentBytes: number;
   private readonly maxAttachmentTotalBytes: number;
   private readonly maxHistoryAttachmentBytes: number;
+  private readonly maxOutputTokens: number;
   private readonly timeoutMs: number;
   private readonly usageLedger: ChatUsageLedger;
   private readonly projectContextProvider?: () => Promise<string | null | undefined>;
@@ -340,7 +343,10 @@ export class ChatService {
     this.maxAttachmentBytes = options.maxAttachmentBytes ?? 128 * 1024 * 1024;
     this.maxAttachmentTotalBytes = options.maxAttachmentTotalBytes ?? 192 * 1024 * 1024;
     this.maxHistoryAttachmentBytes = options.maxHistoryAttachmentBytes ?? 224 * 1024 * 1024;
-    this.timeoutMs = options.timeoutMs ?? 120_000;
+    const envMaxOutput = Number(process.env.KOORDYNATOR_CHAT_MAX_OUTPUT_TOKENS ?? "");
+    const requestedMaxOutput = options.maxOutputTokens ?? (Number.isFinite(envMaxOutput) && envMaxOutput > 0 ? envMaxOutput : 32_768);
+    this.maxOutputTokens = Math.min(Math.max(Math.trunc(requestedMaxOutput), 1_024), 65_536);
+    this.timeoutMs = options.timeoutMs ?? 600_000;
     this.usageLedger = new ChatUsageLedger(options.stateDir);
     this.hermesSkillsEveryTurn = options.hermesSkillsEveryTurn ?? false;
     if (options.projectContextProvider) this.projectContextProvider = options.projectContextProvider;
@@ -571,6 +577,7 @@ export class ChatService {
           { role: "user", content: userContent }
         ],
         stream: true,
+        max_tokens: this.maxOutputTokens,
         stream_options: { include_usage: true }
       }),
       signal: controller.signal
@@ -1247,7 +1254,7 @@ export class ChatService {
         const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
           method: "POST",
           headers: completionHeaders(key),
-          body: JSON.stringify({ model, messages: history, stream: true, stream_options: { include_usage: true } }),
+          body: JSON.stringify({ model, messages: history, stream: true, max_tokens: this.maxOutputTokens, stream_options: { include_usage: true } }),
           signal: controller.signal
         });
         if (attempt.status === 401 || attempt.status === 403) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
