@@ -290,6 +290,7 @@
   let lastReadableAt = 0;
   let lastReadableKind = "";
   let lastReadableRow = null;
+  let timerReadableRow = null;
   const byteLength = (value) => encoder.encode(String(value ?? "")).byteLength;
   const now = () => Date.now();
 
@@ -339,14 +340,16 @@
     return !text || /^[╭╰┌└├┤│┃─━\s]+$/.test(text) || /^(?:Window too small\.{0,3}|Plan a feature, then build it step by step)$/i.test(text) ||
       /^(?:Initializing agent|Welcome to Hermes Agent|Available Tools|Available Skills|Tip:)\b/i.test(text) || /(?:contemplating|processing|mulling|reflecting|preparing terminal)/i.test(text) ||
       /^(?:⚕\s*)?(?:❯\s*)?msg=interrupt\b/i.test(text) || (/\bctx\s+--\b/i.test(text) && /[│┤]/.test(text)) ||
-      /^(?:The user (?:wants|asked|is asking|requested)|I (?:need to|should|will now)|We need to|Need to)\b/i.test(text) || /\bI have all the facts\. Reply in Polish\b/i.test(text);
+      /^(?:The user (?:wants|asked|is asking|requested)|I (?:need to|should|will now)|We need to|Need to)\b/i.test(text) || /\bI have all the facts\. Reply in Polish\b/i.test(text) ||
+      /^\d{1,4}$/.test(text) || /^\d+(?:\.\d+)?[KMG]$/i.test(text) || /^[░▒▓█▏▎▍▌▋▊▉\[\].%\s]+$/.test(text);
   }
   function classify(text) {
     if (/\b(ERROR|FAIL(?:ED)?|DENIED|DENY|TIMEOUT|EXCEPTION|TRACEBACK|HARMONIA_HTTP_\d+|CHAT_UPSTREAM_\d+|WORKER_PROCESS_FAILED)\b/i.test(text)) return ["error", "BŁĄD"];
     if (/\b(ALLOW|PASS|COMPLETE|COMPLETED|SUCCESS|DONE)\b/i.test(text)) return ["success", "WYNIK"];
+    if (/^\d+(?:\.\d+)?s$/i.test(text) || /^\d{1,2}:\d{2}(?::\d{2})?$/.test(text)) return ["timer", "CZAS"];
     if (/^(?:▶|❯|➜|\$|>)\s*/.test(text)) return ["command", "TY"];
     if (/\?\s*$/.test(text) || /^(?:czy|chcesz|mam|mogę|możesz|potwierdź|wybierz|do you|would you|should i|which|what|where|when|how)\b.*\?/i.test(text)) return ["question", "PYTANIE"];
-    if (/^(?:\+\s*\d+\s+commands?|model fallback|authentication failed|npm |node |git |gh |cd |curl |npx |pid\b|exit\b)/i.test(text)) return ["meta", "SYSTEM"];
+    if (/^(?:\+\s*\d+\s+commands?|model fallback|authentication failed|npm |node |git |gh |cd |curl |npx |pid\b|exit\b)/i.test(text) || /\b\d+(?:\.\d+)?[KMG]?\/\d+(?:\.\d+)?[KMG]\b/i.test(text) || /\|\s*\d+%\s*\|/.test(text)) return ["meta", "STATUS"];
     return ["answer", "ODPOWIEDŹ"];
   }
   function addReadableLine(raw) {
@@ -358,6 +361,23 @@
     mountTerminalUi(); if (!readableRoot) return;
     readableRoot.querySelector(".runtime-readable-empty")?.remove();
     const [kind, tag] = classify(text);
+    if (kind === "timer") {
+      if (!timerReadableRow?.isConnected) {
+        timerReadableRow = document.createElement("div");
+        timerReadableRow.className = "runtime-line timer";
+        const label = document.createElement("span"); label.className = "runtime-line-tag"; label.textContent = tag;
+        const body = document.createElement("span"); body.className = "runtime-line-text"; body.textContent = text;
+        timerReadableRow.append(label, body);
+        readableRoot.appendChild(timerReadableRow);
+      } else {
+        const body = timerReadableRow.querySelector(".runtime-line-text");
+        if (body) body.textContent = text;
+      }
+      lastReadableKind = "timer";
+      lastReadableRow = timerReadableRow;
+      readableRoot.scrollTop = readableRoot.scrollHeight;
+      return;
+    }
     const mergeable = kind === "answer" || kind === "question" || kind === "meta";
     if (mergeable && kind === lastReadableKind && lastReadableRow?.isConnected) {
       const body = lastReadableRow.querySelector(".runtime-line-text");
@@ -373,16 +393,28 @@
   }
   function flushReadableBuffer() { const pending = compactLine(readableBuffer); readableBuffer = ""; if (pending) addReadableLine(pending); }
   function ingestHermesOutput(text) {
-    const clean = stripAnsi(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-    readableBuffer += clean;
-    const lines = readableBuffer.split("\n"); readableBuffer = lines.pop() || "";
-    for (const line of lines) addReadableLine(line);
+    const clean = stripAnsi(text).replace(/\r\n/g, "\n");
+    for (const char of clean) {
+      if (char === "\r") {
+        // PTY carriage return means "rewrite this line", not "append a new line".
+        // Treating it as LF produced the vertical 1,2,3... countdown garbage.
+        readableBuffer = "";
+        continue;
+      }
+      if (char === "\n") {
+        const line = readableBuffer;
+        readableBuffer = "";
+        if (line) addReadableLine(line);
+        continue;
+      }
+      readableBuffer += char;
+    }
     clearTimeout(readableFlushTimer); readableFlushTimer = setTimeout(flushReadableBuffer, 450);
     if (/[❯➜$]\s*$/.test(clean.trim())) telemetry.hermes.busySince = 0;
   }
   function resetReadable(message) {
     mountTerminalUi(); if (!readableRoot) return;
-    readableRoot.innerHTML = ""; readableBuffer = ""; lastReadableLine = ""; lastReadableKind = ""; lastReadableRow = null;
+    readableRoot.innerHTML = ""; readableBuffer = ""; lastReadableLine = ""; lastReadableKind = ""; lastReadableRow = null; timerReadableRow = null;
     const empty = document.createElement("div"); empty.className = "runtime-readable-empty"; empty.textContent = message || "Czekam na wyjście Hermesa…"; readableRoot.appendChild(empty);
   }
 
@@ -467,18 +499,39 @@
     pane.classList.add("runtime-monitor-installed");
     if (!readableRoot) {
       readableRoot = document.createElement("div"); readableRoot.id = "hermesReadableRuntime"; readableRoot.className = "runtime-readable";
-      readableRoot.setAttribute("role", "log"); readableRoot.setAttribute("aria-live", "polite"); readableRoot.innerHTML = '<div class="runtime-readable-empty">Czekam na wyjście Hermesa…</div>'; raw.before(readableRoot);
+      readableRoot.setAttribute("role", "log"); readableRoot.setAttribute("aria-live", "polite"); readableRoot.setAttribute("tabindex", "0"); readableRoot.innerHTML = '<div class="runtime-readable-empty">Czekam na wyjście Hermesa…</div>'; raw.before(readableRoot);
     }
     if (!terminalToolbar) {
       terminalToolbar = document.createElement("div");
       terminalToolbar.className = "runtime-terminal-toolbar";
       terminalToolbar.setAttribute("role", "toolbar");
       terminalToolbar.setAttribute("aria-label", "Hermes terminal controls");
-      terminalToolbar.innerHTML = '<button class="runtime-terminal-button" data-runtime-mode="readable" type="button" aria-pressed="false">Readable</button><button class="runtime-terminal-button active" data-runtime-mode="raw" type="button" aria-pressed="true">Raw PTY</button><span class="runtime-terminal-summary dead" id="runtimeTerminalSummary"><i class="runtime-terminal-heartbeat"></i><strong>OFF</strong><span>RX 0 B · TX 0 B</span></span><button class="runtime-terminal-button" data-runtime-action="expand" type="button">Expand</button>';
+      terminalToolbar.innerHTML = '<button class="runtime-terminal-button" data-runtime-mode="readable" type="button" aria-pressed="false">Readable</button><button class="runtime-terminal-button active" data-runtime-mode="raw" type="button" aria-pressed="true">Raw PTY</button><span class="runtime-terminal-summary dead" id="runtimeTerminalSummary"><i class="runtime-terminal-heartbeat"></i><strong>OFF</strong><span>RX 0 B · TX 0 B</span></span><button class="runtime-terminal-button" data-runtime-action="copy" type="button">Copy</button><button class="runtime-terminal-button" data-runtime-action="expand" type="button">Expand</button>';
       terminalSummary = terminalToolbar.querySelector("#runtimeTerminalSummary");
-      terminalToolbar.addEventListener("click", (event) => {
+      terminalToolbar.addEventListener("click", async (event) => {
         const button = event.target.closest("button"); if (!button) return;
         if (button.dataset.runtimeMode) setMode(button.dataset.runtimeMode);
+        if (button.dataset.runtimeAction === "copy") {
+          const old = button.textContent;
+          try {
+            let text = "";
+            if (currentMode === "raw") {
+              text = window.koordynatorHermesTerminal?.getSelection?.()?.trim?.() || "";
+            } else {
+              const selection = window.getSelection();
+              const selected = selection && selection.anchorNode && readableRoot?.contains(selection.anchorNode)
+                ? selection.toString().trim()
+                : "";
+              text = selected || readableRoot?.innerText?.trim() || "";
+            }
+            if (!text) throw new Error("HERMES_COPY_EMPTY");
+            await navigator.clipboard.writeText(text);
+            button.textContent = "Copied";
+          } catch {
+            button.textContent = currentMode === "raw" ? "Select text" : "Copy failed";
+          }
+          setTimeout(() => { button.textContent = old; }, 1200);
+        }
         if (button.dataset.runtimeAction === "expand") {
           pane.classList.toggle("runtime-expanded");
           button.textContent = pane.classList.contains("runtime-expanded") ? "Collapse" : "Expand";
