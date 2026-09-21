@@ -175,54 +175,74 @@
   }
 
   function ensureModelExplorer() {
-    if (!modelSelect || document.getElementById("modelSearchInput")) return;
+    if (!modelSelect) return;
     ensureExplorerStyles();
 
-    const picker = modelSelect.closest(".v5-model-picker") || modelSelect.parentElement;
-    const actions = modelSelect.closest(".v5-composer-actions") || picker?.parentElement;
-    if (!picker || !actions) return;
+    const actions = modelSelect.closest(".v5-composer-actions");
+    if (!actions) return;
 
-    const attach = document.getElementById("attachButton");
-    const stop = document.getElementById("stopButton");
-    const send = document.getElementById("sendButton");
+    let row = actions.querySelector(".v5-control-row");
+    let unified = document.getElementById("unifiedModelSelector") || actions.querySelector(".v5-unified-model-select");
+    let input = document.getElementById("modelSearchInput");
+    let menuButton = document.getElementById("modelMenuButton");
+    let results = document.getElementById("modelSearchResults");
+    let role = document.getElementById("modelRoleFilter");
 
-    const row = document.createElement("div");
-    row.className = "v5-control-row";
-    row.setAttribute("aria-label", "Model, role and message controls");
+    if (!row || !unified || !input || !menuButton || !results || !role) {
+      const picker = modelSelect.closest(".v5-model-picker") || modelSelect.parentElement;
+      if (!picker) return;
+      const attach = document.getElementById("attachButton");
+      const stop = document.getElementById("stopButton");
+      const send = document.getElementById("sendButton");
 
-    const unified = document.createElement("div");
-    unified.className = "v5-unified-model-select";
-    unified.setAttribute("role", "combobox");
-    unified.setAttribute("aria-haspopup", "listbox");
-    unified.setAttribute("aria-expanded", "false");
-    unified.innerHTML = `
-      <input id="modelSearchInput" class="v5-model-search" type="search"
-        autocomplete="off" spellcheck="false"
-        placeholder="SEARCH OR CHOOSE MODEL"
-        aria-label="Search or choose AI model" />
-      <button id="modelMenuButton" class="v5-model-menu-button" type="button"
-        aria-label="Open model menu" aria-expanded="false">⌄</button>
-      <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>`;
+      row = document.createElement("div");
+      row.className = "v5-control-row";
+      row.setAttribute("aria-label", "Model, role and message controls");
 
-    const role = document.createElement("select");
-    role.id = "modelRoleFilter";
-    role.className = "v5-model-role";
-    role.setAttribute("aria-label", "Model role category");
-    role.innerHTML = MODEL_ROLES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
+      unified = document.createElement("div");
+      unified.id = "unifiedModelSelector";
+      unified.className = "v5-unified-model-select";
+      unified.setAttribute("role", "combobox");
+      unified.setAttribute("aria-haspopup", "listbox");
+      unified.setAttribute("aria-expanded", "false");
+      unified.innerHTML = `
+        <input id="modelSearchInput" class="v5-model-search" type="search"
+          autocomplete="off" spellcheck="false"
+          placeholder="SEARCH OR CHOOSE MODEL"
+          aria-label="Search or choose AI model" />
+        <button id="modelMenuButton" class="v5-model-menu-button" type="button"
+          aria-label="Open model menu" aria-expanded="false">⌄</button>
+        <div id="modelSearchResults" class="v5-model-results" role="listbox" hidden></div>`;
 
-    picker.classList.add("v5-native-model-picker");
-    picker.setAttribute("aria-hidden", "true");
+      role = document.createElement("select");
+      role.id = "modelRoleFilter";
+      role.className = "v5-model-role";
+      role.setAttribute("aria-label", "Model role category");
+      role.innerHTML = MODEL_ROLES.map(([value, label]) => `<option value="${value}">${label}</option>`).join("");
 
-    actions.insertBefore(row, picker);
-    unified.appendChild(picker);
-    row.append(unified, role);
-    if (attach) row.appendChild(attach);
-    if (stop) row.appendChild(stop);
-    if (send) row.appendChild(send);
+      picker.classList.add("v5-native-model-picker");
+      picker.setAttribute("aria-hidden", "true");
+      actions.textContent = "";
+      unified.appendChild(picker);
+      row.append(unified, role);
+      if (attach) row.appendChild(attach);
+      if (stop) row.appendChild(stop);
+      if (send) row.appendChild(send);
+      actions.appendChild(row);
 
-    const input = unified.querySelector("#modelSearchInput");
-    const menuButton = unified.querySelector("#modelMenuButton");
-    const results = unified.querySelector("#modelSearchResults");
+      input = document.getElementById("modelSearchInput");
+      menuButton = document.getElementById("modelMenuButton");
+      results = document.getElementById("modelSearchResults");
+    }
+
+    if (!input || !menuButton || !results || !role || !unified || !row) return;
+    if (unified.dataset.bound === "true") return;
+    unified.dataset.bound = "true";
+    actions.classList.add("v5-canonical-control-row");
+
+    const picker = modelSelect.closest(".v5-model-picker");
+    picker?.classList.add("v5-native-model-picker");
+    picker?.setAttribute("aria-hidden", "true");
 
     function entries() {
       return [...modelSelect.options]
@@ -232,14 +252,22 @@
 
     function selectedLabel() {
       const option = modelSelect.selectedOptions?.[0];
-      return option?.textContent?.trim() || option?.value || "";
+      return option?.textContent?.trim() || option?.value || "SELECT MODEL";
+    }
+
+    function syncSelectedLabel() {
+      if (document.activeElement !== input || input.dataset.editing !== "true") {
+        input.value = selectedLabel();
+      }
+      input.title = modelSelect.value || selectedLabel();
     }
 
     function closeResults({ restore = true } = {}) {
       results.hidden = true;
       unified.setAttribute("aria-expanded", "false");
       menuButton.setAttribute("aria-expanded", "false");
-      if (restore) input.value = selectedLabel();
+      input.dataset.editing = "false";
+      if (restore) syncSelectedLabel();
     }
 
     function renderResults({ forceOpen = false, ignoreQuery = false } = {}) {
@@ -283,13 +311,17 @@
       closeResults({ restore: true });
     }
 
-    input.value = selectedLabel();
+    syncSelectedLabel();
 
     input.addEventListener("focus", () => {
+      input.dataset.editing = "true";
       input.select();
       renderResults({ forceOpen: true, ignoreQuery: true });
     });
-    input.addEventListener("input", () => renderResults({ forceOpen: true }));
+    input.addEventListener("input", () => {
+      input.dataset.editing = "true";
+      renderResults({ forceOpen: true });
+    });
     input.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -298,6 +330,12 @@
         event.preventDefault();
         renderResults({ forceOpen: true });
         results.querySelector("button[data-model]")?.focus();
+      } else if (event.key === "Enter") {
+        const first = results.querySelector("button[data-model]");
+        if (first) {
+          event.preventDefault();
+          commitModel(first.dataset.model);
+        }
       }
     });
 
@@ -306,12 +344,14 @@
         closeResults({ restore: true });
         return;
       }
+      input.dataset.editing = "true";
       input.focus();
       input.select();
       renderResults({ forceOpen: true, ignoreQuery: true });
     });
 
     role.addEventListener("change", () => {
+      input.dataset.editing = "true";
       input.focus();
       input.select();
       renderResults({ forceOpen: true, ignoreQuery: true });
@@ -346,7 +386,7 @@
     });
 
     modelSelect.addEventListener("change", () => {
-      if (document.activeElement !== input) input.value = selectedLabel();
+      syncSelectedLabel();
       if (!results.hidden) renderResults({ forceOpen: true });
     });
 
@@ -355,11 +395,9 @@
     });
 
     new MutationObserver(() => {
-      if (document.activeElement !== input) input.value = selectedLabel();
+      syncSelectedLabel();
       if (!results.hidden) renderResults({ forceOpen: true });
-    }).observe(modelSelect, { childList: true, subtree: true });
-
-    actions.classList.add("v5-canonical-control-row");
+    }).observe(modelSelect, { childList: true, subtree: true, attributes: true, attributeFilter: ["disabled", "selected"] });
   }
 
   function installHermesReadableSanitizer() {
