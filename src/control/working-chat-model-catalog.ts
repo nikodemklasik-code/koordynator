@@ -111,6 +111,15 @@ function normalizeEndpoint(value: string): string {
   return endpoint || "http://127.0.0.1:20128/v1";
 }
 
+function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 function safeModel(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const model = value.trim();
@@ -249,19 +258,19 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
     });
   }
 
-  private credential(): string {
+  private credential(): string | undefined {
     const key = (this.apiKey ?? process.env[this.apiKeyEnv] ?? "").trim();
-    if (!key) throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_AUTH_REQUIRED", 503);
-    return key;
+    if (!key && !isLoopbackEndpoint(this.endpoint)) throw new ChatModelCatalogError("CHAT_MODEL_WORKING_SET_AUTH_REQUIRED", 503);
+    return key || undefined;
   }
 
-  private async probe(model: string, key: string): Promise<WorkingRouteProbe> {
+  private async probe(model: string, key?: string): Promise<WorkingRouteProbe> {
     try {
       const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${key}`
+          ...(key ? { authorization: `Bearer ${key}` } : {})
         },
         body: JSON.stringify({
           model,
@@ -294,7 +303,7 @@ export class WorkingChatModelCatalogService implements ChatModelCatalogPort {
     }
   }
 
-  private async probeCandidates(candidates: string[], key: string): Promise<WorkingRouteProbe[]> {
+  private async probeCandidates(candidates: string[], key?: string): Promise<WorkingRouteProbe[]> {
     const probes: WorkingRouteProbe[] = new Array(candidates.length);
     let next = 0;
     let healthy = 0;
