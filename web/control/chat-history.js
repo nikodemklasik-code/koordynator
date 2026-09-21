@@ -84,6 +84,58 @@ function renderGeneratedFiles(receipts) {
   return wrap;
 }
 
+async function renameHistorySession(session, titleNode, button) {
+  const current = String(session.title || "New chat");
+  const next = window.prompt("Nazwa czatu", current);
+  if (next === null) return;
+  const title = next.trim().replace(/\s+/g, " ");
+  if (!title || title.length > 80) {
+    window.alert("Nazwa czatu musi mieć od 1 do 80 znaków.");
+    return;
+  }
+  const response = await fetch(`/api/chat/sessions/${encodeURIComponent(session.sessionId)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ title })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    window.alert(payload.error || `CHAT_RENAME_HTTP_${response.status}`);
+    return;
+  }
+  session.title = payload.title || title;
+  titleNode.textContent = session.title;
+  button.title = session.title;
+  if (session.sessionId === localStorage.getItem(HISTORY_SESSION_KEY)) {
+    const label = document.getElementById("sessionLabel");
+    if (label) label.textContent = session.title;
+  }
+}
+
+async function deleteHistorySession(session) {
+  const label = session.title || "New chat";
+  if (!window.confirm(`Usunąć czat „${label}”? Tej operacji nie można cofnąć.`)) return;
+  const response = await fetch(`/api/chat/sessions/${encodeURIComponent(session.sessionId)}`, {
+    method: "DELETE",
+    headers: { accept: "application/json" }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    window.alert(payload.error === "CHAT_SESSION_ACTIVE"
+      ? "Ten czat nadal generuje odpowiedź. Najpierw zatrzymaj generowanie."
+      : payload.error || `CHAT_DELETE_HTTP_${response.status}`);
+    return;
+  }
+  const active = localStorage.getItem(HISTORY_SESSION_KEY);
+  if (active === session.sessionId) {
+    localStorage.removeItem(HISTORY_SESSION_KEY);
+    closeHistory();
+    document.getElementById("newChatButton")?.click();
+    return;
+  }
+  await loadHistory();
+}
+
 function renderHistory(sessions, receipts = []) {
   if (!historyList || !historyEmpty) return;
   historyList.textContent = "";
@@ -93,6 +145,7 @@ function renderHistory(sessions, receipts = []) {
 
   for (const session of sessions) {
     const entry = document.createElement("div");
+    entry.className = "history-entry";
     const button = document.createElement("button");
     button.type = "button";
     button.className = `history-item${session.sessionId === activeSession ? " active" : ""}${session.generating ? " generating" : ""}`;
@@ -138,7 +191,30 @@ function renderHistory(sessions, receipts = []) {
       }
       location.reload();
     });
-    entry.appendChild(button);
+    const actions = document.createElement("div");
+    actions.className = "history-item-actions";
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "history-item-action";
+    rename.textContent = "Rename";
+    rename.title = "Zmień nazwę czatu";
+    rename.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void renameHistorySession(session, title, button);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "history-item-action danger";
+    remove.textContent = "Delete";
+    remove.title = "Usuń czat";
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void deleteHistorySession(session);
+    });
+    actions.append(rename, remove);
+    entry.append(button, actions);
     const files = generated.get(session.sessionId) || [];
     if (files.length) entry.appendChild(renderGeneratedFiles(files));
     historyList.appendChild(entry);
