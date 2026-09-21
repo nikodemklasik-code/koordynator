@@ -9,7 +9,7 @@ describe("Koordynator Ustrój shell", () => {
       readFile(new URL("../web/control/chat-shell.js", import.meta.url), "utf8")
     ]);
 
-    expect(html).toContain('/chat-shell.css?v=5');
+    expect(html).toContain('/chat-shell.css?v=6');
     expect(html).toContain('/chat-shell.js?v=3');
     expect(html).toContain('/chat-v5.js?v=8');
     expect(html.indexOf('/chat-shell.js?v=3')).toBeGreaterThan(html.indexOf('/chat-v5.js?v=8'));
@@ -65,8 +65,12 @@ describe("Koordynator Ustrój shell", () => {
     expect(localAccess).toContain('grant: "local-files"');
     expect(localAccess).toContain('wrap.id = "sessionFooter"');
     expect(usage).toContain('document.querySelector(".runtime-terminal-toolbar")');
-    expect(css).toContain("--workspace-control-height:40px");
+    expect(css).toContain("--workspace-control-height:var(--shell-button-height)");
     expect(css).toContain("--hermes-input-height:58px");
+    expect(css).toContain("--shell-button-height: 38px");
+    expect(css).toContain("--shell-button-height: 36px");
+    expect(css).toContain("grid-template-rows:var(--shell-row-height) var(--shell-row-height) minmax(0,1fr) 72px auto!important");
+    expect(css).toContain("height:var(--shell-button-height)!important");
     expect(css).toContain("height:58px!important");
     expect(css).toContain("font-size:14px!important");
   });
@@ -85,7 +89,9 @@ describe("Koordynator Ustrój shell", () => {
     expect(script).toContain("row.appendChild(attach)");
     expect(script).toContain("row.appendChild(stop)");
     expect(script).toContain("row.appendChild(send)");
-    expect(css).toContain("grid-template-columns:minmax(220px,1fr) minmax(120px,160px) 40px 40px 40px!important");
+    expect(css).toContain("display:flex!important");
+    expect(css).toContain("flex-wrap:nowrap!important");
+    expect(css).toContain("flex:1 1 auto!important");
     expect(css).toContain(".v5-native-model-picker");
     expect(manifest).toContain("WYSZUKIWARKA MODELU I MENU ROZWIJANE MODELI MUSZĄ BYĆ JEDNYM KOMPONENTEM");
     expect(manifest).toContain("HERMES MOŻE MIEĆ MAKSYMALNIE DWA WIERSZE KONTROLEK");
