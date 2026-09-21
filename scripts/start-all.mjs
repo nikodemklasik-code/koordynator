@@ -26,7 +26,7 @@ const chatUrl = `http://${host}:${port}/chat`;
 const pidDir = resolve(root, ".orchestrator", "runtime");
 const pidFile = resolve(pidDir, "control.pid");
 const logFile = resolve(pidDir, "control.log");
-const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V1";
+const expectedRuntimeRevision = "PRODUCT_WORKSPACES_V2";
 const runtimeEnv = {
   ...process.env,
   PATH: [process.env.HOME ? resolve(process.env.HOME, ".local", "bin") : "", process.env.PATH || ""]
@@ -77,6 +77,7 @@ function controlRuntimeState() {
     health.productWorkspaces === true &&
     routes.includes("/corporation") &&
     routes.includes("/harmonia-legal") &&
+    routes.includes("/studio") &&
     health.modelCatalogMode === "WORKING_SET_ACTIVE_ONLY" &&
     health.hermesPtyModelParameter === true
   ) return { state: "CURRENT", health };
