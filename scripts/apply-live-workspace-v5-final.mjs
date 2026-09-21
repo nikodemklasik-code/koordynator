@@ -12,28 +12,28 @@ ${MARKER}
 :root { --v5-input-stack-height: 122px; }
 .v5-main { grid-template-rows: 64px 54px minmax(0,1fr) 32px !important; }
 .v5-toolbar { position: relative; z-index: 60; }
-.v5-brand-title { font-size: 14px !important; }
-.v5-brand-subtitle { font-size: 10px !important; }
-.v5-route-kicker { font-size: 9px !important; }
-#primaryRouteLabel { font-size: 12px !important; }
-.v5-fallbacks { font-size: 10px !important; }
-.v5-env { min-height: 32px; font-size: 10px !important; }
-.v5-env strong,.v5-operator { font-size: 11px !important; }
-.v5-action { min-height: 38px !important; height: 38px !important; padding: 0 13px !important; font-size: 11px !important; }
+.v5-brand-title { font-size: 16px !important; }
+.v5-brand-subtitle { font-size: 12px !important; }
+.v5-route-kicker { font-size: 11px !important; }
+#primaryRouteLabel { font-size: 14px !important; }
+.v5-fallbacks { font-size: 12px !important; }
+.v5-env { min-height: 32px; font-size: 12px !important; }
+.v5-env strong,.v5-operator { font-size: 13px !important; }
+.v5-action { min-height: 38px !important; height: 38px !important; padding: 0 13px !important; font-size: 13px !important; }
 .v5-icon-button,.v5-more summary { min-height: 38px !important; height: 38px !important; }
-.v5-more-menu button { min-height: 38px !important; font-size: 11px !important; }
+.v5-more-menu button { min-height: 38px !important; font-size: 13px !important; }
 .v5-chat-pane { grid-template-rows: 46px minmax(0,1fr) auto !important; }
 .v5-routebar { min-height: 46px !important; }
-.v5-connection strong { font-size: 11px !important; }
-.billing-badge,.usage-24h,.runtime-route-badge { min-height: 26px !important; font-size: 9px !important; }
-.v5-github { height: 34px !important; font-size: 10px !important; }
-.session-id { font-size: 9px !important; max-width: 125px !important; }
-.v5-welcome h2 { font-size: 24px !important; }
-.v5-welcome p { font-size: 14px !important; }
-.v5-welcome-grid { font-size: 11px !important; }
-.message-meta { min-height: 32px; font-size: 10.5px !important; }
-.message-bubble { font-size: 15px !important; line-height: 1.65 !important; }
-.message-copy,.code-copy,.message-materialise { min-height: 30px !important; font-size: 10px !important; cursor: pointer !important; }
+.v5-connection strong { font-size: 13px !important; }
+.billing-badge,.usage-24h,.runtime-route-badge { min-height: 26px !important; font-size: 11px !important; }
+.v5-github { height: 34px !important; font-size: 12px !important; }
+.session-id { font-size: 11px !important; max-width: 125px !important; }
+.v5-welcome h2 { font-size: 26px !important; }
+.v5-welcome p { font-size: 16px !important; }
+.v5-welcome-grid { font-size: 13px !important; }
+.message-meta { min-height: 32px; font-size: 12.5px !important; }
+.message-bubble { font-size: 17px !important; line-height: 1.65 !important; }
+.message-copy,.code-copy,.message-materialise { min-height: 30px !important; font-size: 12px !important; cursor: pointer !important; }
 
 /* Composer uses the previously empty bottom band without growing. */
 .v5-composer-zone {
@@ -49,9 +49,9 @@ ${MARKER}
   height: var(--v5-input-stack-height) !important;
   pointer-events: auto !important;
 }
-.v5-composer textarea { min-height: 66px !important; font-size: 15px !important; pointer-events: auto !important; }
+.v5-composer textarea { min-height: 66px !important; font-size: 17px !important; pointer-events: auto !important; }
 .v5-composer-actions { pointer-events: auto !important; }
-.v5-model-picker select { height: 40px !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-model-picker select { height: 40px !important; font-size: 14px !important; pointer-events: auto !important; }
 .v5-attach,.v5-stop,.v5-send { min-height: 40px !important; height: 40px !important; pointer-events: auto !important; }
 .v5-route-note { display: none !important; }
 .attachment-error,.github-chat-notice,.stage-zero-notice,#exportReceipt { pointer-events: auto !important; }
@@ -69,7 +69,7 @@ ${MARKER}
   margin-bottom: 0 !important;
   pointer-events: auto !important;
 }
-.v5-terminal-composer textarea { min-height: 0 !important; height: 100% !important; font-size: 12px !important; pointer-events: auto !important; }
+.v5-terminal-composer textarea { min-height: 0 !important; height: 100% !important; font-size: 14px !important; pointer-events: auto !important; }
 .v5-terminal-send { align-self: end !important; }
 .v5-terminal-send,.v5-mini-button { pointer-events: auto !important; }
 .hermes-hint { display: none !important; }
@@ -86,9 +86,9 @@ ${MARKER}
 .github-chat-consent-dialog[open] { pointer-events: auto !important; }
 .v5-toolbar-left,.v5-toolbar-right,.v5-action,.v5-icon-button,.router-toggle { pointer-events: auto !important; }
 
-.v5-statusbar { min-height: 32px !important; height: 32px !important; font-size: 9px !important; }
-.ci-status,.v5-runtime-meta,.status-badge { font-size: 9px !important; }
-.v5-rail-foot { font-size: 10px !important; }
+.v5-statusbar { min-height: 32px !important; height: 32px !important; font-size: 11px !important; }
+.ci-status,.v5-runtime-meta,.status-badge { font-size: 11px !important; }
+.v5-rail-foot { font-size: 12px !important; }
 `;
 
 function replaceRegex(source, re, replacement, label) {

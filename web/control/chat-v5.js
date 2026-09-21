@@ -411,7 +411,7 @@
     style.id = "hermesReadableSanitizerStyles";
     style.textContent = `
       #hermesTranscript .terminal-tui-hidden{display:none!important}
-      #hermesTranscript .terminal-tui-meta{color:#46555f!important;font-size:7.5px!important;line-height:1.35!important;opacity:.82!important}
+      #hermesTranscript .terminal-tui-meta{color:#46555f!important;font-size:9.5px!important;line-height:1.35!important;opacity:.82!important}
       #hermesTranscript .terminal-tui-meta.warning{color:#8d7651!important}
     `;
     document.head.appendChild(style);

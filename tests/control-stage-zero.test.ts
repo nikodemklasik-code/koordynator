@@ -469,7 +469,7 @@ describe("Etap 0 zasilany z chatu", () => {
       const css = await fetch(`${base}/chat.css`).then((item) => item.text());
       expect(css).toContain(".stage-zero-range-list");
       expect(css).toContain(".stage-zero-dialog");
-      expect(css).toContain("font-size:15px");
+      expect(css).toContain("font-size:17px");
     } finally {
       await close();
     }
