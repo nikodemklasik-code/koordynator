@@ -16,6 +16,7 @@ const state = {
   hermesSource: null,
   chatStreamOpened: false,
   pendingAttachments: [],
+  sharedRoom: null,
   messages: new Map()
 };
 
@@ -635,7 +636,10 @@ function renderMessage(message) {
     meta.className = "message-meta";
     const author = document.createElement("span");
     author.className = "message-author";
-    author.textContent = message.role === "user" ? "YOU" : "KOORDYNATOR";
+    author.textContent = message.role === "user" ? "YOU" : (message.agentLabel || "KOORDYNATOR");
+    if (message.agentRole && message.role === "assistant") {
+      author.title = `${message.agentRole}${message.sourceSessionId ? ` · source ${message.sourceSessionId.slice(0, 8)}` : ""}`;
+    }
     meta.appendChild(author);
     if (message.model && message.role === "assistant") {
       const model = document.createElement("span");
@@ -693,6 +697,11 @@ function applyEvent(event) {
   }
   if (event.type === "process_update" && event.update) {
     window.dispatchEvent(new CustomEvent("koordynator:routing-event", { detail: event.update }));
+    if (state.sharedRoom && event.update.agent === "Shared Room" && event.update.stage === "DONE") {
+      state.generating = false;
+      setStatus("connected", "Connected");
+      updateControls();
+    }
     return;
   }
   if (event.type === "user_message" || event.type === "assistant_start" || event.type === "assistant_done" || event.type === "stopped") {
@@ -711,8 +720,10 @@ function applyEvent(event) {
       renderMessage(message);
     }
   } else if (event.type === "assistant_done") {
-    state.generating = false;
-    setStatus("connected", "Connected");
+    if (!state.sharedRoom) {
+      state.generating = false;
+      setStatus("connected", "Connected");
+    }
   } else if (event.type === "stopped") {
     state.generating = false;
     setStatus("stopped", "Stopped");
@@ -811,11 +822,13 @@ async function createSession({ persist = !isPopoutWindow } = {}) {
   const session = await response.json();
   state.sessionId = session.sessionId;
   state.generating = false;
+  state.sharedRoom = session.sharedRoom || null;
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   renderTranscript([]);
   connectEvents();
   updateControls();
+  window.dispatchEvent(new CustomEvent("koordynator:chat-session-loaded", { detail: session }));
   return session;
 }
 
@@ -825,6 +838,7 @@ async function loadSessionById(sessionId, { persist = false } = {}) {
   if (!response.ok) throw new Error(`CHAT_SESSION_HTTP_${response.status}`);
   const session = await response.json();
   state.sessionId = session.sessionId;
+  state.sharedRoom = session.sharedRoom || null;
   if (persist) localStorage.setItem(SESSION_KEY, session.sessionId);
   $("sessionLabel").textContent = shortSession(session.sessionId);
   if ([...modelSelect.options].some((option) => option.value === session.model)) modelSelect.value = session.model;
@@ -834,6 +848,7 @@ async function loadSessionById(sessionId, { persist = false } = {}) {
   setStatus(state.generating ? "generating" : "connected", state.generating ? "Generating" : "Connected");
   connectEvents();
   updateControls();
+  window.dispatchEvent(new CustomEvent("koordynator:chat-session-loaded", { detail: session }));
   return session;
 }
 
@@ -853,7 +868,7 @@ async function restoreSession() {
 
 function conversationPlainText() {
   return [...state.messages.values()]
-    .map((message) => `${message.role === "user" ? "YOU" : "KOORDYNATOR"}:\n${message.content || ""}`)
+    .map((message) => `${message.role === "user" ? "YOU" : (message.agentLabel || "KOORDYNATOR")}:\n${message.content || ""}`)
     .join("\n\n")
     .trim();
 }
@@ -861,7 +876,7 @@ function conversationPlainText() {
 function buildMarkdownExport() {
   const lines = [`# Koordynator Live Chat`, "", `- Session: \`${state.sessionId || "unknown"}\``, `- Model: \`${modelSelect.value || "unknown"}\``, ""];
   for (const message of state.messages.values()) {
-    lines.push(`## ${message.role === "user" ? "You" : "Koordynator"}`);
+    lines.push(`## ${message.role === "user" ? "You" : (message.agentLabel || "Koordynator")}`);
     lines.push("");
     lines.push(message.content || "_(empty)_");
     lines.push("");
