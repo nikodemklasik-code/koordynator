@@ -180,6 +180,20 @@ const SHARED_ROLE_RE = /^[A-Za-z][A-Za-z0-9 _./-]{0,63}$/;
 
 function now(): string { return new Date().toISOString(); }
 function normalizeEndpoint(value: string): string { return value.replace(/\/+$/, ""); }
+function isLoopbackEndpoint(endpoint: string): boolean {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1" || host === "[::1]";
+  } catch {
+    return false;
+  }
+}
+function completionHeaders(key?: string): Record<string, string> {
+  return {
+    "content-type": "application/json",
+    ...(key ? { authorization: `Bearer ${key}` } : {})
+  };
+}
 function sessionFile(root: string, sessionId: string): string { return join(root, `${sessionId}.json`); }
 
 function safeModel(value: string): string {
@@ -504,7 +518,7 @@ export class ChatService {
     assistant: ChatMessage,
     participant: SharedAgentParticipant,
     controller: AbortController,
-    key: string
+    key?: string
   ): Promise<void> {
     const billing = await this.authorizeModel?.(participant.model);
     if (billing && !billing.allowed) throw new ChatServiceError("CHAT_SHARED_AGENT_BILLING_DENIED", 403);
@@ -544,7 +558,7 @@ export class ChatService {
 
     const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      headers: completionHeaders(key),
       body: JSON.stringify({
         model: participant.model,
         messages: [
@@ -613,7 +627,7 @@ export class ChatService {
     this.emit(session.sessionId, { type: "assistant_done", message: assistant });
   }
 
-  private async runSharedTurn(session: ChatSession, controller: AbortController, key: string): Promise<void> {
+  private async runSharedTurn(session: ChatSession, controller: AbortController, key?: string): Promise<void> {
     const participants = session.sharedRoom?.participants ?? [];
     for (const participant of participants) {
       if (controller.signal.aborted) break;
@@ -677,7 +691,7 @@ export class ChatService {
       const session = await this.getSession(sessionId);
       if (!session?.sharedRoom) throw new ChatServiceError("CHAT_SHARED_ROOM_NOT_FOUND", 404);
       const key = this.credential();
-      if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+      if (!key && !isLoopbackEndpoint(this.endpoint)) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
       try { await this.usageLedger.ensureWritable(); }
       catch { throw new ChatServiceError("CHAT_USAGE_LEDGER_UNAVAILABLE", 503); }
 
@@ -915,7 +929,7 @@ export class ChatService {
     const session = await this.getSession(sessionId);
     if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
     const key = this.credential();
-    if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
+    if (!key && (!isLoopbackEndpoint(this.endpoint) || Boolean(repoTask))) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
     if (billing?.allowed === false) throw new ChatServiceError("CHAT_BILLING_POLICY_DENIED", 403);
     try { await this.usageLedger.ensureWritable(); }
     catch { throw new ChatServiceError("CHAT_USAGE_LEDGER_UNAVAILABLE", 503); }
@@ -1003,7 +1017,7 @@ export class ChatService {
     }
   }
 
-  private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
+  private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key?: string): Promise<void> {
     const sessionId = session.sessionId;
     const userMessage = session.messages.at(-2)!;
     const taskText = userMessage.content;
@@ -1014,6 +1028,7 @@ export class ChatService {
     const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
       if (repositoryTask(taskText) && this.repositoryExecutor) {
+        if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
         this.emit(sessionId, {
           type: "process_update",
           update: {
@@ -1183,7 +1198,7 @@ export class ChatService {
         if (billing && !billing.allowed) continue;
         const attempt = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
           method: "POST",
-          headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+          headers: completionHeaders(key),
           body: JSON.stringify({ model, messages: history, stream: true, stream_options: { include_usage: true } }),
           signal: controller.signal
         });
