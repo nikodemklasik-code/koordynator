@@ -10,6 +10,15 @@ import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api
 import type { ChatBillingDecision } from "./chat-billing-policy.js";
 import { extractChatAttachmentText } from "./chat-attachment-text.js";
 import { ChatUsageLedger, type ChatUsageSummary } from "./chat-usage-ledger.js";
+import {
+  concludeConversation,
+  conclusionExtractionPrompt,
+  conversationSourceFingerprint,
+  parseGroundedConclusionPayload,
+  parseJsonObject,
+  type ConclusionSourceMessage,
+  type DeterminedConversationTask
+} from "./chat-conclusion.js";
 
 export type ChatRole = "user" | "assistant";
 export type ChatMessageState = "complete" | "streaming" | "stopped" | "error";
@@ -51,11 +60,26 @@ export type ChatMessage = {
   materialisationError?: string;
 };
 
+export type ConversationConclusionTaskReceipt = DeterminedConversationTask & {
+  state: "DETERMINED" | "MATERIALISED" | "MATERIALISATION_FAILED";
+  taskId?: string;
+  materialisationError?: string;
+};
+
+export type ConversationConclusionReceipt = {
+  concludedAt: string;
+  sourceFingerprint: string;
+  modelAssisted: boolean;
+  tasks: ConversationConclusionTaskReceipt[];
+};
+
 export type ChatSession = {
   sessionId: string;
   createdAt: string;
   updatedAt: string;
   model: string;
+  endedAt?: string;
+  conclusion?: ConversationConclusionReceipt;
   /** User-controlled persistent title. Falls back to the first user message for legacy sessions. */
   title?: string;
   /** Other persisted chats explicitly invited into this chat as peer participants. */
@@ -104,6 +128,7 @@ export type ChatEvent =
   | { type: "assistant_start"; message: ChatMessage }
   | { type: "assistant_delta"; sessionId: string; messageId: string; delta: string }
   | { type: "assistant_done"; message: ChatMessage }
+  | { type: "conversation_concluded"; sessionId: string; conclusion: ConversationConclusionReceipt }
   | { type: "process_update"; update: ChatProcessUpdate }
   | { type: "stopped"; message: ChatMessage }
   | { type: "error"; sessionId: string; code: string; message: string };
@@ -474,7 +499,6 @@ export class ChatService {
     if (!session || !invitedSession) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
     const current = new Set((session.invitedSessionIds ?? []).filter((value) => SESSION_RE.test(value)));
     if (invited) {
-      if (current.size >= 8 && !current.has(invitedSessionId)) throw new ChatServiceError("CHAT_INVITE_LIMIT", 409);
       current.add(invitedSessionId);
     } else {
       current.delete(invitedSessionId);
@@ -520,6 +544,136 @@ export class ChatService {
     return true;
   }
 
+  private conclusionMessages(session: ChatSession): ConclusionSourceMessage[] {
+    return session.messages
+      .filter((message) =>
+        (message.state === "complete" || message.state === "stopped")
+        && String(message.content || "").trim()
+      )
+      .map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content
+      }));
+  }
+
+  private async modelConclusionCandidates(
+    session: ChatSession,
+    messages: ConclusionSourceMessage[]
+  ): Promise<DeterminedConversationTask[]> {
+    const key = this.credential();
+    if (!key || !messages.length) return [];
+
+    const prompt = conclusionExtractionPrompt(messages);
+    const chain = [session.model, ...this.fallbackModels.filter((model) => model !== session.model)];
+
+    for (const model of chain) {
+      const billing = await this.authorizeModel?.(model);
+      if (billing && !billing.allowed) continue;
+
+      let response: Response;
+      try {
+        response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model,
+            stream: false,
+            messages: [
+              {
+                role: "system",
+                content: "You are a conclusion extractor. Return grounded JSON only. Never invent scope, paths, evidence or decisions."
+              },
+              { role: "user", content: prompt }
+            ]
+          })
+        });
+      } catch {
+        continue;
+      }
+
+      if ([401, 403].includes(response.status)) return [];
+      if ([429, 502, 503, 504].includes(response.status)) continue;
+      if (!response.ok) continue;
+
+      const payload = await response.json().catch(() => null);
+      const text = extractCompletionText(payload).trim();
+      if (!text) continue;
+      const parsed = parseJsonObject(text);
+      const candidates = parseGroundedConclusionPayload(parsed, messages);
+      if (candidates.length) return candidates;
+      return [];
+    }
+
+    return [];
+  }
+
+  async endConversation(sessionId: string): Promise<ConversationConclusionReceipt> {
+    if (this.starting.has(sessionId) || this.active.has(sessionId)) {
+      throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
+    }
+
+    const session = await this.getSession(sessionId);
+    if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+
+    const messages = this.conclusionMessages(session);
+    const sourceFingerprint = conversationSourceFingerprint(messages);
+    if (session.conclusion?.sourceFingerprint === sourceFingerprint && session.endedAt) {
+      return session.conclusion;
+    }
+
+    const modelCandidates = await this.modelConclusionCandidates(session, messages);
+    const detected = concludeConversation({ messages, modelCandidates });
+    const tasks: ConversationConclusionTaskReceipt[] = [];
+
+    for (const task of detected.tasks) {
+      const previous = session.messages.find((message) =>
+        message.materialisationFingerprint === task.fingerprint && message.materialisedTaskId
+      );
+      if (previous?.materialisedTaskId) {
+        tasks.push({ ...task, state: "MATERIALISED", taskId: previous.materialisedTaskId });
+        continue;
+      }
+
+      if (!this.materialiser) {
+        tasks.push({ ...task, state: "DETERMINED" });
+        continue;
+      }
+
+      try {
+        const result = await this.materialiser({
+          objective: task.objective,
+          modules: task.modules,
+          allowedPaths: task.allowedPaths,
+          acceptanceCriteria: task.acceptanceCriteria
+        });
+        tasks.push({ ...task, state: "MATERIALISED", taskId: result.taskId });
+        this.emit(sessionId, { type: "task_materialised", sessionId, taskId: result.taskId });
+      } catch (error) {
+        tasks.push({
+          ...task,
+          state: "MATERIALISATION_FAILED",
+          materialisationError: error instanceof Error ? error.message : "MATERIALISATION_FAILED"
+        });
+      }
+    }
+
+    const concludedAt = now();
+    const receipt: ConversationConclusionReceipt = {
+      concludedAt,
+      sourceFingerprint: detected.sourceFingerprint,
+      modelAssisted: modelCandidates.length > 0,
+      tasks
+    };
+
+    session.endedAt = concludedAt;
+    session.conclusion = receipt;
+    session.updatedAt = concludedAt;
+    await this.persist(session);
+    this.emit(sessionId, { type: "conversation_concluded", sessionId, conclusion: receipt });
+    return receipt;
+  }
+
   private async upstreamMessage(message: ChatMessage): Promise<UpstreamMessage> {
     const attachments = message.role === "user" ? message.attachments ?? [] : [];
     if (attachments.length === 0) return { role: message.role, content: message.content };
@@ -548,7 +702,7 @@ export class ChatService {
   }
 
   private async collaborationContext(session: ChatSession): Promise<UpstreamMessage[]> {
-    const ids = [...new Set(session.invitedSessionIds ?? [])].filter((value) => SESSION_RE.test(value)).slice(0, 8);
+    const ids = [...new Set(session.invitedSessionIds ?? [])].filter((value) => SESSION_RE.test(value));
     if (!ids.length) return [];
     const chunks: string[] = [
       "COLLABORATING CHATS",
@@ -649,6 +803,7 @@ export class ChatService {
     if (this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
     const session = await this.getSession(sessionId);
     if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    if (session.endedAt) throw new ChatServiceError("CHAT_SESSION_ENDED", 409);
     const key = this.credential();
     if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
     if (billing?.allowed === false) throw new ChatServiceError("CHAT_BILLING_POLICY_DENIED", 403);
@@ -706,8 +861,7 @@ export class ChatService {
 
   private async generateInvitedResponses(session: ChatSession, key: string, controller: AbortController): Promise<void> {
     const invitedIds = [...new Set(session.invitedSessionIds ?? [])]
-      .filter((value) => SESSION_RE.test(value))
-      .slice(0, 8);
+      .filter((value) => SESSION_RE.test(value));
     if (!invitedIds.length) return;
 
     for (const invitedId of invitedIds) {
