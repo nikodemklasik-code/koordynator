@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("one-click start all", () => {
-  it("ships a repo launcher script and npm alias that boots OmniRoute + AI + Control", () => {
+  it("ships a repo launcher script and npm alias that boots OmniRoute + AI + Control + Hermes", () => {
     const script = resolve("scripts/start-all.mjs");
     const pkg = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as { scripts?: Record<string, string> };
     expect(existsSync(script)).toBe(true);
@@ -11,6 +11,9 @@ describe("one-click start all", () => {
     expect(source).toContain("ai:always-on");
     expect(source).toContain("omniroute");
     expect(source).toMatch(/8787|control|npm start|npm run control/);
+    expect(source).toContain("/api/hermes/pty");
+    expect(source).toContain("ensureHermes");
+    expect(source).toContain("Running in background: OmniRoute + Koordynator Control + Hermes PTY.");
     expect(source).toContain("open");
     expect(pkg.scripts?.["start:all"]).toMatch(/scripts\/start-all\.mjs/);
   });
