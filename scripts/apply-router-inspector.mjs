@@ -23,7 +23,7 @@ export function patchChatHtml(source) {
   if (!out.includes('src="/chat-router.js')) {
     const marker = '<script src="/chat-v5.js?v=5" defer></script>';
     if (!out.includes(marker)) throw new Error("ROUTER_INSTALL_CHAT_JS_MARKER_MISSING");
-    out = out.replace(marker, `${marker}\n  <script src="/chat-router.js?v=1" defer></script>`);
+    out = out.replace(marker, `${marker}\n  <script src="/chat-router.js?v=2" defer></script>`);
   }
   return out;
 }
