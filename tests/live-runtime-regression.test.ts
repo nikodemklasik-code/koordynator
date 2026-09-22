@@ -57,7 +57,8 @@ describe("live runtime regressions", () => {
       readFile("web/control/chat-usage.js", "utf8")
     ]);
 
-    expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS !== "0"');\n    expect(main).toContain('chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION !== "0"');
+    expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS !== "0"');
+    expect(main).toContain('chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION !== "0"');
     expect(main).toContain("omniroute-keeper.mjs");
     expect(main).toContain("WorkingChatModelCatalogService");
     expect(main).toContain("KOORDYNATOR_CHAT_WORKING_SET");
