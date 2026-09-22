@@ -534,9 +534,17 @@ export function createControlServer(options: ControlServerOptions): Server {
 
         let repoContext = null;
         if (executionAccess && !isRepoTask && selectedRepository && selectedIsLocalWorkspace && wantsWorkspaceContext(options)) {
-          // The selected Koordynator repository is already the running local workspace.
-          // Hydrate source context only when the message actually asks for workspace/repository work.
-          repoContext = await workspaceRepositories.fromMessage(`repo ${payload.message}`);
+          // Product workspaces bind to their real local checkout when one is available.
+          // This keeps uncommitted task packs/evidence visible without pretending GitHub has them.
+          const localRoot = await resolveHermesWorkspaceRoot({
+            projectRoot,
+            stateDir,
+            context: { workspace, repository: selectedRepository }
+          });
+          const localWorkspace = localRoot === projectRoot
+            ? workspaceRepositories
+            : new WorkspaceRepositoryContextService(localRoot);
+          repoContext = await localWorkspace.fromMessage(`repo ${payload.message}`);
         } else if (executionAccess && !isRepoTask && selectedRepository && wantsGithubContext(options)) {
           repoContext = await githubRepositories.fromMessage(`${payload.message}\nhttps://github.com/${selectedRepository}`);
         } else if (executionAccess && !isRepoTask && wantsGithubContext(options)) {
