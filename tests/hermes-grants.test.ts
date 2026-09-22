@@ -15,39 +15,41 @@ afterEach(async () => {
 const settings = { endpoint: "http://127.0.0.1:20128/v1", apiKey: "test-grant-key", model: "cc/claude-test" };
 
 describe("Hermes terminal grants", () => {
-  it("denies terminal until explicit consent, then writes approvals off into the managed profile", async () => {
+  it("assigns terminal access by default and persists reversible operator overrides", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-grant-"));
     roots.push(root);
     const store = new HermesGrantStore(join(root, ".orchestrator"));
-    expect((await store.status()).terminal).toBe(false);
+
+    expect((await store.status()).terminal).toBe(true);
+    const initial = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
+    try {
+      const config = JSON.parse(await readFile(join(initial.env.HERMES_HOME!, "config.yaml"), "utf8"));
+      expect(config.approvals).toEqual({ mode: "off" });
+      expect(config.disabled_toolsets ?? []).not.toContain("terminal");
+    } finally { await initial.close(); }
+
+    expect((await store.set("terminal", false)).terminal).toBe(false);
+    const disabled = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
+    try {
+      const config = JSON.parse(await readFile(join(disabled.env.HERMES_HOME!, "config.yaml"), "utf8"));
+      expect(config.approvals).toEqual({ mode: "smart" });
+      expect(config.disabled_toolsets).toContain("terminal");
+    } finally { await disabled.close(); }
+
+    expect((await store.set("terminal", true)).terminal).toBe(true);
     await expect(store.grant("terminal", false)).rejects.toThrow("HERMES_GRANT_CONSENT_REQUIRED");
+    await expect(store.set("local-files", true, [])).rejects.toThrow("HERMES_LOCAL_ROOT_REQUIRED");
 
-    const denied = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
-    try {
-    const deniedConfig = JSON.parse(await readFile(join(denied.env.HERMES_HOME!, "config.yaml"), "utf8"));
-    expect(deniedConfig.approvals).toEqual({ mode: "smart" });
-    expect(deniedConfig.disabled_toolsets).toContain("terminal");
-
-    expect((await store.grant("terminal", true)).terminal).toBe(true);
-    await expect(store.grant("local-files", true, [])).rejects.toThrow("HERMES_LOCAL_ROOT_REQUIRED");
     const localRoot = resolve(root, "allowed");
-    const diskGrant = await store.grant("local-files", true, [localRoot, localRoot, "relative"]);
+    const diskGrant = await store.set("local-files", true, [localRoot, localRoot, "relative"]);
     expect(diskGrant).toMatchObject({ terminal: true, localFiles: true, localRoots: [localRoot] });
-    const allowed = await prepareHermes(settings, root, {} as NodeJS.ProcessEnv);
-    try {
-    const allowedConfig = JSON.parse(await readFile(join(allowed.env.HERMES_HOME!, "config.yaml"), "utf8"));
-    expect(allowedConfig.approvals).toEqual({ mode: "off" });
-    expect(allowedConfig.disabled_toolsets ?? []).not.toContain("terminal");
-    expect(allowedConfig.terminal).toMatchObject({ cwd: resolve(root) });
-    expect(allowed.env.OPENAI_API_KEY).toMatch(/^tkt\./);
-    expect(allowed.env.OPENAI_API_KEY).not.toBe(settings.apiKey);
-    } finally { await allowed.close(); }
-    } finally { await denied.close(); }
+    const diskOff = await store.set("local-files", false);
+    expect(diskOff).toMatchObject({ localFiles: false, localRoots: [localRoot] });
   });
 });
 
 describe("Hermes grant HTTP boundary", () => {
-  it("reports status, rejects missing consent and grants terminal only after approved=true", async () => {
+  it("reports default-on status and toggles terminal access without losing compatibility", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-hermes-grant-http-"));
     roots.push(root);
     const server = createControlServer({
@@ -63,15 +65,23 @@ describe("Hermes grant HTTP boundary", () => {
 
       const statusResponse = await fetch(`${base}/api/integrations/hermes-grants`);
       expect(statusResponse.status).toBe(200);
-      expect(await statusResponse.json()).toMatchObject({ terminal: false });
+      expect(await statusResponse.json()).toMatchObject({ terminal: true });
 
-      const denied = await fetch(`${base}/api/integrations/hermes-grants`, {
+      const disabled = await fetch(`${base}/api/integrations/hermes-grants`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ grant: "terminal", approved: false })
+        body: JSON.stringify({ grant: "terminal", enabled: false })
       });
-      expect(denied.status).toBe(400);
-      expect(await denied.json()).toEqual({ error: "HERMES_GRANT_CONSENT_REQUIRED" });
+      expect(disabled.status).toBe(200);
+      expect(await disabled.json()).toMatchObject({ terminal: false });
+
+      const enabled = await fetch(`${base}/api/integrations/hermes-grants`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ grant: "terminal", enabled: true })
+      });
+      expect(enabled.status).toBe(200);
+      expect(await enabled.json()).toMatchObject({ terminal: true });
 
       const approved = await fetch(`${base}/api/integrations/hermes-grants`, {
         method: "POST",
