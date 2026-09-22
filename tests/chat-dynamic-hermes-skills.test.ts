@@ -150,6 +150,8 @@ describe("Live Chat dynamic Hermes skill routing", () => {
 
     expect(calls).toHaveLength(0);
     expect(assistant.content).toContain("Model-only route");
+    // assistant_done is emitted immediately before the active-generation cleanup.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await expect(chat.startMessage(session.sessionId, "/skill inspect repo")).rejects.toThrow("CHAT_EXECUTION_ACCESS_DISABLED");
     chat.close();
   });
