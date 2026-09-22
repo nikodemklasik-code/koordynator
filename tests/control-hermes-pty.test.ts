@@ -31,6 +31,11 @@ async function grantTerminal(root: string): Promise<void> {
   await writeFile(join(root, "hermes-grants.json"), `${JSON.stringify({ terminal: true, updatedAt: "2026-09-11T12:20:00.000Z" })}\n`);
 }
 
+async function denyTerminal(root: string): Promise<void> {
+  await mkdir(root, { recursive: true });
+  await writeFile(join(root, "hermes-grants.json"), `${JSON.stringify({ terminal: false, updatedAt: "2026-09-22T18:00:00.000Z" })}\n`);
+}
+
 /** In-process fake PTY: writes are echoed, resize is recorded. */
 function echoPty() {
   const listeners: Array<(chunk: Buffer) => void> = [];
@@ -138,9 +143,10 @@ describe("script-backed Hermes PTY sizing", () => {
 });
 
 describe("Hermes PTY HTTP", () => {
-  it("refuses to start without a terminal grant", async () => {
+  it("refuses to start after the operator explicitly disables terminal access", async () => {
     const root = await mkdtemp(join(tmpdir(), "hermes-pty-deny-"));
     roots.push(root);
+    await denyTerminal(root);
     const fake = echoPty();
     const { base, close } = await listen({
       stateDir: root,
@@ -242,9 +248,10 @@ describe("Hermes PTY HTTP", () => {
 });
 
 describe("HermesPtySession", () => {
-  it("does not spawn until the terminal grant exists", async () => {
+  it("does not spawn while terminal access is explicitly disabled", async () => {
     const root = await mkdtemp(join(tmpdir(), "hermes-pty-unit-"));
     roots.push(root);
+    await denyTerminal(root);
     let spawned = 0;
     const session = new HermesPtySession({
       stateDir: root,
