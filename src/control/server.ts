@@ -151,7 +151,7 @@ function isControlPost(pathname: string): boolean {
     /^\/api\/tasks\/TASK-[A-Za-z0-9._-]+\/run$/.test(pathname) ||
     /^\/api\/providers\/[A-Za-z0-9._-]+\/connect$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/messages$/i.test(pathname) ||
-    /^\/api\/chat\/sessions\/[0-9a-f-]+\/(?:title|invite|delete)$/i.test(pathname) ||
+    /^\/api\/chat\/sessions\/[0-9a-f-]+\/(?:title|invite|delete|access)$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stop$/i.test(pathname) ||
     /^\/api\/chat\/sessions\/[0-9a-f-]+\/stage-zero$/i.test(pathname) ||
     pathname === "/api/hermes/pty" ||
@@ -511,6 +511,7 @@ export function createControlServer(options: ControlServerOptions): Server {
 
         const session = await chat.getSession(sessionId);
         if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+        const executionAccess = session.executionAccess !== false;
         const requestedModel = typeof payload.model === "string" ? safeChatModel(payload.model) : session.model;
         const catalog = await modelCatalog.list();
         const selected = resolveExecutableChatModel({
@@ -532,17 +533,17 @@ export function createControlServer(options: ControlServerOptions): Server {
         const selectedIsLocalWorkspace = Boolean(selectedRepository && fixedPolicy.localWorkspace && fixedPolicy.repository?.toLowerCase() === selectedRepository.toLowerCase());
 
         let repoContext = null;
-        if (!isRepoTask && selectedRepository && selectedIsLocalWorkspace && wantsWorkspaceContext(options)) {
+        if (executionAccess && !isRepoTask && selectedRepository && selectedIsLocalWorkspace && wantsWorkspaceContext(options)) {
           // The selected Koordynator repository is already the running local workspace.
           // Hydrate source context only when the message actually asks for workspace/repository work.
           repoContext = await workspaceRepositories.fromMessage(`repo ${payload.message}`);
-        } else if (!isRepoTask && selectedRepository && wantsGithubContext(options)) {
+        } else if (executionAccess && !isRepoTask && selectedRepository && wantsGithubContext(options)) {
           repoContext = await githubRepositories.fromMessage(`${payload.message}\nhttps://github.com/${selectedRepository}`);
-        } else if (!isRepoTask && wantsGithubContext(options)) {
+        } else if (executionAccess && !isRepoTask && wantsGithubContext(options)) {
           repoContext = await githubRepositories.fromMessage(payload.message);
         }
 
-        if (!repoContext && !isRepoTask && !selectedRepository && wantsWorkspaceContext(options)) {
+        if (executionAccess && !repoContext && !isRepoTask && !selectedRepository && wantsWorkspaceContext(options)) {
           repoContext = await workspaceRepositories.fromMessage(payload.message);
         }
         if (repoContext && clientAttachments.length >= 5) throw new ChatServiceError("CHAT_REPOSITORY_CONTEXT_ATTACHMENT_LIMIT", 413);
@@ -554,7 +555,11 @@ export function createControlServer(options: ControlServerOptions): Server {
           payload.message,
           selected.model,
           attachments,
-          selected.billing
+          selected.billing,
+          executionAccess ? {
+            workspace,
+            ...(selectedRepository === undefined ? {} : { repository: selectedRepository })
+          } : undefined
         ));
       }
 
@@ -596,6 +601,21 @@ export function createControlServer(options: ControlServerOptions): Server {
         }
         const run = await stageZero.get(sessionId);
         return run ? sendJson(response, 200, run) : sendJson(response, 404, { error: "STAGE_ZERO_NOT_RUN" });
+      }
+
+      const chatAccessMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/access$/i.exec(url.pathname);
+      if (chatAccessMatch?.[1] && (method === "GET" || method === "HEAD" || method === "POST")) {
+        const sessionId = safeSessionId(chatAccessMatch[1]);
+        if (method === "POST") {
+          const payload = await readJsonBody(request, 1024);
+          assertExactKeys(payload, ["enabled"]);
+          if (typeof payload.enabled !== "boolean") throw new ChatServiceError("CHAT_EXECUTION_ACCESS_INVALID", 400);
+          const session = await chat.setExecutionAccess(sessionId, payload.enabled);
+          return sendJson(response, 200, { enabled: session.executionAccess !== false });
+        }
+        const session = await chat.getSession(sessionId);
+        if (!session) return sendJson(response, 404, { error: "CHAT_SESSION_NOT_FOUND" });
+        return sendJson(response, 200, { enabled: session.executionAccess !== false });
       }
 
       const chatSessionMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)$/i.exec(url.pathname);
@@ -656,16 +676,17 @@ export function createControlServer(options: ControlServerOptions): Server {
       }
       if (method === "POST" && url.pathname === "/api/integrations/hermes-grants") {
         const payload = await readJsonBody(request, 8 * 1024);
-        assertExactKeys(payload, ["grant", "approved", "roots"]);
-        if (payload.approved !== true) throw new HermesGrantError("HERMES_GRANT_CONSENT_REQUIRED", 400);
+        assertExactKeys(payload, ["grant", "approved", "enabled", "roots"]);
+        const enabled = payload.enabled === undefined ? payload.approved === true : payload.enabled;
+        if (typeof enabled !== "boolean") throw new HermesGrantError("HERMES_GRANT_STATE_REQUIRED", 400);
         if (payload.grant === "terminal") {
-          return sendJson(response, 200, await hermesGrants.grant("terminal", true));
+          return sendJson(response, 200, await hermesGrants.set("terminal", enabled));
         }
         if (payload.grant === "local-files") {
-          if (!Array.isArray(payload.roots) || payload.roots.some((root) => typeof root !== "string")) {
+          if (payload.roots !== undefined && (!Array.isArray(payload.roots) || payload.roots.some((root) => typeof root !== "string"))) {
             throw new HermesGrantError("HERMES_LOCAL_ROOTS_INVALID", 400);
           }
-          return sendJson(response, 200, await hermesGrants.grant("local-files", true, payload.roots));
+          return sendJson(response, 200, await hermesGrants.set("local-files", enabled, Array.isArray(payload.roots) ? payload.roots : []));
         }
         throw new HermesGrantError("HERMES_GRANT_UNKNOWN", 400);
       }
