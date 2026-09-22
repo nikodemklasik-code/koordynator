@@ -25,10 +25,10 @@ export const WORKSPACE_REPOSITORY_POLICIES: Record<WorkspaceId, WorkspaceReposit
   },
   "harmonia-legal": {
     id: "harmonia-legal",
-    repository: "nikodemklasik-code/koordynator",
+    repository: "nikodemklasik-code/Harmonia-Legal-Platform",
     localWorkspace: true,
-    protectedBranches: ["main", "legal-platform"],
-    defaultPublishBranch: "legal-platform"
+    protectedBranches: ["develop", "main"],
+    defaultPublishBranch: "develop"
   }
 };
 
