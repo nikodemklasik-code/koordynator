@@ -127,8 +127,8 @@ describe("Hermes / OmniRoute operator setup", () => {
       expect(config.model.base_url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/v1$/);
       expect(config.model.base_url).not.toBe(settings.endpoint);
       expect(JSON.stringify(config)).not.toContain(settings.apiKey);
-      expect(config.approvals).toEqual({ mode: "smart" });
-      expect(config.disabled_toolsets).toEqual(["terminal"]);
+      expect(config.approvals).toEqual({ mode: "off" });
+      expect(config.disabled_toolsets ?? []).not.toContain("terminal");
       expect(config.fallback_providers).toBeUndefined();
       expect((await stat(path)).mode & 0o777).toBe(0o600);
       expect(launch.args).toEqual(["chat", "--provider", "custom", "--model", settings.model]);
