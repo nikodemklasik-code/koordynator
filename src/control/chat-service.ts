@@ -2,7 +2,7 @@ import { readAttachment } from "./attachment-reader.js";
 import { detectProjectConsensus, type ProjectConsensus } from "./chat-consensus.js";
 import { canonicalDigest } from "../crypto/canonical-digest.js";
 import { repositoryTask, type RepositoryExecutor } from "./hermes-repository-runner.js";
-import { createSkillExecutor, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
+import { createSkillExecutor, isActionableSkillTask, type SkillContextMessage, type SkillExecutor } from "./hermes-skill-runner.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -60,6 +60,8 @@ export type ChatSession = {
   title?: string;
   /** Other persisted chats explicitly invited into this chat as peer participants. */
   invitedSessionIds?: string[];
+  /** Execution/repository capability for this series. Legacy sessions default to enabled. */
+  executionAccess?: boolean;
   messages: ChatMessage[];
 };
 
@@ -70,7 +72,13 @@ export type ChatSessionSummary = {
   model: string;
   title: string;
   invitedSessionIds: string[];
+  executionAccess: boolean;
   messageCount: number;
+};
+
+export type ChatExecutionContext = {
+  workspace?: "general" | "corporation" | "harmonia-legal";
+  repository?: string;
 };
 
 export type ChatProcessStage =
@@ -391,6 +399,7 @@ export class ChatService {
       createdAt: timestamp,
       updatedAt: timestamp,
       model: model === undefined ? this.defaultModel : safeModel(model),
+      executionAccess: true,
       messages: []
     };
     await this.persist(session);
@@ -420,6 +429,7 @@ export class ChatService {
           invitedSessionIds: Array.isArray(session.invitedSessionIds)
             ? session.invitedSessionIds.filter((value) => typeof value === "string" && SESSION_RE.test(value))
             : [],
+          executionAccess: session.executionAccess !== false,
           messageCount: session.messages.length
         } satisfies ChatSessionSummary;
       } catch {
@@ -436,7 +446,9 @@ export class ChatService {
     if (!SESSION_RE.test(sessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
     try {
       const body = await readFile(sessionFile(this.root, sessionId), "utf8");
-      return JSON.parse(body) as ChatSession;
+      const session = JSON.parse(body) as ChatSession;
+      if (session.executionAccess === undefined) session.executionAccess = true;
+      return session;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
@@ -462,6 +474,17 @@ export class ChatService {
     const session = await this.getSession(sessionId);
     if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
     session.title = safeSessionTitle(title);
+    session.updatedAt = now();
+    await this.persist(session);
+    return session;
+  }
+
+  async setExecutionAccess(sessionId: string, enabled: boolean): Promise<ChatSession> {
+    if (typeof enabled !== "boolean") throw new ChatServiceError("CHAT_EXECUTION_ACCESS_INVALID", 400);
+    if (this.starting.has(sessionId) || this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
+    const session = await this.getSession(sessionId);
+    if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    session.executionAccess = enabled;
     session.updatedAt = now();
     await this.persist(session);
     return session;
@@ -624,10 +647,17 @@ export class ChatService {
     }
   }
 
-  async startMessage(sessionId: string, messageText: string, requestedModel?: string, rawAttachments?: unknown, billing?: ChatBillingDecision) {
+  async startMessage(
+    sessionId: string,
+    messageText: string,
+    requestedModel?: string,
+    rawAttachments?: unknown,
+    billing?: ChatBillingDecision,
+    executionContext?: ChatExecutionContext
+  ) {
     if (this.starting.has(sessionId) || this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
     this.starting.add(sessionId);
-    try { return await this.prepareMessage(sessionId, messageText, requestedModel, rawAttachments, billing); }
+    try { return await this.prepareMessage(sessionId, messageText, requestedModel, rawAttachments, billing, executionContext); }
     finally { this.starting.delete(sessionId); }
   }
 
@@ -636,7 +666,8 @@ export class ChatService {
     messageText: string,
     requestedModel?: string,
     rawAttachments?: unknown,
-    billing?: ChatBillingDecision
+    billing?: ChatBillingDecision,
+    executionContext?: ChatExecutionContext
   ): Promise<{ accepted: true; messageId: string; model: string; billingSource: string }> {
     const text = messageText.trim();
     const attachments = this.normalizeAttachments(rawAttachments);
@@ -649,6 +680,10 @@ export class ChatService {
     if (this.active.has(sessionId)) throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
     const session = await this.getSession(sessionId);
     if (!session) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+    const explicitSkillTask = /^\s*\/skill(?:\s|$)/i.test(text);
+    if (session.executionAccess === false && (repoTask || explicitSkillTask)) {
+      throw new ChatServiceError("CHAT_EXECUTION_ACCESS_DISABLED", 403);
+    }
     const key = this.credential();
     if (!key) throw new ChatServiceError("CHAT_AUTH_REQUIRED", 503);
     if (billing?.allowed === false) throw new ChatServiceError("CHAT_BILLING_POLICY_DENIED", 403);
@@ -697,7 +732,7 @@ export class ChatService {
 
     const controller = new AbortController();
     this.active.set(sessionId, { controller, messageId: assistant.id });
-    void this.generate(session, assistant, controller, key).finally(() => {
+    void this.generate(session, assistant, controller, key, executionContext).finally(() => {
       const current = this.active.get(sessionId);
       if (current?.messageId === assistant.id) this.active.delete(sessionId);
     });
@@ -838,13 +873,21 @@ export class ChatService {
     }
   }
 
-  private async generate(session: ChatSession, assistant: ChatMessage, controller: AbortController, key: string): Promise<void> {
+  private async generate(
+    session: ChatSession,
+    assistant: ChatMessage,
+    controller: AbortController,
+    key: string,
+    executionContext?: ChatExecutionContext
+  ): Promise<void> {
     const sessionId = session.sessionId;
     const userMessage = session.messages.at(-2)!;
     const taskText = userMessage.content;
-    // Skills are an execution capability, not an intake shortcut. Automatic "every turn"
-    // routing is deliberately disabled so Hermes cannot bypass Stage 0 / Harmonia / Brain.
-    const skillTask = /^\s*\/skill(?:\s|$)/i.test(taskText);
+    const explicitSkillTask = /^\s*\/skill(?:\s|$)/i.test(taskText);
+    const automaticSkillTask = this.hermesSkillsEveryTurn
+      && session.executionAccess !== false
+      && isActionableSkillTask(taskText, userMessage.attachments?.length ?? 0);
+    const skillTask = explicitSkillTask || automaticSkillTask;
     const longRunning = Boolean(repositoryTask(taskText)) || skillTask;
     const timeout = setTimeout(() => controller.abort(new Error("CHAT_TIMEOUT")), longRunning ? 30 * 60_000 : this.timeoutMs);
     try {
@@ -936,9 +979,9 @@ export class ChatService {
             sessionId,
             stage: "EXECUTION",
             agent: "Hermes · Skills",
-            process: "Explicit skill execution",
+            process: explicitSkillTask ? "Explicit skill execution" : "Series workspace execution",
             progress: 35,
-            activity: "Explicit /skill request admitted",
+            activity: explicitSkillTask ? "Explicit /skill request admitted" : "Default series access admitted",
             model: session.model
           }
         });
@@ -947,7 +990,17 @@ export class ChatService {
           .flatMap((message) => message.attachments ?? [])
           .filter((attachment, index, values) => values.findIndex((candidate) => candidate.id === attachment.id) === index);
         let skillStreaming = false;
-        await this.skillExecutor({ text: taskText, model: session.model, endpoint: this.endpoint, apiKey: key, attachments, context, signal: controller.signal, emit: delta => {
+        await this.skillExecutor({
+          text: taskText,
+          model: session.model,
+          endpoint: this.endpoint,
+          apiKey: key,
+          attachments,
+          context,
+          ...(executionContext?.workspace ? { workspace: executionContext.workspace } : {}),
+          ...(executionContext?.repository ? { repository: executionContext.repository } : {}),
+          signal: controller.signal,
+          emit: delta => {
           if (!skillStreaming) {
             skillStreaming = true;
             this.emit(sessionId, {
@@ -956,7 +1009,7 @@ export class ChatService {
                 sessionId,
                 stage: "STREAMING",
                 agent: "Hermes · Skills",
-                process: "Explicit skill execution",
+                process: explicitSkillTask ? "Explicit skill execution" : "Series workspace execution",
                 progress: 70,
                 activity: "Hermes skill executor is producing output",
                 model: session.model
@@ -974,7 +1027,7 @@ export class ChatService {
             sessionId,
             stage: "FINALIZING",
             agent: "Koordynator",
-            process: "Explicit skill execution",
+            process: explicitSkillTask ? "Explicit skill execution" : "Series workspace execution",
             progress: 90,
             activity: "Persisting Hermes result",
             model: assistant.model
@@ -988,9 +1041,9 @@ export class ChatService {
             sessionId,
             stage: "DONE",
             agent: "Koordynator",
-            process: "Explicit skill execution",
+            process: explicitSkillTask ? "Explicit skill execution" : "Series workspace execution",
             progress: 100,
-            activity: "Skill execution completed",
+            activity: explicitSkillTask ? "Skill execution completed" : "Series workspace execution completed",
             model: assistant.model
           }
         });

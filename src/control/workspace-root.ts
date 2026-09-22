@@ -43,12 +43,24 @@ export async function resolveHermesWorkspaceRoot(input: {
     return resolve(input.projectRoot);
   }
 
-  if (context.workspace === "harmonia-legal") {
+  const isHarmoniaLegal = context.workspace === "harmonia-legal"
+    || repository?.toLowerCase() === "nikodemklasik-code/harmonia-legal-platform";
+  if (isHarmoniaLegal) {
     const explicit = process.env.KOORDYNATOR_HARMONIA_LEGAL_ROOT?.trim();
     if (explicit) {
       const root = resolve(explicit);
       if (!await exists(join(root, ".git"))) throw new Error("HARMONIA_LEGAL_ROOT_NOT_GIT");
       return root;
+    }
+
+    // Prefer the operator's existing checkout so uncommitted task packs and local
+    // evidence are visible to the series executor. Fall back to a managed clone.
+    const localCandidates = [
+      resolve(input.projectRoot, "..", "Harmonia-Legal-Platform"),
+      ...(process.env.HOME?.trim() ? [resolve(process.env.HOME, "Harmonia-Legal-Platform")] : [])
+    ];
+    for (const candidate of [...new Set(localCandidates)]) {
+      if (await exists(join(candidate, ".git"))) return candidate;
     }
 
     const parent = resolve(input.stateDir, "product-workspaces");

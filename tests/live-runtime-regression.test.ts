@@ -49,7 +49,7 @@ describe("live runtime regressions", () => {
     });
   });
 
-  it("keeps ordinary chat direct and wires OmniRoute recovery into Control and Hermes CLI", async () => {
+  it("keeps default-on Hermes execution wiring and OmniRoute recovery visible in runtime config", async () => {
     const [main, packageJson, chatModels, chatUsage] = await Promise.all([
       readFile("src/control/main.ts", "utf8"),
       readFile("package.json", "utf8"),
@@ -57,7 +57,8 @@ describe("live runtime regressions", () => {
       readFile("web/control/chat-usage.js", "utf8")
     ]);
 
-    expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS === "1"');
+    expect(main).toContain('chatHermesSkillsEveryTurn: process.env.KOORDYNATOR_CHAT_HERMES_SKILLS !== "0"');
+    expect(main).toContain('chatAllowRepositoryExecution: process.env.KOORDYNATOR_CHAT_REPO_EXECUTION !== "0"');
     expect(main).toContain("omniroute-keeper.mjs");
     expect(main).toContain("WorkingChatModelCatalogService");
     expect(main).toContain("KOORDYNATOR_CHAT_WORKING_SET");

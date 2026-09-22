@@ -16,23 +16,24 @@ afterEach(async () => {
 });
 
 describe("workspace repository policy", () => {
-  it("binds Corporation and Legal Platform work to the Koordynator repository", () => {
+  it("binds each product workspace to its own repository", () => {
     expect(assertWorkspaceRepository("corporation")).toBe("nikodemklasik-code/koordynator");
-    expect(assertWorkspaceRepository("harmonia-legal")).toBe("nikodemklasik-code/koordynator");
+    expect(assertWorkspaceRepository("harmonia-legal")).toBe("nikodemklasik-code/Harmonia-Legal-Platform");
     expect(assertWorkspaceRepository("general", "nikodemklasik-code/anything")).toBe("nikodemklasik-code/anything");
     expect(() => assertWorkspaceRepository("corporation", "nikodemklasik-code/Harmonia-Legal-Platform")).toThrow("WORKSPACE_REPOSITORY_FIXED");
-    expect(() => assertWorkspaceRepository("harmonia-legal", "nikodemklasik-code/Harmonia-Legal-Platform")).toThrow("WORKSPACE_REPOSITORY_FIXED");
+    expect(() => assertWorkspaceRepository("harmonia-legal", "nikodemklasik-code/koordynator")).toThrow("WORKSPACE_REPOSITORY_FIXED");
   });
 
   it("scopes protected push approval to the repository and branch named by the user", () => {
-    expect(explicitProtectedPushRequest("proszę push", "nikodemklasik-code/koordynator", "harmonia-legal"))
-      .toEqual({ repository: "nikodemklasik-code/koordynator", branch: "legal-platform" });
-    expect(explicitProtectedPushRequest("push main", "nikodemklasik-code/koordynator", "harmonia-legal"))
-      .toEqual({ repository: "nikodemklasik-code/koordynator", branch: "main" });
+    expect(explicitProtectedPushRequest("proszę push", "nikodemklasik-code/Harmonia-Legal-Platform", "harmonia-legal"))
+      .toEqual({ repository: "nikodemklasik-code/Harmonia-Legal-Platform", branch: "develop" });
+    expect(explicitProtectedPushRequest("push main", "nikodemklasik-code/Harmonia-Legal-Platform", "harmonia-legal"))
+      .toEqual({ repository: "nikodemklasik-code/Harmonia-Legal-Platform", branch: "main" });
     expect(explicitProtectedPushRequest("push", "nikodemklasik-code/koordynator", "corporation"))
       .toEqual({ repository: "nikodemklasik-code/koordynator", branch: "integration/control-corporation-v1" });
     expect(explicitProtectedPushRequest("just inspect", "nikodemklasik-code/koordynator", "corporation")).toBeNull();
-    expect(protectedBranchesForRepository("nikodemklasik-code/koordynator")).toEqual(["main", "integration/control-corporation-v1", "legal-platform"]);
+    expect(protectedBranchesForRepository("nikodemklasik-code/koordynator")).toEqual(["main", "integration/control-corporation-v1"]);
+    expect(protectedBranchesForRepository("nikodemklasik-code/Harmonia-Legal-Platform")).toEqual(["develop", "main"]);
     expect(safeWorkspaceId("general")).toBe("general");
     expect(() => safeWorkspaceId("other")).toThrow("WORKSPACE_INVALID");
   });

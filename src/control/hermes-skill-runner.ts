@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { prepareHermes } from "../runtime/hermes-launch.js";
 import { runCommand } from "./hermes-repository-runner.js";
+import { resolveHermesWorkspaceRoot } from "./workspace-root.js";
 
 export type SkillAttachment = {
   name: string;
@@ -33,6 +34,8 @@ export type SkillRun = {
   apiKey: string;
   attachments: SkillAttachment[];
   context: SkillContextMessage[];
+  workspace?: "general" | "corporation" | "harmonia-legal";
+  repository?: string;
   signal: AbortSignal;
   emit: (text: string) => void;
 };
@@ -76,8 +79,15 @@ function redact(output: string, secrets: Array<string | undefined>): string {
 
 export function createSkillExecutor(stateDir: string, projectRoot = process.cwd()): SkillExecutor {
   const root = resolve(stateDir, "skill-jobs");
-  const workspace = resolve(projectRoot);
   return async (run) => {
+    const workspace = await resolveHermesWorkspaceRoot({
+      projectRoot: resolve(projectRoot),
+      stateDir: resolve(stateDir),
+      context: {
+        workspace: run.workspace ?? "general",
+        ...(run.repository ? { repository: run.repository } : {})
+      }
+    });
     await mkdir(root, { recursive: true, mode: 0o700 });
     const job = await mkdtemp(join(root, "job-"));
     const attachmentDir = join(job, "attachments");
@@ -136,6 +146,8 @@ export function createSkillExecutor(stateDir: string, projectRoot = process.cwd(
       await writeFile(join(job, "receipt.json"), `${JSON.stringify({
         mode: "LIVE_CHAT_DYNAMIC_SKILLS",
         model: run.model,
+        workspace,
+        repository: run.repository ?? null,
         task,
         attachments: materialized.map(({ name, path, extractionStatus }) => ({ name, path, extractionStatus })),
         completedAt: new Date().toISOString(),

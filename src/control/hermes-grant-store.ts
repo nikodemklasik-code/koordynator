@@ -49,7 +49,9 @@ export class HermesGrantStore {
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return { terminal: false, localFiles: false, localRoots: [], updatedAt: null };
+        // Execution access is assigned by default. The operator can explicitly
+        // disable it and that choice is then persisted in hermes-grants.json.
+        return { terminal: true, localFiles: false, localRoots: [], updatedAt: null };
       }
       throw error;
     }
@@ -57,21 +59,27 @@ export class HermesGrantStore {
 
   async grant(name: HermesGrantName, approved: boolean, roots: string[] = []): Promise<HermesGrantStatus> {
     if (approved !== true) throw new HermesGrantError("HERMES_GRANT_CONSENT_REQUIRED", 400);
+    return this.set(name, true, roots);
+  }
+
+  async set(name: HermesGrantName, enabled: boolean, roots: string[] = []): Promise<HermesGrantStatus> {
+    if (typeof enabled !== "boolean") throw new HermesGrantError("HERMES_GRANT_STATE_REQUIRED", 400);
     const current = await this.status();
 
     let next: HermesGrantStatus;
     if (name === "terminal") {
       next = {
         ...current,
-        terminal: true,
+        terminal: enabled,
         updatedAt: new Date().toISOString()
       };
     } else if (name === "local-files") {
-      const localRoots = safeRoots(roots);
-      if (!localRoots.length) throw new HermesGrantError("HERMES_LOCAL_ROOT_REQUIRED", 400);
+      const suppliedRoots = safeRoots(roots);
+      const localRoots = suppliedRoots.length ? suppliedRoots : safeRoots(current.localRoots);
+      if (enabled && !localRoots.length) throw new HermesGrantError("HERMES_LOCAL_ROOT_REQUIRED", 400);
       next = {
         ...current,
-        localFiles: true,
+        localFiles: enabled,
         localRoots,
         updatedAt: new Date().toISOString()
       };

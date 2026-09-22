@@ -65,9 +65,13 @@ describe("Koordynator Ustrój shell", () => {
     expect(css).toContain("position:relative!important");
     expect(css).toContain("grid-template-columns:minmax(0,1fr) 46px!important");
     expect(css).toContain("height:72px!important");
+    expect(localAccess).toContain('id="seriesRepoAccess"');
+    expect(localAccess).toContain('/api/chat/sessions/');
+    expect(localAccess).toContain('/access');
     expect(localAccess).toContain('id="localTerminalAccess"');
     expect(localAccess).toContain('id="localDiskAccess"');
-    expect(localAccess).toContain('grant: "local-files"');
+    expect(localAccess).toContain('setGrant("local-files", false)');
+    expect(localAccess).toContain('setSeriesAccess(!seriesEnabled)');
     expect(localAccess).toContain('wrap.id = "sessionFooter"');
     expect(localAccess).toContain('data-tool-group="workspace"');
     expect(usage).toContain('document.querySelector(".runtime-terminal-toolbar")');

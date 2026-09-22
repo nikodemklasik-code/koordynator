@@ -23,6 +23,7 @@
   access.className = "koord-local-access";
   access.setAttribute("aria-label", "Local Hermes access");
   access.innerHTML = [
+    '<button id="seriesRepoAccess" class="koord-access-pill checking" type="button"><i></i><span>Repo</span><strong>…</strong></button>',
     '<button id="localTerminalAccess" class="koord-access-pill checking" type="button"><i></i><span>Terminal</span><strong>…</strong></button>',
     '<button id="localDiskAccess" class="koord-access-pill checking" type="button"><i></i><span>Dyski</span><strong>…</strong></button>'
   ].join("");
@@ -31,6 +32,7 @@
   else if (github && routebar.contains(github)) github.before(access);
   else routebar.appendChild(access);
 
+  const seriesButton = document.getElementById("seriesRepoAccess");
   const terminalButton = document.getElementById("localTerminalAccess");
   const diskButton = document.getElementById("localDiskAccess");
 
@@ -55,8 +57,14 @@
   const errorBox = document.getElementById("localAccessError");
   const approve = document.getElementById("localAccessApprove");
 
-  let status = { terminal: false, localFiles: false, localRoots: [] };
+  let status = { terminal: true, localFiles: false, localRoots: [] };
+  let seriesEnabled = true;
   let mode = "terminal";
+
+  function currentSessionId() {
+    const pinned = new URLSearchParams(window.location.search).get("session");
+    return pinned || window.localStorage.getItem("koordynator.liveChat.sessionId") || "";
+  }
 
   function setPill(button, enabled, detail) {
     if (!button) return;
@@ -75,6 +83,63 @@
       status.localFiles === true && roots.length > 0
         ? `Hermes local roots: ${roots.join(", ")}`
         : "Click to choose local folders Hermes may access.");
+  }
+
+  function renderSeries(enabled) {
+    seriesEnabled = enabled !== false;
+    setPill(
+      seriesButton,
+      seriesEnabled,
+      seriesEnabled
+        ? "Repo/workspace access is assigned to this chat series. Click to disable."
+        : "Repo/workspace access is disabled for this chat series. Click to enable."
+    );
+  }
+
+  async function loadSeriesAccess() {
+    const sessionId = currentSessionId();
+    if (!sessionId) {
+      seriesButton?.classList.add("checking");
+      return;
+    }
+    try {
+      const response = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/access`, {
+        headers: { accept: "application/json" }
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const result = await response.json();
+      renderSeries(result.enabled !== false);
+    } catch {
+      seriesButton?.classList.add("checking");
+    }
+  }
+
+  async function setSeriesAccess(enabled) {
+    const sessionId = currentSessionId();
+    if (!sessionId) throw new Error("Brak aktywnej serii czatu.");
+    const response = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}/access`, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ enabled })
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    renderSeries(result.enabled !== false);
+  }
+
+  async function setGrant(grant, enabled, roots) {
+    const payload = { grant, enabled };
+    if (Array.isArray(roots)) payload.roots = roots;
+    const response = await fetch("/api/integrations/hermes-grants", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    render(result);
+    window.dispatchEvent(new CustomEvent("koordynator:hermes-grants-changed", { detail: result }));
+    return result;
   }
 
   async function loadStatus() {
@@ -114,27 +179,16 @@
     approve.disabled = true;
     errorBox.hidden = true;
     try {
-      const payload = mode === "terminal"
-        ? { grant: "terminal", approved: true }
-        : {
-            grant: "local-files",
-            approved: true,
-            roots: String(rootsInput.value || "")
-              .split(/\r?\n/)
-              .map((value) => value.trim())
-              .filter(Boolean)
-          };
-      if (mode === "local-files" && payload.roots.length === 0) {
+      const roots = mode === "local-files"
+        ? String(rootsInput.value || "")
+            .split(/\r?\n/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : undefined;
+      if (mode === "local-files" && roots.length === 0) {
         throw new Error("Wpisz co najmniej jeden katalog absolutny.");
       }
-      const response = await fetch("/api/integrations/hermes-grants", {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
-      render(result);
+      await setGrant(mode === "terminal" ? "terminal" : "local-files", true, roots);
       dialog.close();
     } catch (error) {
       errorBox.textContent = error instanceof Error ? error.message : "Nie udało się zapisać dostępu.";
@@ -144,8 +198,28 @@
     }
   }
 
-  terminalButton?.addEventListener("click", () => openDialog("terminal"));
-  diskButton?.addEventListener("click", () => openDialog("local-files"));
+  seriesButton?.addEventListener("click", () => {
+    seriesButton.disabled = true;
+    void setSeriesAccess(!seriesEnabled)
+      .catch((error) => {
+        seriesButton.title = error instanceof Error ? error.message : "Nie udało się zmienić dostępu serii.";
+      })
+      .finally(() => { seriesButton.disabled = false; });
+  });
+  terminalButton?.addEventListener("click", () => {
+    if (!status.terminal) return openDialog("terminal");
+    terminalButton.disabled = true;
+    void setGrant("terminal", false)
+      .catch((error) => { terminalButton.title = error instanceof Error ? error.message : "Nie udało się wyłączyć terminala."; })
+      .finally(() => { terminalButton.disabled = false; });
+  });
+  diskButton?.addEventListener("click", () => {
+    if (!status.localFiles) return openDialog("local-files");
+    diskButton.disabled = true;
+    void setGrant("local-files", false)
+      .catch((error) => { diskButton.title = error instanceof Error ? error.message : "Nie udało się wyłączyć dysków."; })
+      .finally(() => { diskButton.disabled = false; });
+  });
   approve?.addEventListener("click", () => void submit());
   window.addEventListener("koordynator:hermes-grants-changed", (event) => {
     if (event?.detail && typeof event.detail === "object") render(event.detail);
@@ -166,5 +240,10 @@
     new MutationObserver(removeDuplicateTerminalControls).observe(hermesPane, { childList: true, subtree: true });
   }
 
+  if (session) {
+    new MutationObserver(() => void loadSeriesAccess()).observe(session, { childList: true, subtree: true, characterData: true });
+  }
+
   void loadStatus();
+  void loadSeriesAccess();
 })();
