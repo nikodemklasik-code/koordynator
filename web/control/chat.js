@@ -700,6 +700,7 @@ function humanError(code) {
     REPO_TASK_INVALID_USE_REPO_URL_TASK: "Użyj: /repo https://github.com/owner/repo zadanie",
     REPO_EXECUTABLE_UNAVAILABLE: "Nie znaleziono git, gh lub hermes w środowisku serwera",
     REPO_COMMAND_FAILED: "Polecenie wykonawcy nie powiodło się. Sprawdź logowanie gh i instalację Hermesa.",
+    CHAT_EXECUTION_ACCESS_DISABLED: "Dostęp Repo dla tej serii jest wyłączony. Włącz przycisk Repo w pasku dostępu.",
     CHAT_ATTACHMENT_PARSE_FAILED: "Nie udało się odczytać pliku. Może być uszkodzony lub zaszyfrowany.",
     CHAT_ATTACHMENT_PARSE_TIMEOUT: "Odczyt pliku przekroczył limit czasu",
     CHAT_ARCHIVE_LIMIT: "ZIP przekracza limit rozpakowanych danych lub liczby plików",
@@ -1292,14 +1293,7 @@ async function ensureHermesTerminalGrant() {
   const statusResponse = await fetch("/api/integrations/hermes-grants", { headers: { accept: "application/json" } });
   const status = statusResponse.ok ? await statusResponse.json() : {};
   if (status.terminal === true) return;
-  const grantResponse = await fetch("/api/integrations/hermes-grants", {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ grant: "terminal", approved: true })
-  });
-  const grant = await grantResponse.json().catch(() => ({}));
-  if (!grantResponse.ok || grant.terminal !== true) throw new Error(grant.error || "HERMES_TERMINAL_GRANT_FAILED");
-  window.dispatchEvent(new CustomEvent("koordynator:hermes-grants-changed", { detail: grant }));
+  throw new Error("HERMES_TERMINAL_DISABLED_BY_OPERATOR");
 }
 
 async function sendHermesInput(data) {
@@ -1440,6 +1434,7 @@ function hermesStartError(code) {
   const known = {
     HERMES_TERMINAL_REQUIRED: "Brak zgody na lokalny terminal.",
     HERMES_TERMINAL_GRANT_FAILED: "Nie udało się zapisać zgody na terminal.",
+    HERMES_TERMINAL_DISABLED_BY_OPERATOR: "Terminal jest wyłączony przyciskiem dostępu. Włącz Terminal i spróbuj ponownie.",
     OMNIROUTE_API_KEY_REQUIRED: "Brak klucza OmniRoute dla Hermesa.",
     FREE_ROUTE_DENIED: "Wybrany model nie jest dozwolony dla Hermesa.",
     HERMES_MODEL_INVALID: "Wybrany model jest nieprawidłowy.",
@@ -1461,7 +1456,7 @@ async function startHermesPty() {
       return;
     }
 
-    // Clicking Start is the explicit local-terminal consent action.
+    // Start respects the operator's persisted access switch; it never silently re-enables terminal access.
     await ensureHermesTerminalGrant();
     const term = ensureHermesTerminal();
     term?.reset();
