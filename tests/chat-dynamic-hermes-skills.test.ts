@@ -73,8 +73,51 @@ describe("Live Chat dynamic Hermes skill routing", () => {
     chat.close();
   });
 
-  it("does not let the legacy every-turn flag bypass the normal chat path", async () => {
-    const root = await mkdtemp(join(tmpdir(), "koord-chat-no-auto-skill-"));
+  it("routes substantive turns through Hermes when the series access is enabled by default", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-auto-skill-"));
+    roots.push(root);
+    const calls: SkillRun[] = [];
+    const chat = new ChatService({
+      stateDir: root,
+      apiKey: "fixture-key",
+      defaultModel: "oc/test-model",
+      hermesSkillsEveryTurn: true,
+      skillExecutor: async (run) => {
+        calls.push(run);
+        run.emit("Workspace task completed.\nSKILLS_USED: repository-inspection\n");
+      },
+      fetchImpl: async () => { throw new Error("PLAIN_CHAT_MUST_NOT_RUN"); }
+    });
+    const session = await chat.createSession();
+    expect(session.executionAccess).toBe(true);
+    const done = new Promise<ChatMessage>((resolve) => {
+      const unsubscribe = chat.subscribe(session.sessionId, (event) => {
+        if (event.type === "assistant_done") {
+          unsubscribe();
+          resolve(event.message);
+        }
+      });
+    });
+
+    await chat.startMessage(
+      session.sessionId,
+      "przygotuj audyt dostępności interfejsu",
+      undefined,
+      undefined,
+      undefined,
+      { workspace: "harmonia-legal", repository: "nikodemklasik-code/Harmonia-Legal-Platform" }
+    );
+    const assistant = await done;
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.workspace).toBe("harmonia-legal");
+    expect(calls[0]?.repository).toBe("nikodemklasik-code/Harmonia-Legal-Platform");
+    expect(assistant.content).toContain("SKILLS_USED: repository-inspection");
+    chat.close();
+  });
+
+  it("routes back to model-only chat when the operator disables access for that series", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-access-off-"));
     roots.push(root);
     const calls: SkillRun[] = [];
     const chat = new ChatService({
@@ -87,11 +130,12 @@ describe("Live Chat dynamic Hermes skill routing", () => {
         run.emit("SHOULD_NOT_RUN");
       },
       fetchImpl: async () => new Response(
-        'data: {"choices":[{"delta":{"content":"Normal chat route"}}]}\n\ndata: [DONE]\n\n',
+        'data: {"choices":[{"delta":{"content":"Model-only route"}}]}\n\ndata: [DONE]\n\n',
         { status: 200, headers: { "content-type": "text/event-stream" } }
       )
     });
     const session = await chat.createSession();
+    await chat.setExecutionAccess(session.sessionId, false);
     const done = new Promise<ChatMessage>((resolve) => {
       const unsubscribe = chat.subscribe(session.sessionId, (event) => {
         if (event.type === "assistant_done") {
@@ -105,7 +149,8 @@ describe("Live Chat dynamic Hermes skill routing", () => {
     const assistant = await done;
 
     expect(calls).toHaveLength(0);
-    expect(assistant.content).toContain("Normal chat route");
+    expect(assistant.content).toContain("Model-only route");
+    await expect(chat.startMessage(session.sessionId, "/skill inspect repo")).rejects.toThrow("CHAT_EXECUTION_ACCESS_DISABLED");
     chat.close();
   });
 });
