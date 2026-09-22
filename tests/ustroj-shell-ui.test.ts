@@ -70,7 +70,8 @@ describe("Koordynator Ustrój shell", () => {
     expect(localAccess).toContain('/access');
     expect(localAccess).toContain('id="localTerminalAccess"');
     expect(localAccess).toContain('id="localDiskAccess"');
-    expect(localAccess).toContain('grant: "local-files"');
+    expect(localAccess).toContain('setGrant("local-files", false)');
+    expect(localAccess).toContain('setSeriesAccess(!seriesEnabled)');
     expect(localAccess).toContain('wrap.id = "sessionFooter"');
     expect(localAccess).toContain('data-tool-group="workspace"');
     expect(usage).toContain('document.querySelector(".runtime-terminal-toolbar")');
