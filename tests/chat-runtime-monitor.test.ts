@@ -5,11 +5,11 @@ import { describe, expect, it } from "vitest";
 describe("chat runtime monitor", () => {
   it("loads the router/monitor before chat.js so fetch and SSE telemetry observe live sessions", async () => {
     const html = await readFile(new URL("../web/control/chat.html", import.meta.url), "utf8");
-    const router = html.indexOf('/chat-router.js?v=2');
-    const chat = html.indexOf('/chat.js?v=10');
+    const router = html.indexOf('/chat-router.js?v=3');
+    const chat = html.indexOf('/chat.js?v=11');
     expect(router).toBeGreaterThan(-1);
     expect(chat).toBeGreaterThan(router);
-    expect(html).toContain('/chat-router.css?v=1');
+    expect(html).toContain('/chat-router.css?v=2');
     expect(html).not.toContain("chat-runtime-monitor.js");
     expect(html).not.toContain("chat-runtime-monitor.css");
   });
@@ -58,4 +58,17 @@ describe("chat runtime monitor", () => {
     expect(css).toContain(".v5-mini-button,.runtime-terminal-button");
     expect(css).toContain("height:38px!important");
   });
+  it("treats carriage-return redraws as in-place updates, keeps timers horizontal and restores copy", async () => {
+    const source = await readFile(new URL("../web/control/chat-router.js", import.meta.url), "utf8");
+    const css = await readFile(new URL("../web/control/chat-router.css", import.meta.url), "utf8");
+    const chat = await readFile(new URL("../web/control/chat.js", import.meta.url), "utf8");
+    expect(source).toContain('if (char === "\\r")');
+    expect(source).toContain('data-runtime-action="copy"');
+    expect(source).toContain('return ["timer", "CZAS"]');
+    expect(source).toContain("timerReadableRow");
+    expect(css).toContain(".runtime-line.timer");
+    expect(css).toContain("white-space:nowrap");
+    expect(chat).toContain("window.koordynatorHermesTerminal = hermesXterm");
+  });
+
 });
