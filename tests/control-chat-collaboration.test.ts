@@ -119,6 +119,72 @@ describe("persistent chat collaboration", () => {
     service.close();
   });
 
+
+
+  it("persists participant roles and prevents observers or shared-only peers from receiving source-chat authority", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-contract-"));
+    roots.push(root);
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    const service = new ChatService({
+      stateDir: root,
+      apiKey: "test",
+      fetchImpl: streamingFetch(requestBodies)
+    });
+
+    const observer = await service.createSession("auto/best-free");
+    await service.updateTitle(observer.sessionId, "Observer");
+    await sendAndWait(service, observer.sessionId, "observer-private-source");
+
+    const contributor = await service.createSession("auto/best-free");
+    await service.updateTitle(contributor.sessionId, "Contributor");
+    await sendAndWait(service, contributor.sessionId, "contributor-private-source");
+
+    const host = await service.createSession("auto/best-free");
+    await service.setInvitation(host.sessionId, observer.sessionId, true);
+    await service.setInvitation(host.sessionId, contributor.sessionId, true);
+
+    await service.setParticipantBinding(host.sessionId, observer.sessionId, {
+      participationRole: "OBSERVER"
+    });
+    await service.setParticipantBinding(host.sessionId, contributor.sessionId, {
+      knowledgeMode: "SHARED_ONLY"
+    });
+
+    const configured = await service.getSession(host.sessionId);
+    expect(configured?.participants?.find((item) => item.sessionId === observer.sessionId)).toMatchObject({
+      participationRole: "OBSERVER",
+      canRespond: false
+    });
+    expect(configured?.participants?.find((item) => item.sessionId === contributor.sessionId)).toMatchObject({
+      knowledgeMode: "SHARED_ONLY",
+      canRespond: true
+    });
+
+    await sendAndWait(service, host.sessionId, "Only active speaking participants should respond.", 2);
+
+    const completed = await service.getSession(host.sessionId);
+    expect(completed?.messages.some((message) => message.sourceSessionId === observer.sessionId)).toBe(false);
+    expect(completed?.messages.some((message) => message.sourceSessionId === contributor.sessionId)).toBe(true);
+
+    const contributorCall = [...requestBodies].reverse().find((request) => {
+      if (request.stream !== false || !Array.isArray(request.messages)) return false;
+      return request.messages.some((message) =>
+        typeof message === "object"
+        && message !== null
+        && typeof (message as { content?: unknown }).content === "string"
+        && String((message as { content: string }).content).includes('You are the invited chat participant "Contributor"')
+      );
+    }) as { messages?: Array<{ content?: unknown }> } | undefined;
+
+    const contributorContext = (contributorCall?.messages ?? [])
+      .map((message) => typeof message.content === "string" ? message.content : "")
+      .join("\n");
+
+    expect(contributorContext).not.toContain("contributor-private-source");
+    service.close();
+  });
+
   it("persists titles and invited chats, injects peer context, and deletes chats", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-collab-"));
     roots.push(root);
