@@ -497,7 +497,6 @@ export class ChatService {
     if (!session || !invitedSession) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
     const current = new Set((session.invitedSessionIds ?? []).filter((value) => SESSION_RE.test(value)));
     if (invited) {
-      if (current.size >= 8 && !current.has(invitedSessionId)) throw new ChatServiceError("CHAT_INVITE_LIMIT", 409);
       current.add(invitedSessionId);
     } else {
       current.delete(invitedSessionId);
@@ -571,30 +570,78 @@ export class ChatService {
   }
 
   private async collaborationContext(session: ChatSession): Promise<UpstreamMessage[]> {
-    const ids = [...new Set(session.invitedSessionIds ?? [])].filter((value) => SESSION_RE.test(value)).slice(0, 8);
+    const ids = [...new Set(session.invitedSessionIds ?? [])].filter((value) => SESSION_RE.test(value));
     if (!ids.length) return [];
-    const chunks: string[] = [
-      "COLLABORATING CHATS",
-      "The following chats were explicitly invited by the user. Treat them as read-only peer context. Preserve disagreement instead of pretending all chats already agree."
-    ];
+
+    const invitedSessions: ChatSession[] = [];
     for (const invitedId of ids) {
       const invited = await this.getSession(invitedId);
-      if (!invited) continue;
+      if (invited) invitedSessions.push(invited);
+    }
+    if (!invitedSessions.length) return [];
+
+    invitedSessions.sort((left, right) => {
+      const byTitle = sessionTitle(left).localeCompare(sessionTitle(right), undefined, { sensitivity: "base" });
+      return byTitle || left.sessionId.localeCompare(right.sessionId);
+    });
+
+    const totalBudget = 48_000;
+    const header = [
+      "COLLABORATING CHATS",
+      `${invitedSessions.length} peer chat(s) are explicitly invited. Membership is not capped; context is budgeted fairly across participants.`,
+      "Treat peer source chats as read-only context. Preserve disagreement instead of pretending all participants already agree."
+    ].join("\n");
+    const remainingBudget = Math.max(0, totalBudget - header.length - 1);
+    const perParticipantBudget = Math.max(96, Math.floor(remainingBudget / invitedSessions.length));
+    const chunks: string[] = [header];
+
+    for (const invited of invitedSessions) {
+      const title = sessionTitle(invited);
+      const prefix = `\n[CHAT: ${title} | model: ${invited.model} | id: ${invited.sessionId}]\n`;
+      const room = Math.max(0, perParticipantBudget - prefix.length);
+      if (!room) continue;
+
       const messages = invited.messages
         .filter((message) => message.state !== "error" && String(message.content || "").trim())
         .slice(-12);
       if (!messages.length) continue;
-      chunks.push(`\n[CHAT: ${sessionTitle(invited)} | model: ${invited.model} | id: ${invited.sessionId}]`);
-      for (const message of messages) {
+
+      const body = messages.map((message) => {
         const role = message.role === "user" ? "USER" : "ASSISTANT";
-        chunks.push(`${role}: ${message.content.slice(0, 6000)}`);
-      }
+        return `${role}: ${message.content}`;
+      }).join("\n");
+
+      chunks.push(prefix + body.slice(Math.max(0, body.length - room)));
     }
-    const content = chunks.join("\n").slice(0, 48_000);
+
+    const content = chunks.join("\n").slice(0, totalBudget);
     return content.includes("[CHAT:") ? [{ role: "system", content }] : [];
   }
 
-  private async boundedHistory(session: ChatSession): Promise<UpstreamMessage[]> {
+  private async sourcePeerContext(invited: ChatSession): Promise<UpstreamMessage | null> {
+    const messages = invited.messages
+      .filter((message) => message.state !== "error" && String(message.content || "").trim())
+      .slice(-12);
+    if (!messages.length) return null;
+
+    const body = messages.map((message) => {
+      const role = message.role === "user" ? "USER" : "ASSISTANT";
+      return `${role}: ${message.content}`;
+    }).join("\n");
+
+    return {
+      role: "system",
+      content: [
+        `SOURCE CHAT: ${sessionTitle(invited)} | model: ${invited.model} | id: ${invited.sessionId}`,
+        body.slice(-24_000)
+      ].join("\n")
+    };
+  }
+
+  private async boundedHistory(
+    session: ChatSession,
+    options: { includeCollaboration?: boolean } = {}
+  ): Promise<UpstreamMessage[]> {
     const messages = session.messages;
     const selected: ChatMessage[] = [];
     let chars = 0;
@@ -611,7 +658,9 @@ export class ChatService {
     }
     const history = [];
     for (const message of selected.reverse()) history.push(await this.upstreamMessage(message));
-    const collaboration = await this.collaborationContext(session);
+    const collaboration = options.includeCollaboration === false
+      ? []
+      : await this.collaborationContext(session);
     if (!this.projectContextProvider) return [...collaboration, ...history];
     try {
       const context = (await this.projectContextProvider())?.trim();
@@ -741,14 +790,22 @@ export class ChatService {
 
   private async generateInvitedResponses(session: ChatSession, key: string, controller: AbortController): Promise<void> {
     const invitedIds = [...new Set(session.invitedSessionIds ?? [])]
-      .filter((value) => SESSION_RE.test(value))
-      .slice(0, 8);
+      .filter((value) => SESSION_RE.test(value));
     if (!invitedIds.length) return;
 
+    const invitedSessions: ChatSession[] = [];
     for (const invitedId of invitedIds) {
-      if (controller.signal.aborted) return;
       const invited = await this.getSession(invitedId);
-      if (!invited) continue;
+      if (invited) invitedSessions.push(invited);
+    }
+
+    invitedSessions.sort((left, right) => {
+      const byTitle = sessionTitle(left).localeCompare(sessionTitle(right), undefined, { sensitivity: "base" });
+      return byTitle || left.sessionId.localeCompare(right.sessionId);
+    });
+
+    for (const invited of invitedSessions) {
+      if (controller.signal.aborted) return;
 
       const model = safeModel(invited.model);
       const billing = await this.authorizeModel?.(model);
@@ -789,17 +846,20 @@ export class ChatService {
           ...session,
           messages: session.messages.filter((item) => item.id !== peer.id)
         };
-        const history = await this.boundedHistory(historySession);
+        const history = await this.boundedHistory(historySession, { includeCollaboration: false });
+        const sourceContext = await this.sourcePeerContext(invited);
         history.unshift({
           role: "system",
           content: [
             `You are the invited chat participant "${title}".`,
             `Your source chat id is ${invited.sessionId}.`,
             "Respond as a distinct participant in the shared Koordynator conversation.",
-            "Use your source-chat context and the shared conversation. Do not pretend to be the main Koordynator.",
+            "Use your own source-chat context plus the shared conversation. Do not pretend to be the main Koordynator.",
+            "Other invited source chats are not automatically disclosed to you; knowledge remains participant-scoped.",
             "Do not change repository identity: the active repository remains nikodemklasik-code/koordynator."
           ].join("\n")
         });
+        if (sourceContext) history.splice(1, 0, sourceContext);
 
         const response = await this.fetchImpl(`${this.endpoint}/chat/completions`, {
           method: "POST",
