@@ -103,6 +103,14 @@ describe("persistent chat collaboration", () => {
     expect(new Set(peerMessages.map((message) => message.sourceSessionId))).toEqual(
       new Set(guests.map((guest) => guest.sessionId))
     );
+    expect(peerMessages.map((message) => message.groupTurnReceipt?.turn)).toEqual(
+      Array.from({ length: 12 }, (_, index) => index + 1)
+    );
+    expect(peerMessages[0]?.groupTurnReceipt?.previousTurnReceiptHash).toBeNull();
+    for (let index = 1; index < peerMessages.length; index += 1) {
+      expect(peerMessages[index]?.groupTurnReceipt?.previousTurnReceiptHash)
+        .toBe(peerMessages[index - 1]?.groupTurnReceipt?.turnReceiptHash);
+    }
 
     const mainRequest = [...requestBodies].reverse().find((request) => request.stream === true) as
       | { messages?: Array<{ role?: string; content?: unknown }> }
