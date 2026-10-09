@@ -108,7 +108,11 @@
     "tests/corporation-group-chat-queue.test.ts",
     "src/corporation/group-conversation.ts",
     "tests/corporation-group-conversation.test.ts",
-    "tests/control-chat-collaboration.test.ts"
+    "tests/control-chat-collaboration.test.ts",
+    "web/control/chat-history.js",
+    "web/control/chat-shell.css",
+    "src/control/server.ts",
+    "src/control/chat-service.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -194,7 +198,12 @@
     "unbounded_live_chat_membership": "implemented",
     "participant_scoped_peer_context": "implemented",
     "group_participant_ui_role_editor": "pending",
-    "hll_group_communication_binding": "pending"
+    "hll_group_communication_binding": "pending",
+    "group_participant_contract_persistence": "implemented",
+    "group_participant_role_editor_ui": "implemented",
+    "group_participant_knowledge_editor_ui": "implemented",
+    "observer_no_response_enforcement": "implemented",
+    "source_chat_knowledge_mode_enforcement": "implemented"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
