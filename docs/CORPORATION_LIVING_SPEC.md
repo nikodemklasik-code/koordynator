@@ -1315,3 +1315,93 @@ Implementation:
 src/corporation/group-chat-queue.ts
 tests/corporation-group-chat-queue.test.ts
 ```
+
+
+## Unbounded group-conversation membership with scoped knowledge
+
+A group conversation has **no constitutional participant-count ceiling**.
+
+The number of participants is a runtime/resource concern. It is not hard-coded to
+3, 8 or any other arbitrary value.
+
+Membership and knowledge are separate concerns:
+
+```
+participant membership
+    !=
+full visibility
+    !=
+speaking authority
+    !=
+execution authority
+```
+
+Each participant has an explicit participation contract containing:
+
+- participant identity;
+- participation role;
+- department / Role Contract references where applicable;
+- model / agent / source-chat references where applicable;
+- active state;
+- speaking permission;
+- knowledge mode;
+- allowed knowledge labels;
+- allowed Knowledge Package ids.
+
+The initial participation roles are:
+
+```
+OBSERVER
+CONTRIBUTOR
+SPECIALIST
+REVIEWER
+DECISION_SUPPORT
+EXECUTOR
+QC
+MODERATOR
+```
+
+A participant can therefore be present in the conversation while being unable to
+speak, unable to see a department-only message, or unable to receive a Knowledge
+Package outside its contract.
+
+Message visibility is typed:
+
+```
+SHARED
+DIRECT(participants)
+DEPARTMENT(department)
+LABELLED(labels)
+```
+
+Knowledge Package ids provide an additional independent visibility gate.
+
+The conversation core composes with the deterministic round-robin queue. Membership
+changes remain staged until the next round boundary, so adding the 37th participant
+cannot reorder the 36-participant round currently in progress.
+
+The Live Chat implementation no longer imposes the previous eight-peer cutoff.
+Invited chats are persisted without a fixed count limit. Peer source knowledge is
+scoped to that peer; every invited peer is not automatically given every other
+peer's private source-chat history.
+
+Each persisted invited peer now also carries a participation contract. The History
+panel exposes participant role and knowledge-mode controls. OBSERVER cannot produce
+an automatic peer response. SOURCE_AND_SHARED receives its own source chat plus the
+shared conversation; SHARED_ONLY receives only the shared conversation. LABELLED
+and DIRECT_ONLY remain fail-closed unless an explicit matching visibility path
+provides the needed context.
+
+Shared model context remains bounded by the model/context budget. A finite context
+window is a resource limit, not a membership limit.
+
+Implementation:
+
+```
+src/corporation/group-chat-queue.ts
+src/corporation/group-conversation.ts
+src/control/chat-service.ts
+tests/corporation-group-chat-queue.test.ts
+tests/corporation-group-conversation.test.ts
+tests/control-chat-collaboration.test.ts
+```

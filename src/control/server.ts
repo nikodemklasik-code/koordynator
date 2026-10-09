@@ -473,6 +473,62 @@ export function createControlServer(options: ControlServerOptions): Server {
         return sendJson(response, 200, { sessionId, invitedSessionIds: session.invitedSessionIds ?? [] });
       }
 
+      const chatParticipantMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/participant$/i.exec(url.pathname);
+      if (method === "POST" && chatParticipantMatch?.[1]) {
+        const sessionId = safeSessionId(chatParticipantMatch[1]);
+        const payload = await readJsonBody(request, 8 * 1024);
+        assertExactKeys(payload, [
+          "sessionId",
+          "participationRole",
+          "knowledgeMode",
+          "allowedLabels",
+          "allowedKnowledgePackageIds",
+          "active",
+          "canRespond"
+        ]);
+        if (typeof payload.sessionId !== "string") {
+          throw new ChatServiceError("CHAT_PARTICIPANT_SESSION_INVALID", 400);
+        }
+        if (payload.participationRole !== undefined && typeof payload.participationRole !== "string") {
+          throw new ChatServiceError("CHAT_PARTICIPANT_ROLE_INVALID", 400);
+        }
+        if (payload.knowledgeMode !== undefined && typeof payload.knowledgeMode !== "string") {
+          throw new ChatServiceError("CHAT_PARTICIPANT_KNOWLEDGE_INVALID", 400);
+        }
+        if (payload.allowedLabels !== undefined && (
+          !Array.isArray(payload.allowedLabels)
+          || payload.allowedLabels.some((value) => typeof value !== "string")
+        )) {
+          throw new ChatServiceError("CHAT_PARTICIPANT_LABELS_INVALID", 400);
+        }
+        if (payload.allowedKnowledgePackageIds !== undefined && (
+          !Array.isArray(payload.allowedKnowledgePackageIds)
+          || payload.allowedKnowledgePackageIds.some((value) => typeof value !== "string")
+        )) {
+          throw new ChatServiceError("CHAT_PARTICIPANT_KNOWLEDGE_PACKAGES_INVALID", 400);
+        }
+        if (payload.active !== undefined && typeof payload.active !== "boolean") {
+          throw new ChatServiceError("CHAT_PARTICIPANT_ACTIVE_INVALID", 400);
+        }
+        if (payload.canRespond !== undefined && typeof payload.canRespond !== "boolean") {
+          throw new ChatServiceError("CHAT_PARTICIPANT_RESPONSE_INVALID", 400);
+        }
+
+        const participantSessionId = safeSessionId(payload.sessionId);
+        const session = await chat.setParticipantBinding(sessionId, participantSessionId, {
+          ...(payload.participationRole === undefined ? {} : { participationRole: payload.participationRole as any }),
+          ...(payload.knowledgeMode === undefined ? {} : { knowledgeMode: payload.knowledgeMode as any }),
+          ...(payload.allowedLabels === undefined ? {} : { allowedLabels: payload.allowedLabels as string[] }),
+          ...(payload.allowedKnowledgePackageIds === undefined
+            ? {}
+            : { allowedKnowledgePackageIds: payload.allowedKnowledgePackageIds as string[] }),
+          ...(payload.active === undefined ? {} : { active: payload.active }),
+          ...(payload.canRespond === undefined ? {} : { canRespond: payload.canRespond })
+        });
+        const participant = session.participants?.find((item) => item.sessionId === participantSessionId);
+        return sendJson(response, 200, { sessionId, participant: participant ?? null });
+      }
+
       const chatDeleteMatch = /^\/api\/chat\/sessions\/([0-9a-f-]+)\/delete$/i.exec(url.pathname);
       if (method === "POST" && chatDeleteMatch?.[1]) {
         const sessionId = safeSessionId(chatDeleteMatch[1]);

@@ -1209,6 +1209,25 @@ body.koord-shell-active .koord-shell-tool-group-workspace .koord-access-pill.on{
   opacity:.45;
   cursor:not-allowed;
 }
+.history-mini-select{
+  appearance:auto;
+  border:1px solid rgba(126,151,168,.28);
+  border-radius:7px;
+  background:rgba(18,29,36,.92);
+  color:#aebdc7;
+  min-height:26px;
+  max-width:170px;
+  padding:3px 6px;
+  font:inherit;
+  font-size:10px;
+}
+.history-mini-select:focus{
+  outline:1px solid #5d8aa5;
+  outline-offset:1px;
+}
+.history-mini-select:disabled{
+  opacity:.45;
+}
 .history-guest-count{
   color:#7fd69a;
   font-size:10px;
