@@ -29,7 +29,8 @@
     "Execution_Isolation": "candidate code work is prepared in leased ephemeral git worktrees; real executor wiring remains blocked until sandbox boundaries are complete",
     "Blind_Execution": "executor receives only stage-scoped inputs, bounded micro-operations, a capability lease and an opaque authoritative stage-contract binding; it emits evidence, not truth",
     "Dynamic_HLL_Synthesis": "authoritative HLL Engine derives semantic state from trace/artifacts/effects/evidence; Koordynator does not implement a competing local truth engine",
-    "Deterministic_Group_Chat": "multi-agent group chat uses frozen-round alphabetical cyclic scheduling; first-response-wins is forbidden and membership changes enter only next round"
+    "Deterministic_Group_Chat": "multi-agent group chat uses frozen-round alphabetical cyclic scheduling; first-response-wins is forbidden and membership changes enter only next round",
+    "Unbounded_Group_Conversation": "group membership has no fixed participant-count ceiling; per-participant speaking authority and knowledge visibility remain explicit contracts"
   },
   "invariants": [
     "Unratified propositions are not executable corporate truth",
@@ -44,7 +45,10 @@
     "No automatic secret scraping, paid fallback activation, OAuth consent, billing change, destructive action, production deployment or protected merge",
     "Koordynator MUST NOT mint, synthesize or ratify HLL truth independently of the authoritative HLL Engine",
     "Blind execution produces trace/artifact/effect/evidence only; semantic truth and next-stage authority come from HLL/VERA",
-    "Multi-agent group chat speaking order is deterministic alphabetical round-robin; provider latency never determines who speaks next"
+    "Multi-agent group chat speaking order is deterministic alphabetical round-robin; provider latency never determines who speaks next",
+    "Group conversation membership MUST NOT be capped by an arbitrary participant-count constant",
+    "Group membership does not imply full knowledge visibility, speaking authority or execution authority",
+    "Peer source-chat knowledge remains participant-scoped; membership does not broadcast every private source context to every peer"
   ],
   "current_files": [
     "src/corporation/domain.ts",
@@ -101,7 +105,10 @@
     "docs/HLL_CORPORATION_SEMANTIC_MAP.md",
     "src/corporation/runtime.ts",
     "src/corporation/group-chat-queue.ts",
-    "tests/corporation-group-chat-queue.test.ts"
+    "tests/corporation-group-chat-queue.test.ts",
+    "src/corporation/group-conversation.ts",
+    "tests/corporation-group-conversation.test.ts",
+    "tests/control-chat-collaboration.test.ts"
   ],
   "implementation_status": {
     "pure_kernel": "implemented",
@@ -182,7 +189,12 @@
     "hll_stable_corporate_identity": "implemented",
     "hll_typed_corporation_relations_v1": "implemented_on_authority_branch",
     "corporation_authority_runtime_factory": "implemented",
-    "deterministic_group_chat_queue": "implemented"
+    "deterministic_group_chat_queue": "implemented",
+    "group_conversation_contracts": "implemented_reference",
+    "unbounded_live_chat_membership": "implemented",
+    "participant_scoped_peer_context": "implemented",
+    "group_participant_ui_role_editor": "pending",
+    "hll_group_communication_binding": "pending"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
