@@ -1385,6 +1385,13 @@ Invited chats are persisted without a fixed count limit. Peer source knowledge i
 scoped to that peer; every invited peer is not automatically given every other
 peer's private source-chat history.
 
+Each persisted invited peer now also carries a participation contract. The History
+panel exposes participant role and knowledge-mode controls. OBSERVER cannot produce
+an automatic peer response. SOURCE_AND_SHARED receives its own source chat plus the
+shared conversation; SHARED_ONLY receives only the shared conversation. LABELLED
+and DIRECT_ONLY remain fail-closed unless an explicit matching visibility path
+provides the needed context.
+
 Shared model context remains bounded by the model/context budget. A finite context
 window is a resource limit, not a membership limit.
 
