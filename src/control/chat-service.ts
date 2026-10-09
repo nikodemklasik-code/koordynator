@@ -1042,7 +1042,7 @@ export class ChatService {
           messageFingerprint: canonicalDigest({
             state: "error",
             code,
-            participantId: invited.session.id
+            participantId: invited.sessionId
           })
         });
         await this.finalize(session, peer, "error");
