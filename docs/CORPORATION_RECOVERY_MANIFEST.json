@@ -48,7 +48,8 @@
     "Multi-agent group chat speaking order is deterministic alphabetical round-robin; provider latency never determines who speaks next",
     "Group conversation membership MUST NOT be capped by an arbitrary participant-count constant",
     "Group membership does not imply full knowledge visibility, speaking authority or execution authority",
-    "Peer source-chat knowledge remains participant-scoped; membership does not broadcast every private source context to every peer"
+    "Peer source-chat knowledge remains participant-scoped; membership does not broadcast every private source context to every peer",
+    "Every accepted invited-peer Live Chat turn carries a deterministic GroupChatTurnReceipt chained to the previous peer turn"
   ],
   "current_files": [
     "src/corporation/domain.ts",
@@ -203,7 +204,10 @@
     "group_participant_role_editor_ui": "implemented",
     "group_participant_knowledge_editor_ui": "implemented",
     "observer_no_response_enforcement": "implemented",
-    "source_chat_knowledge_mode_enforcement": "implemented"
+    "source_chat_knowledge_mode_enforcement": "implemented",
+    "deterministic_live_peer_round": "implemented",
+    "live_peer_turn_receipts": "implemented",
+    "live_peer_turn_hash_chain": "implemented"
   },
   "recovery_sequence": [
     "Read docs/CORPORATION_LIVING_SPEC.md",
