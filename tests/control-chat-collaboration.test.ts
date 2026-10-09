@@ -59,6 +59,66 @@ async function sendAndWait(
 }
 
 describe("persistent chat collaboration", () => {
+
+
+  it("allows more than eight invited participants and lets every active participant respond", async () => {
+    const root = await mkdtemp(join(tmpdir(), "koord-chat-many-"));
+    roots.push(root);
+    const requestBodies: Array<Record<string, unknown>> = [];
+
+    const service = new ChatService({
+      stateDir: root,
+      apiKey: "test",
+      fetchImpl: streamingFetch(requestBodies)
+    });
+
+    const guests = [];
+    for (let index = 0; index < 12; index += 1) {
+      const guest = await service.createSession("auto/best-free");
+      await service.updateTitle(guest.sessionId, `Agent ${String(index + 1).padStart(2, "0")}`);
+      await sendAndWait(service, guest.sessionId, `Private source context for agent ${index + 1}.`);
+      guests.push(guest);
+    }
+
+    const host = await service.createSession("auto/best-free");
+    await service.updateTitle(host.sessionId, "Large group");
+
+    for (const guest of guests) {
+      await service.setInvitation(host.sessionId, guest.sessionId, true);
+    }
+
+    const configured = await service.getSession(host.sessionId);
+    expect(configured?.invitedSessionIds).toHaveLength(12);
+
+    await sendAndWait(service, host.sessionId, "Discuss this as the whole group.", 13);
+
+    const completed = await service.getSession(host.sessionId);
+    const peerMessages = completed?.messages.filter((message) =>
+      message.role === "assistant"
+      && message.state === "complete"
+      && typeof message.sourceSessionId === "string"
+    ) ?? [];
+
+    expect(peerMessages).toHaveLength(12);
+    expect(new Set(peerMessages.map((message) => message.sourceSessionId))).toEqual(
+      new Set(guests.map((guest) => guest.sessionId))
+    );
+
+    const mainRequest = [...requestBodies].reverse().find((request) => request.stream === true) as
+      | { messages?: Array<{ role?: string; content?: unknown }> }
+      | undefined;
+    const systemText = (mainRequest?.messages ?? [])
+      .filter((message) => message.role === "system" && typeof message.content === "string")
+      .map((message) => String(message.content))
+      .join("\n");
+
+    expect(systemText).toContain("12 peer chat(s) are explicitly invited");
+    expect(systemText).toContain("[CHAT: Agent 01");
+    expect(systemText).toContain("[CHAT: Agent 12");
+
+    service.close();
+  });
+
   it("persists titles and invited chats, injects peer context, and deletes chats", async () => {
     const root = await mkdtemp(join(tmpdir(), "koord-chat-collab-"));
     roots.push(root);
