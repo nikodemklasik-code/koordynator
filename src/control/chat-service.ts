@@ -10,6 +10,10 @@ import { extractProviderReportedUsage, type ProviderReportedUsage } from "../api
 import type { ChatBillingDecision } from "./chat-billing-policy.js";
 import { extractChatAttachmentText } from "./chat-attachment-text.js";
 import { ChatUsageLedger, type ChatUsageSummary } from "./chat-usage-ledger.js";
+import type {
+  GroupKnowledgeMode,
+  GroupParticipationRole
+} from "../corporation/group-conversation.js";
 
 export type ChatRole = "user" | "assistant";
 export type ChatMessageState = "complete" | "streaming" | "stopped" | "error";
@@ -51,6 +55,16 @@ export type ChatMessage = {
   materialisationError?: string;
 };
 
+export type ChatParticipantBinding = {
+  sessionId: string;
+  participationRole: GroupParticipationRole;
+  knowledgeMode: GroupKnowledgeMode;
+  allowedLabels: string[];
+  allowedKnowledgePackageIds: string[];
+  active: boolean;
+  canRespond: boolean;
+};
+
 export type ChatSession = {
   sessionId: string;
   createdAt: string;
@@ -58,8 +72,10 @@ export type ChatSession = {
   model: string;
   /** User-controlled persistent title. Falls back to the first user message for legacy sessions. */
   title?: string;
-  /** Other persisted chats explicitly invited into this chat as peer participants. */
+  /** Legacy membership index retained for compatibility with the current UI/API. */
   invitedSessionIds?: string[];
+  /** Per-participant role and knowledge contract. */
+  participants?: ChatParticipantBinding[];
   /** Execution/repository capability for this series. Legacy sessions default to enabled. */
   executionAccess?: boolean;
   messages: ChatMessage[];
@@ -72,6 +88,7 @@ export type ChatSessionSummary = {
   model: string;
   title: string;
   invitedSessionIds: string[];
+  participants: ChatParticipantBinding[];
   executionAccess: boolean;
   messageCount: number;
 };
@@ -201,6 +218,58 @@ function safeSessionTitle(value: unknown): string {
   const title = value.trim().replace(/\s+/g, " ");
   if (!title || title.length > 120) throw new ChatServiceError("CHAT_TITLE_INVALID", 400);
   return title;
+}
+
+function defaultParticipantBinding(sessionId: string): ChatParticipantBinding {
+  return {
+    sessionId,
+    participationRole: "CONTRIBUTOR",
+    knowledgeMode: "SOURCE_AND_SHARED",
+    allowedLabels: ["GENERAL", "SOURCE_CHAT"],
+    allowedKnowledgePackageIds: [],
+    active: true,
+    canRespond: true
+  };
+}
+
+function normalizeParticipantBinding(value: ChatParticipantBinding): ChatParticipantBinding {
+  if (!SESSION_RE.test(value.sessionId)) throw new ChatServiceError("CHAT_PARTICIPANT_SESSION_INVALID", 400);
+  const roles = new Set<GroupParticipationRole>([
+    "OBSERVER", "CONTRIBUTOR", "SPECIALIST", "REVIEWER",
+    "DECISION_SUPPORT", "EXECUTOR", "QC", "MODERATOR"
+  ]);
+  const knowledgeModes = new Set<GroupKnowledgeMode>([
+    "SHARED_ONLY", "SOURCE_AND_SHARED", "LABELLED", "DIRECT_ONLY"
+  ]);
+  if (!roles.has(value.participationRole)) throw new ChatServiceError("CHAT_PARTICIPANT_ROLE_INVALID", 400);
+  if (!knowledgeModes.has(value.knowledgeMode)) throw new ChatServiceError("CHAT_PARTICIPANT_KNOWLEDGE_INVALID", 400);
+  return {
+    sessionId: value.sessionId,
+    participationRole: value.participationRole,
+    knowledgeMode: value.knowledgeMode,
+    allowedLabels: [...new Set((value.allowedLabels ?? []).filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))].sort(),
+    allowedKnowledgePackageIds: [...new Set((value.allowedKnowledgePackageIds ?? []).filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))].sort(),
+    active: value.active !== false,
+    canRespond: value.participationRole === "OBSERVER" ? false : value.canRespond !== false
+  };
+}
+
+function participantBindings(session: ChatSession): ChatParticipantBinding[] {
+  const byId = new Map<string, ChatParticipantBinding>();
+  for (const value of session.participants ?? []) {
+    try {
+      const normalized = normalizeParticipantBinding(value);
+      byId.set(normalized.sessionId, normalized);
+    } catch {
+      // Invalid persisted participant contracts fail closed by being ignored.
+    }
+  }
+  for (const sessionId of session.invitedSessionIds ?? []) {
+    if (SESSION_RE.test(sessionId) && !byId.has(sessionId)) {
+      byId.set(sessionId, defaultParticipantBinding(sessionId));
+    }
+  }
+  return [...byId.values()];
 }
 
 function sessionTitle(session: ChatSession): string {
@@ -426,9 +495,8 @@ export class ChatService {
           updatedAt: session.updatedAt,
           model: session.model,
           title: sessionTitle(session),
-          invitedSessionIds: Array.isArray(session.invitedSessionIds)
-            ? session.invitedSessionIds.filter((value) => typeof value === "string" && SESSION_RE.test(value))
-            : [],
+          invitedSessionIds: participantBindings(session).map((participant) => participant.sessionId),
+          participants: participantBindings(session),
           executionAccess: session.executionAccess !== false,
           messageCount: session.messages.length
         } satisfies ChatSessionSummary;
@@ -448,6 +516,8 @@ export class ChatService {
       const body = await readFile(sessionFile(this.root, sessionId), "utf8");
       const session = JSON.parse(body) as ChatSession;
       if (session.executionAccess === undefined) session.executionAccess = true;
+      session.participants = participantBindings(session);
+      session.invitedSessionIds = session.participants.map((participant) => participant.sessionId);
       return session;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -495,13 +565,55 @@ export class ChatService {
     if (sessionId === invitedSessionId) throw new ChatServiceError("CHAT_INVITE_SELF_FORBIDDEN", 400);
     const [session, invitedSession] = await Promise.all([this.getSession(sessionId), this.getSession(invitedSessionId)]);
     if (!session || !invitedSession) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
-    const current = new Set((session.invitedSessionIds ?? []).filter((value) => SESSION_RE.test(value)));
+    const bindings = new Map(
+      participantBindings(session).map((participant) => [participant.sessionId, participant] as const)
+    );
     if (invited) {
-      current.add(invitedSessionId);
+      if (!bindings.has(invitedSessionId)) {
+        bindings.set(invitedSessionId, defaultParticipantBinding(invitedSessionId));
+      }
     } else {
-      current.delete(invitedSessionId);
+      bindings.delete(invitedSessionId);
     }
-    session.invitedSessionIds = [...current];
+    session.participants = [...bindings.values()];
+    session.invitedSessionIds = session.participants.map((participant) => participant.sessionId);
+    session.updatedAt = now();
+    await this.persist(session);
+    return session;
+  }
+
+  async setParticipantBinding(
+    sessionId: string,
+    invitedSessionId: string,
+    patch: Partial<Omit<ChatParticipantBinding, "sessionId">>
+  ): Promise<ChatSession> {
+    if (!SESSION_RE.test(invitedSessionId)) throw new ChatServiceError("CHAT_SESSION_INVALID", 400);
+    if (sessionId === invitedSessionId) throw new ChatServiceError("CHAT_INVITE_SELF_FORBIDDEN", 400);
+    if (this.starting.has(sessionId) || this.active.has(sessionId)) {
+      throw new ChatServiceError("CHAT_GENERATION_IN_PROGRESS", 409);
+    }
+    const [session, invitedSession] = await Promise.all([
+      this.getSession(sessionId),
+      this.getSession(invitedSessionId)
+    ]);
+    if (!session || !invitedSession) throw new ChatServiceError("CHAT_SESSION_NOT_FOUND", 404);
+
+    const bindings = new Map(
+      participantBindings(session).map((participant) => [participant.sessionId, participant] as const)
+    );
+    const current = bindings.get(invitedSessionId);
+    if (!current) throw new ChatServiceError("CHAT_PARTICIPANT_NOT_INVITED", 404);
+
+    const next = normalizeParticipantBinding({
+      ...current,
+      ...patch,
+      sessionId: invitedSessionId,
+      allowedLabels: patch.allowedLabels ?? current.allowedLabels,
+      allowedKnowledgePackageIds: patch.allowedKnowledgePackageIds ?? current.allowedKnowledgePackageIds
+    });
+    bindings.set(invitedSessionId, next);
+    session.participants = [...bindings.values()];
+    session.invitedSessionIds = session.participants.map((participant) => participant.sessionId);
     session.updatedAt = now();
     await this.persist(session);
     return session;
@@ -570,12 +682,12 @@ export class ChatService {
   }
 
   private async collaborationContext(session: ChatSession): Promise<UpstreamMessage[]> {
-    const ids = [...new Set(session.invitedSessionIds ?? [])].filter((value) => SESSION_RE.test(value));
-    if (!ids.length) return [];
+    const bindings = participantBindings(session).filter((participant) => participant.active);
+    if (!bindings.length) return [];
 
     const invitedSessions: ChatSession[] = [];
-    for (const invitedId of ids) {
-      const invited = await this.getSession(invitedId);
+    for (const binding of bindings) {
+      const invited = await this.getSession(binding.sessionId);
       if (invited) invitedSessions.push(invited);
     }
     if (!invitedSessions.length) return [];
@@ -618,7 +730,13 @@ export class ChatService {
     return content.includes("[CHAT:") ? [{ role: "system", content }] : [];
   }
 
-  private async sourcePeerContext(invited: ChatSession): Promise<UpstreamMessage | null> {
+  private async sourcePeerContext(
+    invited: ChatSession,
+    binding: ChatParticipantBinding
+  ): Promise<UpstreamMessage | null> {
+    const sourceAllowed = binding.knowledgeMode === "SOURCE_AND_SHARED"
+      || (binding.knowledgeMode === "LABELLED" && binding.allowedLabels.includes("SOURCE_CHAT"));
+    if (!sourceAllowed) return null;
     const messages = invited.messages
       .filter((message) => message.state !== "error" && String(message.content || "").trim())
       .slice(-12);
@@ -789,22 +907,29 @@ export class ChatService {
   }
 
   private async generateInvitedResponses(session: ChatSession, key: string, controller: AbortController): Promise<void> {
-    const invitedIds = [...new Set(session.invitedSessionIds ?? [])]
-      .filter((value) => SESSION_RE.test(value));
-    if (!invitedIds.length) return;
+    const bindings = participantBindings(session).filter((participant) =>
+      participant.active
+      && participant.canRespond
+      && participant.participationRole !== "OBSERVER"
+    );
+    if (!bindings.length) return;
 
-    const invitedSessions: ChatSession[] = [];
-    for (const invitedId of invitedIds) {
-      const invited = await this.getSession(invitedId);
-      if (invited) invitedSessions.push(invited);
+    const invitedEntries: Array<{ invited: ChatSession; binding: ChatParticipantBinding }> = [];
+    for (const binding of bindings) {
+      const invited = await this.getSession(binding.sessionId);
+      if (invited) invitedEntries.push({ invited, binding });
     }
 
-    invitedSessions.sort((left, right) => {
-      const byTitle = sessionTitle(left).localeCompare(sessionTitle(right), undefined, { sensitivity: "base" });
-      return byTitle || left.sessionId.localeCompare(right.sessionId);
+    invitedEntries.sort((left, right) => {
+      const byTitle = sessionTitle(left.invited).localeCompare(
+        sessionTitle(right.invited),
+        undefined,
+        { sensitivity: "base" }
+      );
+      return byTitle || left.invited.sessionId.localeCompare(right.invited.sessionId);
     });
 
-    for (const invited of invitedSessions) {
+    for (const { invited, binding } of invitedEntries) {
       if (controller.signal.aborted) return;
 
       const model = safeModel(invited.model);
@@ -847,12 +972,13 @@ export class ChatService {
           messages: session.messages.filter((item) => item.id !== peer.id)
         };
         const history = await this.boundedHistory(historySession, { includeCollaboration: false });
-        const sourceContext = await this.sourcePeerContext(invited);
+        const sourceContext = await this.sourcePeerContext(invited, binding);
         history.unshift({
           role: "system",
           content: [
             `You are the invited chat participant "${title}".`,
             `Your source chat id is ${invited.sessionId}.`,
+            `Participation role: ${binding.participationRole}. Knowledge mode: ${binding.knowledgeMode}.`,
             "Respond as a distinct participant in the shared Koordynator conversation.",
             "Use your own source-chat context plus the shared conversation. Do not pretend to be the main Koordynator.",
             "Other invited source chats are not automatically disclosed to you; knowledge remains participant-scoped.",
