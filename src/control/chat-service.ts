@@ -14,6 +14,10 @@ import type {
   GroupKnowledgeMode,
   GroupParticipationRole
 } from "../corporation/group-conversation.js";
+import {
+  DeterministicGroupChatQueue,
+  type GroupChatTurnReceipt
+} from "../corporation/group-chat-queue.js";
 
 export type ChatRole = "user" | "assistant";
 export type ChatMessageState = "complete" | "streaming" | "stopped" | "error";
@@ -44,6 +48,8 @@ export type ChatMessage = {
   agentTitle?: string;
   /** Persisted source chat that supplied this invited participant. */
   sourceSessionId?: string;
+  /** Deterministic group-turn receipt when this assistant acted as a peer participant. */
+  groupTurnReceipt?: GroupChatTurnReceipt;
   attachments?: ChatAttachment[];
   billing?: ChatBillingDecision;
   usage?: ProviderReportedUsage;
@@ -920,17 +926,25 @@ export class ChatService {
       if (invited) invitedEntries.push({ invited, binding });
     }
 
-    invitedEntries.sort((left, right) => {
-      const byTitle = sessionTitle(left.invited).localeCompare(
-        sessionTitle(right.invited),
-        undefined,
-        { sensitivity: "base" }
-      );
-      return byTitle || left.invited.sessionId.localeCompare(right.invited.sessionId);
-    });
+    const bySessionId = new Map(
+      invitedEntries.map((entry) => [entry.invited.sessionId, entry] as const)
+    );
+    const queue = new DeterministicGroupChatQueue(
+      `LIVE-CHAT-${session.sessionId}-${session.messages.at(-2)?.id ?? randomUUID()}`,
+      invitedEntries.map(({ invited }) => ({
+        participantId: invited.sessionId,
+        displayName: sessionTitle(invited),
+        active: true
+      }))
+    );
 
-    for (const { invited, binding } of invitedEntries) {
+    for (let turn = 0; turn < invitedEntries.length; turn += 1) {
       if (controller.signal.aborted) return;
+
+      const current = queue.currentParticipant();
+      const entry = bySessionId.get(current.participantId);
+      if (!entry) throw new ChatServiceError("CHAT_PEER_QUEUE_PARTICIPANT_MISSING", 500);
+      const { invited, binding } = entry;
 
       const model = safeModel(invited.model);
       const billing = await this.authorizeModel?.(model);
@@ -1012,6 +1026,10 @@ export class ChatService {
           messageId: peer.id,
           delta: content
         });
+        peer.groupTurnReceipt = queue.completeTurn({
+          participantId: invited.sessionId,
+          messageFingerprint: canonicalDigest(content)
+        });
         const audited = await this.finalize(session, peer, "complete");
         if (!audited) peer.usageAudit = "WRITE_FAILED";
         this.emit(session.sessionId, { type: "assistant_done", message: peer });
@@ -1019,6 +1037,14 @@ export class ChatService {
         if (controller.signal.aborted) return;
         const code = error instanceof ChatServiceError ? error.code : error instanceof Error ? error.message : "CHAT_PEER_UNAVAILABLE";
         peer.content = `[${title}: ${code}]`;
+        peer.groupTurnReceipt = queue.completeTurn({
+          participantId: invited.sessionId,
+          messageFingerprint: canonicalDigest({
+            state: "error",
+            code,
+            participantId: invited.session.id
+          })
+        });
         await this.finalize(session, peer, "error");
         this.emit(session.sessionId, { type: "assistant_done", message: peer });
       }
