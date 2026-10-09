@@ -45,6 +45,15 @@ async function toggleHistoryInvite(activeSessionId, targetSession, invited) {
   await loadHistory();
 }
 
+async function configureHistoryParticipant(activeSessionId, targetSessionId, patch) {
+  if (!activeSessionId || !targetSessionId) return;
+  await postChatSessionAction(activeSessionId, "participant", {
+    sessionId: targetSessionId,
+    ...patch
+  });
+  await loadHistory();
+}
+
 async function deleteHistorySession(session) {
   if (!window.confirm(`Delete chat “${session.title || "New chat"}”? This removes its persisted conversation file.`)) return;
   await postChatSessionAction(session.sessionId, "delete");
@@ -199,6 +208,50 @@ function renderHistory(sessions, receipts = []) {
         void toggleHistoryInvite(activeSession, session, !invited).catch((error) => window.alert(error instanceof Error ? error.message : "Invite failed"));
       });
       actions.appendChild(invite);
+
+      if (invited && activeRecord) {
+        const binding = (activeRecord.participants || []).find((item) => item.sessionId === session.sessionId);
+
+        const role = document.createElement("select");
+        role.className = "history-mini-select";
+        role.title = "Participant role";
+        for (const value of ["OBSERVER", "CONTRIBUTOR", "SPECIALIST", "REVIEWER", "DECISION_SUPPORT", "EXECUTOR", "QC", "MODERATOR"]) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value.replaceAll("_", " ");
+          option.selected = value === (binding?.participationRole || "CONTRIBUTOR");
+          role.appendChild(option);
+        }
+        role.disabled = historyIsGenerating();
+        role.addEventListener("click", (event) => event.stopPropagation());
+        role.addEventListener("change", (event) => {
+          event.stopPropagation();
+          void configureHistoryParticipant(activeSession, session.sessionId, {
+            participationRole: role.value
+          }).catch((error) => window.alert(error instanceof Error ? error.message : "Participant update failed"));
+        });
+        actions.appendChild(role);
+
+        const knowledge = document.createElement("select");
+        knowledge.className = "history-mini-select";
+        knowledge.title = "Knowledge scope";
+        for (const value of ["SOURCE_AND_SHARED", "SHARED_ONLY", "LABELLED", "DIRECT_ONLY"]) {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = value.replaceAll("_", " ");
+          option.selected = value === (binding?.knowledgeMode || "SOURCE_AND_SHARED");
+          knowledge.appendChild(option);
+        }
+        knowledge.disabled = historyIsGenerating();
+        knowledge.addEventListener("click", (event) => event.stopPropagation());
+        knowledge.addEventListener("change", (event) => {
+          event.stopPropagation();
+          void configureHistoryParticipant(activeSession, session.sessionId, {
+            knowledgeMode: knowledge.value
+          }).catch((error) => window.alert(error instanceof Error ? error.message : "Participant update failed"));
+        });
+        actions.appendChild(knowledge);
+      }
     } else if ((session.invitedSessionIds || []).length) {
       const guests = document.createElement("span");
       guests.className = "history-guest-count";
